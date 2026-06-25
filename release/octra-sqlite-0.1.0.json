@@ -1,0 +1,76 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.1.0",
+  "circle_program_version": "1",
+  "network": "devnet",
+  "public_circle": "oct236kMS6wDL9r3S5UnwgFJoS79V4kPUpgPVcQNcdnfsPR",
+  "circle_create_tx": "c6f8bfad04e380bbdc460c8841c4d680edcbcc0a37bac20864fa9e6ccc35381d",
+  "initializer_tx": "41616f60bf2047c8374d3d3b0af7ae70960cfc9400aa12d0d4518ec6e9a222dd",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 607496,
+    "sha256": "0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a"
+  },
+  "sqlite": {
+    "version": "3.53.2",
+    "source_path": "vendor/sqlite/3.53.2/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530200",
+    "source_sha256": "d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21"
+  },
+  "toolchain": {
+    "compiler": "clang version 22.1.0-wasi-sdk",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8192,
+    "max_dirty_pages_per_exec": 1024
+  },
+  "limits": {
+    "max_stable_bytes": 33554432,
+    "max_assets_bytes": 33554432,
+    "max_inline_value": 65536,
+    "max_wasm_bytes": 33554432
+  },
+  "typed_results": {
+    "codec": "OSR1",
+    "spec": "docs/spec/osr1.md"
+  },
+  "write_intents": {
+    "codec": "owner_write_intent",
+    "wire_domain": "octra-sqlite.osw1.v1\\0",
+    "spec": "docs/spec/owner-write-intent.md"
+  },
+  "public_deployment": {
+    "personalized_sha256": "1725953bb3dfccf9363a1eb27c4a1eeab1f5da53913465dbf4d061ca23e41c8d",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "9a97e9c1e926f1ae9122bd9607434e60fd3f00c27751e76a693510eeb269f557",
+    "owner_pubkey_offset": 601232,
+    "db_id_offset": 601264,
+    "non_owner_denied_tx": "9f8f32c600ff1952b256ba40a4326b56b897d198c324de0708d48c4631851e00"
+  },
+  "samples": [
+    "people"
+  ],
+  "status": "network-specific reference artifact"
+}

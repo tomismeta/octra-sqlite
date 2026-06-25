@@ -1,0 +1,62 @@
+name: Alpha feedback
+description: Report alpha setup, CLI, Circle, or SQLite behavior.
+title: "[alpha] "
+labels:
+  - alpha-feedback
+body:
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I did not include wallet private keys, seed phrases, or production data.
+          required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, shell, Rust/Cargo version, and whether you used local machine or VPS.
+      placeholder: macOS 15, zsh, rustc 1.xx, local
+    validations:
+      required: true
+  - type: input
+    id: install_path
+    attributes:
+      label: Install path
+      placeholder: cargo install --path . --locked
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Paste the exact command or shell session that failed or confused you.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: input
+    id: database
+    attributes:
+      label: Database name, Circle id, or oct:// database URI
+      placeholder: oct://devnet/...
+  - type: textarea
+    id: tx_hashes
+    attributes:
+      label: Transaction hashes
+      description: Include deploy, write, or failure transaction hashes when relevant.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes

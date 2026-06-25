@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_WASM_SHA256: 0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a
+      EXPECTED_WASM_BYTES: "607496"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Install WASM audit tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wabt
+      - name: Rust tests
+        run: cargo test --locked
+      - name: Script syntax
+        run: find scripts -name '*.sh' -exec bash -n {} \;
+      - name: Check bundled WASM artifact
+        run: |
+          test -f circle/wasm/octra_sqlite_circle.wasm
+          test "$(wc -c < circle/wasm/octra_sqlite_circle.wasm | tr -d ' ')" = "$EXPECTED_WASM_BYTES"
+          test "$(sha256sum circle/wasm/octra_sqlite_circle.wasm | awk '{print $1}')" = "$EXPECTED_WASM_SHA256"
+          bash scripts/audit-wasm.sh circle/wasm/octra_sqlite_circle.wasm
+      - name: WASM behavior harness
+        run: OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm cargo test --locked --features wasm-behavior --test wasm_host_harness

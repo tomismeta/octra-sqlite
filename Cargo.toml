@@ -1,0 +1,26 @@
+[package]
+name = "octra-sqlite"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "SQLite-like CLI for an Octra Circle-backed SQLite database"
+
+[features]
+wasm-behavior = ["dep:wasmtime"]
+
+[[bin]]
+name = "octra-sqlite"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+ed25519-dalek = "2"
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+wasmtime = { version = "39", optional = true }

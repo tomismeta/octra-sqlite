@@ -1,0 +1,11 @@
+{
+  "name": "basic mixed cells",
+  "payload_b64": "T1NSMQAAAAUAAAABAAAAA25pbAAAAAdpbnRlZ2VyAAAABHJlYWwAAAAEdGV4dAAAAARibG9iAAH/////////+QJAj0AAAAAAAAMAAAADQWRhBAAAAAJBQg==",
+  "expected": {
+    "ok": true,
+    "codec": "octra_sqlite_result_v1",
+    "columns": ["nil", "integer", "real", "text", "blob"],
+    "rows": [[null, -7, 1000.0, "Ada", {"type": "blob", "base64": "QUI="}]],
+    "row_count": 1
+  }
+}

@@ -1,0 +1,26 @@
+node_modules/
+dist/
+circle-dist/
+build/*
+target/
+.venv/
+.env
+.coverage
+.pytest_cache/
+*.pyc
+*.so
+*.dylib
+__pycache__/
+.DS_Store
+
+# wallets / secrets — never commit signing keys
+wallet.json
+*.wallet
+*.key
+secrets.json
+.oct
+.oct/
+.octra
+.octra/
+*.wasm
+!circle/wasm/octra_sqlite_circle.wasm
