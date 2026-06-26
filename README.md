@@ -27,18 +27,17 @@ cargo install --path . --locked
 octra-sqlite setup
 octra-sqlite status
 
-octra-sqlite new organization < examples/organization-person.sql
-octra-sqlite organization "insert into person(first_name,last_name) values ('Alan','Turing');"
-octra-sqlite organization "select rowid, first_name, last_name from person;"
-octra-sqlite verify organization
+octra-sqlite new remilia < examples/remilia-collections.sql
+octra-sqlite remilia "select name, launched_month, relationship from collection order by launched_month;"
+octra-sqlite verify remilia
 ```
 
 For a one-command sample database:
 
 ```sh
-octra-sqlite quickstart organization
-octra-sqlite organization ".tables"
-octra-sqlite organization "select * from people;"
+octra-sqlite quickstart remilia
+octra-sqlite remilia ".tables"
+octra-sqlite remilia "select name, launched_month from collection order by launched_month;"
 ```
 
 For non-interactive setup, use `init` instead of the wizard:
@@ -53,7 +52,7 @@ More CRUD examples live in [`examples/`](./examples/).
 
 - **Database**: the SQLite database you open and query.
 - **Database name**: a local name saved in `~/.octra/sqlite.json`, like
-  `organization`.
+  `remilia`.
 - **Database URI**: an advanced `oct://NETWORK/CIRCLE_ID` pointer to a database.
 - **Circle**: the Octra program and storage identity underneath a database.
 - **Wallet, RPC, network**: Octra connection and signing configuration.

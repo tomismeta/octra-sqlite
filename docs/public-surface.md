@@ -26,7 +26,7 @@ octra-sqlite new NAME "create table ..."
 ```
 
 `quickstart` is a thin convenience layer over `new`: it chooses the built-in
-`people` sample by default, saves a database name, and makes the new database
+`remilia` sample by default, saves a database name, and makes the new database
 the default database. `new` submits a native signed `deploy_circle` transaction
 whose payload includes the bundled audited SQLite WASM, saves an `oct://`
 database URI, and then runs optional initializer SQL through the same signed

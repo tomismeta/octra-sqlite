@@ -3,50 +3,43 @@
 Runnable examples for `octra-sqlite` live here so the top-level README can stay
 minimal.
 
-## Organization / Person
+## Remilia Collections
 
-Create a new Circle-backed database:
-
-```sh
-octra-sqlite new organization
-```
-
-Create and seed the table:
+Create a new Circle-backed database and seed it with the example SQL:
 
 ```sh
-octra-sqlite organization < examples/organization-person.sql
+octra-sqlite new remilia < examples/remilia-collections.sql
 ```
 
 Read it back:
 
 ```sh
-octra-sqlite organization "select rowid, first_name, last_name from person order by rowid;"
+octra-sqlite remilia "select name, launched_month, relationship, chain from collection order by launched_month, name;"
 ```
 
-Add a record:
+Add a collection:
 
 ```sh
-octra-sqlite organization "insert into person(first_name,last_name) values ('Alan','Turing');"
+octra-sqlite remilia "insert into collection(name,opensea_slug,chain,relationship,launched_month,date_precision) values ('Example Collection','example-collection','Ethereum','Remilia adjacent','2026-06-01','month');"
 ```
 
-Update a record:
+Update a collection:
 
 ```sh
-octra-sqlite organization "update person set last_name = 'Hamilton' where first_name = 'Katherine';"
+octra-sqlite remilia "update collection set relationship = 'Remilia' where name = 'Example Collection';"
 ```
 
-Delete a record:
+Delete a collection:
 
 ```sh
-octra-sqlite organization "delete from person where first_name = 'Grace';"
+octra-sqlite remilia "delete from collection where name = 'Example Collection';"
 ```
 
 Inspect the live Circle-backed database:
 
 ```sh
-octra-sqlite organization ".tables"
-octra-sqlite organization ".schema"
-octra-sqlite organization "select rowid, first_name, last_name from person order by rowid;"
-octra-sqlite doctor organization
-octra-sqlite verify organization
+octra-sqlite remilia ".tables"
+octra-sqlite remilia ".schema collection"
+octra-sqlite status remilia
+octra-sqlite verify remilia
 ```

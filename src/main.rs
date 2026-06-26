@@ -21,7 +21,7 @@ use std::process::Command as ProcessCommand;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_RPC: &str = "http://165.227.225.79:8080/rpc";
-const DEFAULT_CIRCLE: &str = "oct236kMS6wDL9r3S5UnwgFJoS79V4kPUpgPVcQNcdnfsPR";
+const DEFAULT_CIRCLE: &str = "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA";
 const DEFAULT_CALLER: &str = "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB";
 const DEFAULT_NETWORK: &str = "devnet";
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
@@ -42,11 +42,11 @@ Examples:
   octra-sqlite setup
   octra-sqlite status
   octra-sqlite config
-  octra-sqlite new organization < examples/organization-person.sql
-  octra-sqlite organization \".tables\"
-  octra-sqlite organization \"select rowid, first_name, last_name from person;\"
+  octra-sqlite new remilia < examples/remilia-collections.sql
+  octra-sqlite remilia \".tables\"
+  octra-sqlite remilia \"select name, launched_month from collection order by launched_month;\"
   octra-sqlite database list
-  octra-sqlite database info organization
+  octra-sqlite database info remilia
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -117,9 +117,9 @@ enum Commands {
 #[command(after_long_help = "\
 Examples:
   octra-sqlite database list
-  octra-sqlite database info organization
-  octra-sqlite database use organization
-  octra-sqlite database set organization oct://devnet/oct...
+  octra-sqlite database info remilia
+  octra-sqlite database use remilia
+  octra-sqlite database set remilia oct://devnet/oct...
 ")]
 enum DatabaseCommand {
     /// List saved database names.
@@ -280,7 +280,7 @@ struct QuickstartArgs {
     /// Local database name for the sample database.
     name: String,
     /// Built-in sample to install.
-    #[arg(long, default_value = "people")]
+    #[arg(long, default_value = "remilia")]
     sample: String,
     /// Rebuild the bundled WASM before deploying.
     #[arg(long)]
@@ -519,9 +519,9 @@ fn run_cli() -> Result<()> {
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
-            println!("octra-sqlite new organization < examples/organization-person.sql");
-            println!("octra-sqlite organization \"select * from person;\"");
-            println!("octra-sqlite status organization");
+            println!("octra-sqlite new remilia < examples/remilia-collections.sql");
+            println!("octra-sqlite remilia \"select name, launched_month from collection order by launched_month;\"");
+            println!("octra-sqlite status remilia");
             Ok(())
         }
     }
@@ -663,7 +663,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
 
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
         let name = prompt_default("Database name", "mydb")?;
-        let sample = prompt_default("Sample", "people")?;
+        let sample = prompt_default("Sample", "remilia")?;
         cmd_quickstart(QuickstartArgs {
             name,
             sample,
@@ -680,7 +680,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        println!("next: octra-sqlite quickstart organization");
+        println!("next: octra-sqlite quickstart remilia");
     }
     Ok(())
 }
@@ -720,7 +720,7 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
     })?;
     println!("next:");
     println!("  octra-sqlite {name} \".tables\"");
-    println!("  octra-sqlite {name} \"select * from people;\"");
+    println!("  octra-sqlite {name} \"select name, launched_month from collection order by launched_month;\"");
     println!("  octra-sqlite {name}");
     Ok(())
 }
@@ -942,7 +942,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         println!("next: octra-sqlite database list");
     } else {
-        println!("create: octra-sqlite new organization < examples/organization-person.sql");
+        println!("create: octra-sqlite new remilia < examples/remilia-collections.sql");
     }
     Ok(())
 }
@@ -1577,7 +1577,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
         println!("no databases");
-        println!("create: octra-sqlite new organization < examples/organization-person.sql");
+        println!("create: octra-sqlite new remilia < examples/remilia-collections.sql");
         return;
     }
     println!("default  name  uri");
@@ -2021,13 +2021,8 @@ fn first_string(values: &[Option<String>]) -> Option<String> {
 
 fn sample_sql(name: &str) -> Result<String> {
     match name {
-        "people" => Ok(
-            "create table people(first_name text not null, last_name text not null);\n\
-insert into people(first_name,last_name)\n\
-values ('Ada','Lovelace'),('Grace','Hopper'),('Katherine','Johnson');\n"
-                .to_string(),
-        ),
-        _ => bail!("unknown sample {name}; available samples: people"),
+        "remilia" => Ok(include_str!("../examples/remilia-collections.sql").to_string()),
+        _ => bail!("unknown sample {name}; available samples: remilia"),
     }
 }
 
@@ -2923,23 +2918,23 @@ mod tests {
     #[test]
     fn new_accepts_builtin_sample() {
         let cli =
-            Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--sample", "people"]).unwrap();
+            Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--sample", "remilia"]).unwrap();
         match cli.command {
             Commands::New(args) => {
                 assert_eq!(args.name, "my-db");
-                assert_eq!(args.sample.as_deref(), Some("people"));
+                assert_eq!(args.sample.as_deref(), Some("remilia"));
             }
             _ => panic!("expected new command"),
         }
     }
 
     #[test]
-    fn quickstart_defaults_to_people_sample() {
+    fn quickstart_defaults_to_remilia_sample() {
         let cli = Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).unwrap();
         match cli.command {
             Commands::Quickstart(args) => {
                 assert_eq!(args.name, "my-db");
-                assert_eq!(args.sample, "people");
+                assert_eq!(args.sample, "remilia");
                 assert!(!args.no_default);
             }
             _ => panic!("expected quickstart command"),
@@ -2965,10 +2960,12 @@ mod tests {
     }
 
     #[test]
-    fn people_sample_creates_expected_table() {
-        let sql = sample_sql("people").unwrap();
-        assert!(sql.contains("create table people"));
-        assert!(sql.contains("Ada"));
+    fn remilia_sample_creates_expected_table() {
+        let sql = sample_sql("remilia").unwrap();
+        assert!(sql.contains("create table collection"));
+        assert!(sql.contains("Milady Maker"));
+        assert!(!sql.contains("source_url"));
+        assert!(!sql.contains("notes"));
         assert!(sample_sql("unknown").is_err());
     }
 

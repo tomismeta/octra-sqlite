@@ -3,9 +3,11 @@
   "release": "0.1.0",
   "circle_program_version": "1",
   "network": "devnet",
-  "public_circle": "oct236kMS6wDL9r3S5UnwgFJoS79V4kPUpgPVcQNcdnfsPR",
-  "circle_create_tx": "c6f8bfad04e380bbdc460c8841c4d680edcbcc0a37bac20864fa9e6ccc35381d",
-  "initializer_tx": "41616f60bf2047c8374d3d3b0af7ae70960cfc9400aa12d0d4518ec6e9a222dd",
+  "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
+  "public_example": "remilia",
+  "public_example_sql": "examples/remilia-collections.sql",
+  "circle_create_tx": null,
+  "initializer_tx": null,
   "wasm": {
     "path": "circle/wasm/octra_sqlite_circle.wasm",
     "bytes": 607496,
@@ -62,15 +64,15 @@
     "spec": "docs/spec/owner-write-intent.md"
   },
   "public_deployment": {
-    "personalized_sha256": "1725953bb3dfccf9363a1eb27c4a1eeab1f5da53913465dbf4d061ca23e41c8d",
+    "personalized_sha256": "f2adefb06cd7134fefe056ea74132a195e430550c17e3f4b0091bf40abf47213",
     "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
-    "db_id": "9a97e9c1e926f1ae9122bd9607434e60fd3f00c27751e76a693510eeb269f557",
+    "db_id": "d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d",
     "owner_pubkey_offset": 601232,
     "db_id_offset": 601264,
-    "non_owner_denied_tx": "9f8f32c600ff1952b256ba40a4326b56b897d198c324de0708d48c4631851e00"
+    "non_owner_denied_tx": null
   },
   "samples": [
-    "people"
+    "remilia"
   ],
   "status": "network-specific reference artifact"
 }
