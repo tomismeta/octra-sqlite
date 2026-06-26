@@ -1,6 +1,6 @@
 {
   "name": "octra-sqlite",
-  "release": "0.1.0",
+  "release": "0.2.0",
   "circle_program_version": "3",
   "network": "devnet",
   "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
@@ -71,6 +71,10 @@
     "db_id_offset": 601408,
     "program_update_tx": "3fc593c0b2d23c3e740a9ebcfda8a72932fecc3333597f0ec66d326b825db4d5",
     "non_owner_denied_tx": null
+  },
+  "client_release": {
+    "notes": "Rust CLI/library refactor; bundled Circle WASM unchanged from the audited devnet proof.",
+    "read_only_api_example": "examples/remilia-read-api"
   },
   "samples": [
     "remilia"

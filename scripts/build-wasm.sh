@@ -28,8 +28,14 @@ fi
 
 mkdir -p "$(dirname "$OUT")"
 
+EXTRA_CFLAGS=()
+if [ -n "${WASI_SYSROOT:-}" ]; then
+  EXTRA_CFLAGS+=(--sysroot "$WASI_SYSROOT")
+fi
+
 "$CC" \
   --target=wasm32-wasi \
+  "${EXTRA_CFLAGS[@]}" \
   -Oz \
   -flto \
   -nostdlib \

@@ -75,6 +75,9 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         if let Some(auth) = auth_event(receipt) {
             out.push_str(&format!("auth: {auth}\n"));
         }
+        if let Some(sql_error) = event_values(receipt, "octra.sqlite.error") {
+            out.push_str(&format!("sql_error: {sql_error}\n"));
+        }
         if let Some(sql) = event_values(receipt, "octra.sqlite.exec") {
             out.push_str(&format!("sql: {sql}\n"));
         }
@@ -240,7 +243,7 @@ fn push_csv_row(out: &mut String, values: &[String]) {
         if idx > 0 {
             out.push(',');
         }
-        let needs_quote = value.contains(|ch| matches!(ch, ',' | '"' | '\n' | '\r'));
+        let needs_quote = value.contains([',', '"', '\n', '\r']);
         if needs_quote {
             out.push('"');
             out.push_str(&value.replace('"', "\"\""));
@@ -319,6 +322,27 @@ mod tests {
         assert!(rendered.contains("write: rejected"));
         assert!(rendered.contains("error: circle_call_failed: wasm export returned 1"));
         assert!(rendered.contains("auth: auth_not_authorized:auth_denied"));
+        assert!(!rendered.contains("\"events\""));
+    }
+
+    #[test]
+    fn exec_result_surfaces_sql_error_event_without_raw_json() {
+        let result = json!({
+            "circle": "octCircle",
+            "wallet": "octWallet",
+            "tx_hash": "ghi789",
+            "receipt": {
+                "success": true,
+                "error": null,
+                "events": [{
+                    "event": "octra.sqlite.error",
+                    "values": ["sqlite_exec_failed:no such table: correction"]
+                }]
+            }
+        });
+        let rendered = format_exec_result(&result).unwrap();
+        assert!(rendered.contains("write: confirmed"));
+        assert!(rendered.contains("sql_error: sqlite_exec_failed:no such table: correction"));
         assert!(!rendered.contains("\"events\""));
     }
 }
