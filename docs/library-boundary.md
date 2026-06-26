@@ -6,7 +6,7 @@
    - OSR1 typed result decoding
    - OSW1 owner write intent framing
    - canonical transaction JSON
-   - `oct://` database target parsing
+   - `oct://` database URI parsing
 2. `client`: the reusable Rust reference client.
    - `OctraSqlite::from_default_config()?`
    - `client.database("remilia")?`
@@ -15,7 +15,7 @@
    - `db.prepare_write(...) -> sign_write(...) -> submit_signed_write_and_wait(...)`
    - `db.prepare_write_no_wait(...) -> sign_write(...) -> submit_signed_write(...)`
    - `Transport` for HTTP, mock tests, and future adapters
-3. `cli`: the SQLite-like user experience.
+3. `cli`: the SQLite-shaped user experience.
    - `octra-sqlite remilia`
    - `.tables`, `.schema`, `.read`, `.open`
    - Octra-aware inspection through `.circle`, `.storage`, `.wallet`, `.proof`

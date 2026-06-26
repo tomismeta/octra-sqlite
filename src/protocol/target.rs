@@ -38,7 +38,7 @@ pub fn parse_database_target(
             }
         };
         if !circle.starts_with("oct") {
-            return Err(ProtocolError::new("circle id must start with oct"));
+            return Err(ProtocolError::new("Circle ID must start with oct"));
         }
         return Ok(DatabaseTarget {
             raw: value.to_string(),
@@ -51,14 +51,14 @@ pub fn parse_database_target(
         return Ok(DatabaseTarget {
             raw: value.to_string(),
             network: default_network
-                .ok_or_else(|| ProtocolError::new("network is required for bare Circle ids"))?
+                .ok_or_else(|| ProtocolError::new("network is required for bare Circle IDs"))?
                 .to_string(),
             circle: value.to_string(),
             rpc: default_rpc,
         });
     }
     Err(ProtocolError::new(format!(
-        "unknown database {value}; use a database name, Circle id, or oct://NETWORK/<circle-id>"
+        "unknown database {value}; use a database name, Circle ID, or oct://NETWORK/<circle-id>"
     )))
 }
 

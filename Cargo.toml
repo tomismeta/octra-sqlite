@@ -3,7 +3,7 @@ name = "octra-sqlite"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "SQLite-like CLI for an Octra Circle-backed SQLite database"
+description = "Real SQLite inside an Octra Circle, with a Rust CLI"
 
 [features]
 wasm-behavior = ["dep:wasmtime"]

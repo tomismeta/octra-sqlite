@@ -42,15 +42,16 @@ const EXPECTED_WASM_BYTES: usize = 607_496;
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
-#[command(about = "SQLite CLI for Octra-backed databases")]
+#[command(about = "Real SQLite inside an Octra Circle")]
 #[command(after_long_help = "\
 Examples:
   octra-sqlite setup
   octra-sqlite status
   octra-sqlite config
-  octra-sqlite new remilia < examples/remilia-collections.sql
   octra-sqlite remilia \".tables\"
   octra-sqlite remilia \"select name, launched_month from collection order by launched_month;\"
+  octra-sqlite quickstart my_collections
+  octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"
   octra-sqlite database list
   octra-sqlite database info remilia
 ")]
@@ -101,10 +102,10 @@ enum Commands {
     /// Show Octra Circle program metadata.
     #[command(hide = true)]
     Circle(TargetArgs),
-    /// Prove live database metadata, storage, SQLite version, and tables.
+    /// Verify live database metadata, storage, SQLite version, and tables.
     #[command(hide = true)]
     Proof(TargetArgs),
-    /// Verify deployed database code, storage, OSR1 typed queries, schema, and optionally a write.
+    /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
     Status(DoctorArgs),
@@ -130,9 +131,9 @@ Examples:
 enum DatabaseCommand {
     /// List saved database names.
     List,
-    /// Show the URI, network, Circle id, and RPC for a database.
+    /// Show the URI, network, Circle ID, and RPC for a database.
     Info {
-        /// Database name, Circle id, or oct:// database URI. Defaults to the current database.
+        /// Database name, Circle ID, or oct:// database URI. Defaults to the current database.
         #[arg(value_name = "DATABASE")]
         database: Option<String>,
     },
@@ -151,7 +152,7 @@ enum DatabaseCommand {
 
 #[derive(Args, Clone)]
 struct TargetArgs {
-    /// Database name, Circle id, or oct:// database URI.
+    /// Database name, Circle ID, or oct:// database URI.
     #[arg(value_name = "DATABASE")]
     target: Option<String>,
     /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
@@ -182,7 +183,7 @@ struct InitArgs {
     /// Octra network name.
     #[arg(long)]
     network: Option<String>,
-    /// Default database name, Circle id, or oct:// database URI.
+    /// Default database name, Circle ID, or oct:// database URI.
     #[arg(long, alias = "target")]
     database: Option<String>,
 }
@@ -198,7 +199,7 @@ struct SetupArgs {
     /// Octra network name.
     #[arg(long)]
     network: Option<String>,
-    /// Default database name, Circle id, or oct:// database URI.
+    /// Default database name, Circle ID, or oct:// database URI.
     #[arg(long, alias = "target")]
     database: Option<String>,
     /// Use discovered values and defaults without prompting.
@@ -328,7 +329,7 @@ struct DeployArgs {
     /// Rebuild the bundled WASM before deploying.
     #[arg(long)]
     build: bool,
-    /// Circle id to update.
+    /// Circle ID to update.
     #[arg(long)]
     circle: Option<String>,
     /// Custom WASM program to deploy.
@@ -472,9 +473,10 @@ pub fn run() -> Result<()> {
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
-            println!("octra-sqlite new remilia < examples/remilia-collections.sql");
+            println!("octra-sqlite remilia \".tables\"");
             println!("octra-sqlite remilia \"select name, launched_month from collection order by launched_month;\"");
             println!("octra-sqlite status remilia");
+            println!("octra-sqlite quickstart my_collections");
             Ok(())
         }
     }
@@ -620,7 +622,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     }
 
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
-        let name = prompt_default("Database name", "mydb")?;
+        let name = prompt_default("Database name", "my_collections")?;
         let sample = prompt_default("Sample", "remilia")?;
         cmd_quickstart(QuickstartArgs {
             name,
@@ -638,7 +640,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        println!("next: octra-sqlite quickstart remilia");
+        println!("next: octra-sqlite remilia \".tables\"");
+        println!("create: octra-sqlite quickstart my_collections");
     }
     Ok(())
 }
@@ -802,7 +805,7 @@ fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
             } else {
                 report.warn(
                     "default database",
-                    "not set; run octra-sqlite database use DB_NAME or pass a database argument",
+                    "not set; run octra-sqlite database use DATABASE or pass a database argument",
                 );
             }
 
@@ -896,7 +899,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         println!("next: octra-sqlite database list");
     } else {
-        println!("create: octra-sqlite new remilia < examples/remilia-collections.sql");
+        println!("create: octra-sqlite quickstart my_collections");
     }
     Ok(())
 }
@@ -1523,7 +1526,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
         println!("no databases");
-        println!("create: octra-sqlite new remilia < examples/remilia-collections.sql");
+        println!("create: octra-sqlite quickstart my_collections");
         return;
     }
     println!("default  name  uri");
@@ -1809,7 +1812,7 @@ fn print_help() {
     println!("  .tables              list tables");
     println!("  .schema              show schema");
     println!("  .databases           show the current main database URI");
-    println!("  .open DATABASE       switch database name, Circle id, or oct:// URI");
+    println!("  .open DATABASE       switch database name, Circle ID, or oct:// URI");
     println!("  .read FILE           execute SQL from a file");
     println!("  .mode MODE           MODE is box, table, list, json, line, or csv");
     println!("  .headers on|off      show or hide column headers");
@@ -1822,7 +1825,7 @@ fn print_help() {
     println!("  .storage             show SQLite page storage info");
     println!("  .circle              show Circle program metadata");
     println!("  .wallet              show active wallet address");
-    println!("  .proof               prove live Circle SQLite status");
+    println!("  .proof               verify live Circle SQLite status");
     println!("  .verify              same as .proof");
 }
 

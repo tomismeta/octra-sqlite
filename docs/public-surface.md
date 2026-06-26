@@ -18,20 +18,23 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite quickstart NAME
+octra-sqlite remilia ".tables"
+octra-sqlite remilia "select name, launched_month from collection order by launched_month;"
 ```
 
 The reference configurable database creation path is:
 
 ```sh
-octra-sqlite new NAME
-octra-sqlite new NAME < schema.sql
-octra-sqlite new NAME "create table ..."
+octra-sqlite quickstart my_collections
+octra-sqlite new DATABASE
+octra-sqlite new DATABASE < schema.sql
+octra-sqlite new DATABASE "create table ..."
 ```
 
-`quickstart` is a thin convenience layer over `new`: it chooses the built-in
-`remilia` sample by default, saves a database name, and makes the new database
-the default database. `new` submits a native signed `deploy_circle` transaction
+The bundled defaults make `remilia` the public example database. `quickstart` is
+a thin convenience layer over `new`: it creates a new database with the built-in
+Remilia sample, saves the database name, and makes that new database the
+default database. `new` submits a native signed `deploy_circle` transaction
 whose payload includes the bundled audited SQLite WASM, saves an `oct://`
 database URI, and then runs optional initializer SQL through the same signed
 `exec` path as later writes.
@@ -70,7 +73,7 @@ They should stay expressive enough that users do not need to inspect
   RPC; tests and future adapters can provide their own `Transport`.
 - `src/client/error.rs`: typed client error kinds for adapters that need stable
   authorization, receipt, timeout, RPC, transport, and protocol categories.
-- `src/protocol/`: transport-independent wire formats and target parsing.
+- `src/protocol/`: transport-independent wire formats and database URI parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `src/protocol/osw1.rs`: OSW1 owner write intent framing.
 - `config/defaults.json`: preloaded devnet RPC and public example database.
