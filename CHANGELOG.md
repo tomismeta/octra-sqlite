@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0
+
+- Refactored the Rust code around a reusable protocol/client boundary while
+  keeping the SQLite-shaped CLI as the primary user experience.
+- Added the public `OctraSqlite -> Database -> query/execute` API shape for
+  native Rust callers.
+- Added devnet and mainnet network profiles, with devnet defaulting to
+  `https://devnet.octrascan.io/rpc` and mainnet preloaded as
+  `https://octra.network/rpc`.
+- Added the public Remilia example database to bundled config.
+- Added a tiny read-only Remilia API example under `examples/remilia-read-api/`.
+- Improved SQLite error expressiveness for both read and write failures.
+- Preserved owner-only write intent enforcement for state-changing SQL.
+- Refactored the code so REST APIs, MCP servers, A2A agents, web apps, and
+  other transports can build on the same protocol/client core.
+- Added protocol/client tests and configuration hygiene checks.
+- Kept the bundled Circle WASM artifact unchanged from the audited devnet proof.
+
 ## 0.1.0
 
 - Added `octra-sqlite new NAME`, a SQLite-style database creation flow that

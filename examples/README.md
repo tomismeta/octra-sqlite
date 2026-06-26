@@ -47,3 +47,14 @@ octra-sqlite my_collections ".schema collection"
 octra-sqlite status my_collections
 octra-sqlite verify my_collections
 ```
+
+## Remilia Read API
+
+[`remilia-read-api/`](./remilia-read-api/) is a tiny read-only Rust HTTP
+example. It shows how an application can build on the same client boundary as
+the CLI without making this repo a web framework.
+
+```sh
+cargo run --example remilia-read-api
+curl http://127.0.0.1:8787/collections/milady
+```

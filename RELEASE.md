@@ -1,5 +1,36 @@
 # Release Notes
 
+## 0.2.0
+
+This release refactors the Rust client and protocol boundary while keeping the
+CLI SQLite-like and primary. The Circle WASM artifact is unchanged from the
+audited devnet proof; `0.2.0` is a client/library/devex release.
+
+## Added
+
+- Public `OctraSqlite -> Database -> query/execute` Rust API shape.
+- Devnet and mainnet network profiles in bundled config.
+- Public Remilia example database in bundled config.
+- Tiny read-only Remilia API example under `examples/remilia-read-api/`.
+- Clearer SQLite read and write error messages.
+
+## Architecture
+
+- Refactored the code around reusable protocol and client layers.
+- Positioned REST APIs, MCP servers, A2A agents, web apps, and other transports
+  to build on the same protocol/client core.
+- Kept the core repo a primitive: no server framework, ORM, query builder, or
+  agent runtime was added.
+
+## Still True
+
+- SQLite 3.53.2 runs inside the deployed Circle program.
+- New databases are owner-bound by default with method-bound owner write
+  intents.
+- Other authenticated wallets can read through the signed view path, but cannot
+  write unless they hold the owner key.
+- The published live proof remains on devnet.
+
 ## 0.1.0
 
 This release is a reference architecture for running real SQLite inside an
@@ -35,11 +66,11 @@ devnet.
 
 ```text
 circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
-version: 1
-personalized_code_hash: f2adefb06cd7134fefe056ea74132a195e430550c17e3f4b0091bf40abf47213
-bundled_wasm_hash: 0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a
-code_bytes: 607496
+version: 3
+personalized_code_hash: 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15
+bundled_wasm_hash: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
+code_bytes: 607640
 sample: remilia collection
-manifest: release/octra-sqlite-0.1.0.json
+manifest: release/octra-sqlite-0.2.0.json
 proof: docs/proofs/devnet.md
 ```

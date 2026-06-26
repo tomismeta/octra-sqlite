@@ -84,9 +84,10 @@ They should stay expressive enough that users do not need to inspect
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.
 - `docs/spec/osw1.md`: OSW1 owner write intent frame.
-- `release/octra-sqlite-0.1.0.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.2.0.json`: release manifest for the bundled Circle
   WASM and published network-specific deployment.
-- `examples/`: concrete runnable walkthroughs kept out of the README.
+- `examples/`: concrete runnable walkthroughs kept out of the README, including
+  a tiny read-only Remilia API example.
 - `scripts/install-cli.sh`: local installer for `cargo install --path .`.
 - `scripts/build-wasm.sh`: optional local WASM rebuild for contract changes.
 - `scripts/audit-wasm.sh`: import/export audit.

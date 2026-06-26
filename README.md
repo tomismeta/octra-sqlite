@@ -73,6 +73,8 @@ octra-sqlite init --wallet ./wallet.json --network mainnet
 ```
 
 More CRUD examples live in [`examples/`](./examples/).
+The tiny read-only Remilia API example lives at
+[`examples/remilia-read-api/`](./examples/remilia-read-api/).
 
 ## Ontology
 
@@ -257,3 +259,5 @@ OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm \
 Architecture notes live in [`docs/`](./docs). The bundled public artifact is
 recorded in
 [`release/octra-sqlite-0.1.0.json`](./release/octra-sqlite-0.1.0.json).
+The current Rust CLI/library release manifest is
+[`release/octra-sqlite-0.2.0.json`](./release/octra-sqlite-0.2.0.json).
