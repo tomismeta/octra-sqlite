@@ -56,6 +56,13 @@ event: octra.sqlite.exec
 value: sql_fnv1a64:<hash>
 ```
 
+SQLite write failures roll back and emit:
+
+```text
+event: octra.sqlite.error
+value: sqlite_exec_failed:<sqlite error>
+```
+
 Set `OCTRA_SQLITE_TRACE_SQL_EVENT=1` to use `exec_trace` and emit the full SQL
 text as an additional `octra.sqlite.sql` event. This is useful for demos and
 proofs, but the default keeps SQL text out of events.

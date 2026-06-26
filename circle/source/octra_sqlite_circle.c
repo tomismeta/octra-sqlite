@@ -54,6 +54,7 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define OWNER_WRITE_INTENT_DOMAIN_LEN 21u /* Includes the trailing NUL domain separator. */
 #define MAX_METHOD_BYTES 16u
 #define MAX_OWNER_WRITE_INTENT_BYTES (OWNER_WRITE_INTENT_DOMAIN_LEN + 32u + 8u + 2u + MAX_METHOD_BYTES + 4u + MAX_SQL_BYTES)
+#define OCTRA_SQLITE_APP_ERROR 2
 
 typedef char owner_write_intent_domain_len_must_include_nul[(sizeof(OWNER_WRITE_INTENT_DOMAIN) == OWNER_WRITE_INTENT_DOMAIN_LEN) ? 1 : -1];
 
@@ -475,6 +476,15 @@ static void emit_auth_event(const char *error, const char *detail) {
   if (detail && *detail && w < sizeof(payload)) payload[w++] = ':';
   while (detail && *detail && w < sizeof(payload)) payload[w++] = (u8)*detail++;
   host_emit_event((const u8 *)"octra.sqlite.auth", 17, payload, (int)w);
+}
+
+static void emit_sql_error_event(const char *error, const char *detail) {
+  static u8 payload[256];
+  u32 w = 0;
+  while (error && *error && w < sizeof(payload)) payload[w++] = (u8)*error++;
+  if (detail && *detail && w < sizeof(payload)) payload[w++] = ':';
+  while (detail && *detail && w < sizeof(payload)) payload[w++] = (u8)*detail++;
+  host_emit_event((const u8 *)"octra.sqlite.error", 18, payload, (int)w);
 }
 
 static int auth_status_code(const char *error) {
@@ -1668,10 +1678,12 @@ static int run_sqlite_exec(const char *sql, int trace_sql) {
   }
   if (rc != SQLITE_OK) {
     sqlite3_exec(db, "rollback;", 0, 0, 0);
-    append_json_error("sqlite_exec_failed", err ? err : sqlite3_errmsg(db));
+    const char *detail = err ? err : sqlite3_errmsg(db);
+    emit_sql_error_event("sqlite_exec_failed", detail);
+    append_json_error("sqlite_exec_failed", detail);
     sqlite3_free(err);
     sqlite3_close(db);
-    return 1;
+    return OCTRA_SQLITE_APP_ERROR;
   }
 
   int changes = sqlite3_total_changes(db) - before;
@@ -2062,5 +2074,5 @@ int octra_update(int ptr, int len) {
     if (rc != 0) return rc;
   }
   rc = run_sqlite_exec(sql, trace_sql);
-  return respond_json_result(rc ? 1 : 0);
+  return respond_json_result(rc == OCTRA_SQLITE_APP_ERROR ? 0 : (rc ? 1 : 0));
 }

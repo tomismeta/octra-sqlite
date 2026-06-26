@@ -589,6 +589,14 @@ insert into person(first_name) values ('Ada');";
         );
         assert_eq!(failed_sql["ok"], false);
         assert_eq!(failed_sql["error"], "sqlite_exec_failed");
+        assert_eq!(contract.host.borrow().status, 0);
+        assert!(contract
+            .host
+            .borrow()
+            .events
+            .iter()
+            .any(|(topic, data)| topic == "octra.sqlite.error"
+                && data.contains("sqlite_exec_failed:no such table: missing_table")));
         let storage_after_failed_sql = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage_after_failed_sql["owner_sequence"], 2);
 

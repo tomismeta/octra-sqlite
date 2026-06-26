@@ -1,7 +1,7 @@
 {
   "name": "octra-sqlite",
   "release": "0.1.0",
-  "circle_program_version": "2",
+  "circle_program_version": "3",
   "network": "devnet",
   "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
   "public_example": "remilia",
@@ -10,8 +10,8 @@
   "initializer_tx": null,
   "wasm": {
     "path": "circle/wasm/octra_sqlite_circle.wasm",
-    "bytes": 607439,
-    "sha256": "81f68d01f4d28515f0031a9a3e52093e4e5cab926ea01df4f7f32a1b9b1d15f9"
+    "bytes": 607640,
+    "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
   },
   "sqlite": {
     "version": "3.53.2",
@@ -64,12 +64,12 @@
     "spec": "docs/spec/osw1.md"
   },
   "public_deployment": {
-    "personalized_sha256": "7ddfb8c00f3c86b9b03db81ba03c32bb8699126d08e2b0b6d93b0e73054170af",
+    "personalized_sha256": "179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15",
     "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
     "db_id": "d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d",
-    "owner_pubkey_offset": 601175,
-    "db_id_offset": 601207,
-    "program_update_tx": "23d05bc918e4acabcc3e33be49390da84fcb2f9fcaf31ae129a2f013ef3a50de",
+    "owner_pubkey_offset": 601376,
+    "db_id_offset": 601408,
+    "program_update_tx": "3fc593c0b2d23c3e740a9ebcfda8a72932fecc3333597f0ec66d326b825db4d5",
     "non_owner_denied_tx": null
   },
   "samples": [

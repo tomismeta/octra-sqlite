@@ -11,15 +11,15 @@ Published `v0.1.0` proof snapshot:
 ```text
 database: oct://devnet/oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
 circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
-program: version 2, bytes 607439, personalized hash 7ddfb8c00f3c86b9b03db81ba03c32bb8699126d08e2b0b6d93b0e73054170af
-bundled wasm hash: 81f68d01f4d28515f0031a9a3e52093e4e5cab926ea01df4f7f32a1b9b1d15f9
+program: version 3, bytes 607640, personalized hash 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15
+bundled wasm hash: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
 storage: 3 pages, 12288 bytes
 storage adapter: circle_key_value_page_vfs
 commit protocol: generation_manifest_v4
 auth owner pubkey: 2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb
 auth database id: d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d
 auth sequence: 96
-program update tx: 23d05bc918e4acabcc3e33be49390da84fcb2f9fcaf31ae129a2f013ef3a50de
+program update tx: 3fc593c0b2d23c3e740a9ebcfda8a72932fecc3333597f0ec66d326b825db4d5
 ```
 
 Verification commands:

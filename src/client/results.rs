@@ -154,15 +154,39 @@ pub struct AuthInfo {
 }
 
 pub(super) fn ensure_receipt_success(receipt: &Value) -> Result<()> {
+    let sql_error = event_values(receipt, "octra.sqlite.error");
     let failed = receipt.get("success").and_then(Value::as_bool) == Some(false)
-        || receipt.get("error").is_some_and(|error| !error.is_null());
+        || receipt.get("error").is_some_and(|error| !error.is_null())
+        || sql_error.is_some();
     if failed {
         return Err(ClientError::with_kind(
             ClientErrorKind::Receipt,
-            format!("SQL execution failed: {}", receipt_error_text(receipt)),
+            format!(
+                "SQL execution failed: {}",
+                sql_error
+                    .map(|error| format_sql_error_event(&error))
+                    .unwrap_or_else(|| receipt_error_text(receipt))
+            ),
         ));
     }
     Ok(())
+}
+
+fn event_values(receipt: &Value, topic: &str) -> Option<String> {
+    receipt
+        .get("events")?
+        .as_array()?
+        .iter()
+        .find(|event| event.get("event").and_then(Value::as_str) == Some(topic))
+        .and_then(|event| event.get("values"))
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .map(value_to_event_text)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
 }
 
 fn receipt_error_text(receipt: &Value) -> String {
@@ -175,6 +199,22 @@ fn receipt_error_text(receipt: &Value) -> String {
 
 fn value_to_compact_text(value: &Value) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+}
+
+fn value_to_event_text(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value_to_compact_text(value))
+}
+
+fn format_sql_error_event(error: &str) -> String {
+    match error.split_once(':') {
+        Some((code, detail)) if !detail.is_empty() => {
+            format!("database error ({code}): {detail}")
+        }
+        _ => error.to_string(),
+    }
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {
@@ -195,5 +235,22 @@ mod tests {
         }))
         .unwrap_err();
         assert_eq!(error.kind(), ClientErrorKind::Decode);
+    }
+
+    #[test]
+    fn receipt_success_with_sql_error_event_is_failed_execution() {
+        let receipt = json!({
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["sqlite_exec_failed:no such table: correction"]
+            }]
+        });
+        let error = ensure_receipt_success(&receipt).unwrap_err();
+        assert_eq!(error.kind(), ClientErrorKind::Receipt);
+        assert!(error
+            .to_string()
+            .contains("database error (sqlite_exec_failed): no such table: correction"));
     }
 }

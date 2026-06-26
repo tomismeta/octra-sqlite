@@ -35,8 +35,8 @@ The bundled `v0.1.0` Circle WASM artifact is:
 ```text
 compiler Homebrew clang version 22.1.8
 sqlite_sha256 d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21
-code_bytes 607439
-code_hash 81f68d01f4d28515f0031a9a3e52093e4e5cab926ea01df4f7f32a1b9b1d15f9
+code_bytes 607640
+code_hash f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
