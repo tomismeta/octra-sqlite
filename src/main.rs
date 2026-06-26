@@ -2,9 +2,13 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use clap::{Args, Parser, Subcommand};
 use ed25519_dalek::{Signer, SigningKey};
-mod osr1;
 mod output;
-use osr1::{decode_typed_result, TYPED_PREFIX};
+use octra_sqlite::protocol::{
+    osr1::{decode_typed_result, TYPED_PREFIX},
+    osw1,
+    target::{parse_database_target, DatabaseTarget as Target},
+    tx::{canonical_tx, Tx},
+};
 use output::{
     format_exec_result, format_json, format_result, print_exec_result, print_json, print_result,
     value_to_string, write_text, OutputMode,
@@ -26,7 +30,6 @@ const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
 const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.1.0.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
-const OSW1_DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
 const EXPECTED_WASM_SHA256: &str =
     "0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a";
 const EXPECTED_WASM_BYTES: usize = 607_496;
@@ -408,14 +411,6 @@ struct WalletFile {
     public_key: Option<String>,
     public_key_b64: Option<String>,
     rpc: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct Target {
-    raw: String,
-    network: String,
-    circle: String,
-    rpc: String,
 }
 
 #[derive(Clone)]
@@ -2120,45 +2115,7 @@ fn resolve_target(value: &str, config: &Config) -> Result<Target> {
 }
 
 fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
-    let default_rpc = config.rpc.clone().unwrap_or_default();
-    let default_network = config.network.clone();
-    if let Some(rest) = value.strip_prefix("oct://") {
-        let without_query = rest.split('?').next().unwrap_or(rest);
-        let pieces: Vec<&str> = without_query
-            .trim_matches('/')
-            .split('/')
-            .filter(|p| !p.is_empty())
-            .collect();
-        let (network, circle) = match pieces.as_slice() {
-            [circle] => (
-                default_network
-                    .clone()
-                    .ok_or_else(|| anyhow!("network is required for oct://<circle-id> URIs"))?,
-                (*circle).to_string(),
-            ),
-            [network, circle] => ((*network).to_string(), (*circle).to_string()),
-            _ => bail!("oct database URI must look like oct://NETWORK/<circle-id>"),
-        };
-        if !circle.starts_with("oct") {
-            bail!("circle id must start with oct");
-        }
-        return Ok(Target {
-            raw: value.to_string(),
-            network,
-            circle,
-            rpc: default_rpc,
-        });
-    }
-    if value.starts_with("oct") {
-        return Ok(Target {
-            raw: value.to_string(),
-            network: default_network
-                .ok_or_else(|| anyhow!("network is required for bare Circle ids"))?,
-            circle: value.to_string(),
-            rpc: default_rpc,
-        });
-    }
-    bail!("unknown database {value}; use a database name, Circle id, or oct://NETWORK/<circle-id>")
+    parse_database_target(value, config.network.as_deref(), config.rpc.as_deref())
 }
 
 fn config_path() -> Result<PathBuf> {
@@ -2380,7 +2337,7 @@ fn signed_exec_params(
     let db_id = hex_to_32("db_id", &info.db_id)?;
     let pubkey_hex = hex::encode(intent_public_key(session)?);
     let sequence_text = sequence.to_string();
-    let message = owner_write_intent_message(&db_id, sequence, method, sql)?;
+    let message = osw1::frame(&db_id, sequence, method, sql)?;
     let sig_hex = sign_bytes_hex(session, &message)?;
     Ok(vec![
         Value::String(sql.to_string()),
@@ -2388,30 +2345,6 @@ fn signed_exec_params(
         Value::String(sequence_text),
         Value::String(sig_hex),
     ])
-}
-
-fn owner_write_intent_message(
-    db_id: &[u8; 32],
-    sequence: u64,
-    method: &str,
-    sql: &str,
-) -> Result<Vec<u8>> {
-    if method.is_empty() || method.len() > 16 {
-        bail!("OSW1 method must be 1..16 bytes");
-    }
-    if sql.len() > u32::MAX as usize {
-        bail!("OSW1 SQL is too large");
-    }
-    let mut message =
-        Vec::with_capacity(OSW1_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len());
-    message.extend_from_slice(OSW1_DOMAIN);
-    message.extend_from_slice(db_id);
-    message.extend_from_slice(&sequence.to_be_bytes());
-    message.extend_from_slice(&(method.len() as u16).to_be_bytes());
-    message.extend_from_slice(method.as_bytes());
-    message.extend_from_slice(&(sql.len() as u32).to_be_bytes());
-    message.extend_from_slice(sql.as_bytes());
-    Ok(message)
 }
 
 fn trace_sql_event_enabled() -> bool {
@@ -2455,78 +2388,11 @@ fn submit_tx(session: &Session, mut tx: Tx, no_wait: bool) -> Result<Value> {
     Ok(Value::Object(out))
 }
 
-#[derive(Serialize)]
-struct Tx {
-    from: String,
-    to_: String,
-    amount: String,
-    nonce: i64,
-    ou: String,
-    timestamp: f64,
-    op_type: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    encrypted_data: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    message: String,
-    signature: String,
-    public_key: String,
-}
-
 fn now_timestamp() -> f64 {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     duration.as_secs() as f64 + f64::from(duration.subsec_millis()) / 1000.0
-}
-
-fn canonical_timestamp(value: f64) -> String {
-    let mut text = serde_json::to_string(&value).unwrap_or_else(|_| format!("{value}"));
-    if !text.contains('.') && !text.contains('e') && !text.contains('E') {
-        text.push_str(".0");
-    }
-    text
-}
-
-fn canonical_tx(tx: &Tx) -> String {
-    let mut s = String::new();
-    s.push_str("{\"from\":\"");
-    s.push_str(&escape_json_string(&tx.from));
-    s.push_str("\",\"to_\":\"");
-    s.push_str(&escape_json_string(&tx.to_));
-    s.push_str("\",\"amount\":\"");
-    s.push_str(&escape_json_string(&tx.amount));
-    s.push_str("\",\"nonce\":");
-    s.push_str(&tx.nonce.to_string());
-    s.push_str(",\"ou\":\"");
-    s.push_str(&escape_json_string(&tx.ou));
-    s.push_str("\",\"timestamp\":");
-    s.push_str(&canonical_timestamp(tx.timestamp));
-    s.push_str(",\"op_type\":\"");
-    s.push_str(&escape_json_string(&tx.op_type));
-    s.push('"');
-    if !tx.encrypted_data.is_empty() {
-        s.push_str(",\"encrypted_data\":\"");
-        s.push_str(&escape_json_string(&tx.encrypted_data));
-        s.push('"');
-    }
-    if !tx.message.is_empty() {
-        s.push_str(",\"message\":\"");
-        s.push_str(&escape_json_string(&tx.message));
-        s.push('"');
-    }
-    s.push('}');
-    s
-}
-
-fn escape_json_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\u{0008}', "\\b")
-        .replace('\u{000c}', "\\f")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
 }
 
 fn wait_for_receipt(session: &Session, tx_hash: &str) -> Result<Value> {
@@ -2952,18 +2818,6 @@ mod tests {
     }
 
     #[test]
-    fn owner_write_intent_message_matches_golden_vector() {
-        let digest = Sha256::digest(b"test-db-id");
-        let mut db_id = [0u8; 32];
-        db_id.copy_from_slice(&digest);
-        let message = owner_write_intent_message(&db_id, 42, "exec", "select 1;").unwrap();
-        assert_eq!(
-            hex::encode(message),
-            "6f637472612d73716c6974652e6f7377312e7631001fce55ad53f355909514a6a349e2afb2a22cf3bca124d239a9ace46a4108c482000000000000002a0004657865630000000973656c65637420313b"
-        );
-    }
-
-    #[test]
     fn deploy_requires_explicit_unconfigured_escape_hatch() {
         let cli = Cli::try_parse_from(["octra-sqlite", "deploy", "--allow-unconfigured"]).unwrap();
         match cli.command {
@@ -3106,82 +2960,5 @@ mod tests {
         assert_eq!(base58_encode(&[0, 0]), "11");
         assert_eq!(base58_encode(&[1]), "2");
         assert_eq!(base58_encode(b"hello world"), "StV1DL6CwTryKyV");
-    }
-
-    #[test]
-    fn deploy_circle_canonical_tx_omits_encrypted_data() {
-        let tx = Tx {
-            from: "octA".into(),
-            to_: "octB".into(),
-            amount: "0".into(),
-            nonce: 7,
-            ou: "200000".into(),
-            timestamp: 1.0,
-            op_type: "deploy_circle".into(),
-            encrypted_data: String::new(),
-            message: circle_deploy_payload_json(Some("QUJD")).unwrap(),
-            signature: String::new(),
-            public_key: String::new(),
-        };
-        let canonical = canonical_tx(&tx);
-        assert!(!canonical.contains("encrypted_data"));
-        assert!(canonical.contains("\"op_type\":\"deploy_circle\""));
-        assert!(canonical.contains("\\\"runtime\\\":\\\"wasm_v1\\\""));
-    }
-
-    #[test]
-    fn deploy_circle_wire_tx_omits_empty_optional_fields() {
-        let tx = Tx {
-            from: "octA".into(),
-            to_: "octB".into(),
-            amount: "0".into(),
-            nonce: 7,
-            ou: "200000".into(),
-            timestamp: 1.0,
-            op_type: "deploy_circle".into(),
-            encrypted_data: String::new(),
-            message: circle_deploy_payload_json(Some("QUJD")).unwrap(),
-            signature: "sig".into(),
-            public_key: "pub".into(),
-        };
-        let wire = serde_json::to_value(tx).unwrap();
-        assert!(wire.get("encrypted_data").is_none());
-        assert!(wire.get("message").is_some());
-    }
-
-    #[test]
-    fn canonical_tx_matches_field_order() {
-        let tx = Tx {
-            from: "octA".into(),
-            to_: "octB".into(),
-            amount: "0".into(),
-            nonce: 7,
-            ou: "1000".into(),
-            timestamp: 1.0,
-            op_type: "circle_call".into(),
-            encrypted_data: "exec".into(),
-            message: "[\"select 1;\"]".into(),
-            signature: String::new(),
-            public_key: String::new(),
-        };
-        assert_eq!(
-            canonical_tx(&tx),
-            "{\"from\":\"octA\",\"to_\":\"octB\",\"amount\":\"0\",\"nonce\":7,\"ou\":\"1000\",\"timestamp\":1.0,\"op_type\":\"circle_call\",\"encrypted_data\":\"exec\",\"message\":\"[\\\"select 1;\\\"]\"}"
-        );
-    }
-
-    #[test]
-    fn decodes_typed_result_cells() {
-        let vector: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/osr1/basic.json")).unwrap();
-        let encoded = vector["payload_b64"].as_str().unwrap();
-        let decoded = decode_typed_result(encoded).unwrap();
-        assert_eq!(decoded, vector["expected"]);
-        assert_eq!(decoded["columns"][1], "integer");
-        assert_eq!(decoded["rows"][0][0], Value::Null);
-        assert_eq!(decoded["rows"][0][1], -7);
-        assert_eq!(decoded["rows"][0][2], 1000.0);
-        assert_eq!(decoded["rows"][0][3], "Ada");
-        assert_eq!(decoded["rows"][0][4]["base64"], "QUI=");
     }
 }
