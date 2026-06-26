@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use super::error::{ClientError, ClientErrorKind, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
@@ -22,7 +22,9 @@ pub fn config_path() -> Result<PathBuf> {
     if let Ok(path) = env::var("OCTRA_SQLITE_CONFIG") {
         return Ok(PathBuf::from(path));
     }
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
+    let home = dirs::home_dir().ok_or_else(|| {
+        ClientError::with_kind(ClientErrorKind::Config, "could not locate home directory")
+    })?;
     Ok(home.join(".octra").join("sqlite.json"))
 }
 
@@ -32,9 +34,18 @@ pub fn load_config() -> Result<Config> {
     if !path.exists() {
         return Ok(defaults);
     }
-    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let user_config =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let text = fs::read_to_string(&path).map_err(|error| {
+        ClientError::with_kind(
+            ClientErrorKind::Io,
+            format!("reading {}: {error}", path.display()),
+        )
+    })?;
+    let user_config = serde_json::from_str(&text).map_err(|error| {
+        ClientError::with_kind(
+            ClientErrorKind::Config,
+            format!("parsing {}: {error}", path.display()),
+        )
+    })?;
     Ok(merge_config(defaults, user_config))
 }
 
@@ -48,7 +59,12 @@ pub fn write_config(config: &Config) -> Result<()> {
 }
 
 fn bundled_default_config() -> Result<Config> {
-    serde_json::from_str(DEFAULT_CONFIG_JSON).context("parsing bundled default config")
+    serde_json::from_str(DEFAULT_CONFIG_JSON).map_err(|error| {
+        ClientError::with_kind(
+            ClientErrorKind::Config,
+            format!("parsing bundled default config: {error}"),
+        )
+    })
 }
 
 fn merge_config(mut defaults: Config, user: Config) -> Config {

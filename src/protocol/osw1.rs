@@ -1,13 +1,13 @@
-use anyhow::{bail, Result};
+use super::error::{ProtocolError, Result};
 
 pub const DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
 
 pub fn frame(db_id: &[u8; 32], sequence: u64, method: &str, sql: &str) -> Result<Vec<u8>> {
     if method.is_empty() || method.len() > 16 {
-        bail!("OSW1 method must be 1..16 bytes");
+        return Err(ProtocolError::new("OSW1 method must be 1..16 bytes"));
     }
     if sql.len() > u32::MAX as usize {
-        bail!("OSW1 SQL is too large");
+        return Err(ProtocolError::new("OSW1 SQL is too large"));
     }
     let mut message = Vec::with_capacity(DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len());
     message.extend_from_slice(DOMAIN);

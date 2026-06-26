@@ -240,7 +240,7 @@ fn push_csv_row(out: &mut String, values: &[String]) {
         if idx > 0 {
             out.push(',');
         }
-        let needs_quote = value.contains(|ch| matches!(ch, ',' | '"' | '\n' | '\r'));
+        let needs_quote = value.contains([',', '"', '\n', '\r']);
         if needs_quote {
             out.push('"');
             out.push_str(&value.replace('"', "\"\""));

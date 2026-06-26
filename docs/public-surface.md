@@ -59,8 +59,12 @@ They should stay expressive enough that users do not need to inspect
 - `src/cli/output.rs`: CLI table/json/csv rendering.
 - `src/client/`: reusable Rust client.
 - `src/client/mod.rs`: intentional client exports. The intended path is
-  `OctraSqlite -> Database -> query/execute`; raw deploy/RPC helpers live under
-  `client::low_level`.
+  `OctraSqlite -> Database -> query/execute` with typed results and operation
+  safety metadata. Raw deploy/RPC helpers live under `client::low_level`.
+- `src/client/transport.rs`: the client transport seam. The default is HTTP
+  RPC; tests and future adapters can provide their own `Transport`.
+- `src/client/error.rs`: typed client error kinds for adapters that need stable
+  authorization, receipt, timeout, RPC, transport, and protocol categories.
 - `src/protocol/`: transport-independent wire formats and target parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `src/protocol/osw1.rs`: OSW1 owner write intent framing.

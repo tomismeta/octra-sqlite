@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use super::error::{ProtocolError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTarget {
@@ -24,15 +24,21 @@ pub fn parse_database_target(
         let (network, circle) = match pieces.as_slice() {
             [circle] => (
                 default_network
-                    .ok_or_else(|| anyhow!("network is required for oct://<circle-id> URIs"))?
+                    .ok_or_else(|| {
+                        ProtocolError::new("network is required for oct://<circle-id> URIs")
+                    })?
                     .to_string(),
                 (*circle).to_string(),
             ),
             [network, circle] => ((*network).to_string(), (*circle).to_string()),
-            _ => bail!("oct database URI must look like oct://NETWORK/<circle-id>"),
+            _ => {
+                return Err(ProtocolError::new(
+                    "oct database URI must look like oct://NETWORK/<circle-id>",
+                ));
+            }
         };
         if !circle.starts_with("oct") {
-            bail!("circle id must start with oct");
+            return Err(ProtocolError::new("circle id must start with oct"));
         }
         return Ok(DatabaseTarget {
             raw: value.to_string(),
@@ -45,13 +51,15 @@ pub fn parse_database_target(
         return Ok(DatabaseTarget {
             raw: value.to_string(),
             network: default_network
-                .ok_or_else(|| anyhow!("network is required for bare Circle ids"))?
+                .ok_or_else(|| ProtocolError::new("network is required for bare Circle ids"))?
                 .to_string(),
             circle: value.to_string(),
             rpc: default_rpc,
         });
     }
-    bail!("unknown database {value}; use a database name, Circle id, or oct://NETWORK/<circle-id>")
+    Err(ProtocolError::new(format!(
+        "unknown database {value}; use a database name, Circle id, or oct://NETWORK/<circle-id>"
+    )))
 }
 
 #[cfg(test)]

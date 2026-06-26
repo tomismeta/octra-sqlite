@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use super::error::{ClientError, ClientErrorKind, Result};
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -24,10 +24,18 @@ pub(super) struct WalletFile {
 pub(super) fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
     match path {
         Some(path) => {
-            let text = fs::read_to_string(path)
-                .with_context(|| format!("reading wallet {}", path.display()))?;
-            Ok(serde_json::from_str(&text)
-                .with_context(|| format!("parsing wallet {}", path.display()))?)
+            let text = fs::read_to_string(path).map_err(|error| {
+                ClientError::with_kind(
+                    ClientErrorKind::Io,
+                    format!("reading wallet {}: {error}", path.display()),
+                )
+            })?;
+            Ok(serde_json::from_str(&text).map_err(|error| {
+                ClientError::with_kind(
+                    ClientErrorKind::Wallet,
+                    format!("parsing wallet {}: {error}", path.display()),
+                )
+            })?)
         }
         None => Ok(WalletFile::default()),
     }

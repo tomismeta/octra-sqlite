@@ -1022,7 +1022,7 @@ fn check_release_manifest(report: &mut DoctorReport) {
 }
 
 fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash: &str) {
-    report.ok("rpc", &session.rpc());
+    report.ok("rpc", session.rpc());
     match program_info(session) {
         Ok(info) => {
             report.ok("circle", &session.target().circle);
@@ -1867,11 +1867,14 @@ fn resolve_wallet_path(args: &TargetArgs, config: &Config) -> Option<PathBuf> {
 }
 
 fn build_session(args: &TargetArgs) -> Result<Session> {
-    client_build_session(&session_options(args))
+    Ok(client_build_session(&session_options(args))?)
 }
 
 fn build_control_session(args: &TargetArgs, network: &str) -> Result<Session> {
-    client_build_control_session(&session_options(args), network)
+    Ok(client_build_control_session(
+        &session_options(args),
+        network,
+    )?)
 }
 
 fn sample_sql(name: &str) -> Result<String> {
@@ -1946,7 +1949,11 @@ fn resolve_target(value: &str, config: &Config) -> Result<Target> {
 }
 
 fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
-    parse_database_target(value, config.network.as_deref(), config.rpc.as_deref())
+    Ok(parse_database_target(
+        value,
+        config.network.as_deref(),
+        config.rpc.as_deref(),
+    )?)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

@@ -1,7 +1,7 @@
 use super::config::{load_config, Config};
+use super::error::{ClientError, ClientErrorKind, Result};
 use super::wallet::{discover_wallet_path, load_wallet};
 use crate::protocol::target::{parse_database_target, DatabaseTarget};
-use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signer, SigningKey};
 use std::env;
@@ -96,7 +96,12 @@ pub fn build_session(options: &SessionOptions) -> Result<Session> {
         .or_else(|| env::var("OCTRA_SQLITE_DATABASE").ok())
         .or_else(|| env::var("OCTRA_SQLITE_TARGET").ok())
         .or_else(|| env::var("OCTRA_CIRCLE_ID").ok())
-        .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
+        .ok_or_else(|| {
+            ClientError::with_kind(
+                ClientErrorKind::Config,
+                "no database supplied and no default database is configured",
+            )
+        })?;
     let target = resolve_target(&target_value, &config)?;
     build_session_for_target(options, &config, target)
 }
@@ -125,7 +130,11 @@ fn resolve_target(value: &str, config: &Config) -> Result<DatabaseTarget> {
     if let Some(database) = config.databases.get(value) {
         return resolve_target(database, config);
     }
-    parse_database_target(value, config.network.as_deref(), config.rpc.as_deref())
+    Ok(parse_database_target(
+        value,
+        config.network.as_deref(),
+        config.rpc.as_deref(),
+    )?)
 }
 
 fn build_session_for_target(
@@ -150,7 +159,10 @@ fn build_session_for_target(
         config.rpc.clone(),
     ])
     .ok_or_else(|| {
-        anyhow!("RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL")
+        ClientError::with_kind(
+            ClientErrorKind::Config,
+            "RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL",
+        )
     })?;
     let caller = first_string(&[
         options.caller.clone(),
@@ -158,7 +170,12 @@ fn build_session_for_target(
         wallet.address.clone(),
         env::var("OCTRA_CALLER").ok(),
     ])
-    .ok_or_else(|| anyhow!("caller wallet address is required; configure a wallet, pass --caller, or set OCTRA_CALLER"))?;
+    .ok_or_else(|| {
+        ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "caller wallet address is required; configure a wallet, pass --caller, or set OCTRA_CALLER",
+        )
+    })?;
     let private_key = first_string(&[
         options.private_key.clone(),
         wallet.priv_field.clone(),
@@ -168,7 +185,10 @@ fn build_session_for_target(
         env::var("OCTRA_PRIVATE_KEY_B64").ok(),
     ])
     .ok_or_else(|| {
-        anyhow!("wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64")
+        ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64",
+        )
     })?;
     let signing_key = signing_key_from_text(&private_key)?;
     let derived_pub = general_purpose::STANDARD.encode(signing_key.verifying_key().to_bytes());
@@ -203,9 +223,14 @@ fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let raw = general_purpose::STANDARD
         .decode(cleaned)
         .or_else(|_| hex::decode(cleaned))
-        .map_err(|_| anyhow!("private key must be base64 or hex"))?;
+        .map_err(|_| {
+            ClientError::with_kind(ClientErrorKind::Wallet, "private key must be base64 or hex")
+        })?;
     if raw.len() < 32 {
-        bail!("private key must decode to at least 32 bytes");
+        return Err(ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "private key must decode to at least 32 bytes",
+        ));
     }
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&raw[..32]);

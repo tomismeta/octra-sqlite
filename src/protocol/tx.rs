@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Clone, PartialEq, Serialize)]
 pub struct Tx {
     pub from: String,
     pub to_: String,
