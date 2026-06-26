@@ -13,7 +13,7 @@ jobs:
       EXPECTED_WASM_SHA256: 0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a
       EXPECTED_WASM_BYTES: "607496"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal
