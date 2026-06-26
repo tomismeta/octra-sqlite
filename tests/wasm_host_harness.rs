@@ -803,6 +803,13 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         contract.call_update("exec", &["create table people(first_name text not null);"])?;
         let now = contract.call_query("query_typed", &["select datetime('now') as now;"])?;
         assert!(now.starts_with("OSR1:"));
+        let missing =
+            json_response(&contract.call_query("query_typed", &["select * from companion;"])?);
+        assert_eq!(missing["ok"], false);
+        assert_eq!(missing["error"], "sqlite_prepare_failed");
+        assert!(missing["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("no such table: companion")));
         let denied = json_response(
             &contract.call_query("query", &["insert into people(first_name) values ('Ada');"])?,
         );

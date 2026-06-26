@@ -1997,19 +1997,19 @@ int octra_query(int ptr, int len) {
   reset_runtime();
   if (streq_bytes(method, method_len, "storage_info")) {
     rc = run_storage_info();
-    return respond_json_result(rc ? 1 : 0);
+    return respond_json_result(0);
   }
   if (streq_bytes(method, method_len, "schema")) {
     rc = run_schema();
-    return respond_json_result(rc ? 1 : 0);
+    return respond_json_result(0);
   }
   if (streq_bytes(method, method_len, "schema_typed")) {
     rc = run_schema_typed();
-    return rc ? respond_json_result(1) : respond_typed_result(0);
+    return rc ? respond_json_result(0) : respond_typed_result(0);
   }
   if (streq_bytes(method, method_len, "auth_info")) {
     rc = run_auth_info();
-    return respond_json_result(rc ? 1 : 0);
+    return respond_json_result(0);
   }
   int typed = 0;
   if (streq_bytes(method, method_len, "query_typed")) {
@@ -2022,7 +2022,7 @@ int octra_query(int ptr, int len) {
   rc = parse_one_string_param(params, param_count, len, ptr, sql);
   if (rc != 0) return rc;
   rc = typed ? run_sqlite_query_typed(sql) : run_sqlite_query(sql);
-  return typed ? (rc ? respond_json_result(1) : respond_typed_result(0)) : respond_json_result(rc ? 1 : 0);
+  return typed ? (rc ? respond_json_result(0) : respond_typed_result(0)) : respond_json_result(0);
 }
 
 __attribute__((export_name("octra_update")))

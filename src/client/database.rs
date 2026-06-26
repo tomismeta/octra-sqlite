@@ -276,6 +276,22 @@ mod tests {
         }
     }
 
+    struct ContractErrorTransport;
+
+    impl Transport for ContractErrorTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "octra_circleViewAuth" => Ok(Value::String(
+                    r#"{"ok":false,"error":"sqlite_prepare_failed","detail":"no such table: companion"}"#.to_string(),
+                )),
+                _ => Err(ClientError::with_kind(
+                    ClientErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
     fn test_options() -> SessionOptions {
         SessionOptions {
             target: Some("oct://devnet/octABC".to_string()),
@@ -304,6 +320,15 @@ mod tests {
         assert_eq!(result.columns[0], "nil");
         assert_eq!(result.row_count, 1);
         assert_eq!(calls.lock().unwrap().as_slice(), ["octra_circleViewAuth"]);
+    }
+
+    #[test]
+    fn database_query_surfaces_contract_sql_errors() {
+        let db = Database::open_with_transport(test_options(), ContractErrorTransport).unwrap();
+        let error = db.query("select * from companion;").unwrap_err();
+        assert_eq!(error.kind(), ClientErrorKind::Rpc);
+        assert!(error.to_string().contains("sqlite_prepare_failed"));
+        assert!(error.to_string().contains("no such table: companion"));
     }
 
     #[test]

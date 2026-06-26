@@ -37,8 +37,8 @@ const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.1.0.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a";
-const EXPECTED_WASM_BYTES: usize = 607_496;
+    "81f68d01f4d28515f0031a9a3e52093e4e5cab926ea01df4f7f32a1b9b1d15f9";
+const EXPECTED_WASM_BYTES: usize = 607_439;
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]

@@ -196,7 +196,25 @@ fn decode_method_result(text: &str) -> Result<Value> {
     if let Some(encoded) = text.strip_prefix(TYPED_PREFIX) {
         return Ok(decode_typed_result(encoded)?);
     }
-    Ok(serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string())))
+    let value = serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()));
+    if let Some(error) = contract_error_text(&value) {
+        return Err(ClientError::with_kind(ClientErrorKind::Rpc, error));
+    }
+    Ok(value)
+}
+
+fn contract_error_text(value: &Value) -> Option<String> {
+    let object = value.as_object()?;
+    let failed = object.get("ok").and_then(Value::as_bool) == Some(false);
+    let code = object.get("error").and_then(Value::as_str);
+    if !failed && code.is_none() {
+        return None;
+    }
+    let code = code.unwrap_or("contract_error");
+    match object.get("detail").and_then(Value::as_str) {
+        Some(detail) if !detail.is_empty() => Some(format!("database error ({code}): {detail}")),
+        _ => Some(format!("database error ({code})")),
+    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
