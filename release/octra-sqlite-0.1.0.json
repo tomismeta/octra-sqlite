@@ -59,9 +59,9 @@
     "spec": "docs/spec/osr1.md"
   },
   "write_intents": {
-    "codec": "owner_write_intent",
+    "codec": "OSW1",
     "wire_domain": "octra-sqlite.osw1.v1\\0",
-    "spec": "docs/spec/owner-write-intent.md"
+    "spec": "docs/spec/osw1.md"
   },
   "public_deployment": {
     "personalized_sha256": "f2adefb06cd7134fefe056ea74132a195e430550c17e3f4b0091bf40abf47213",

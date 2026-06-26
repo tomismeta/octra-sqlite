@@ -49,7 +49,7 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define STORAGE_ID "circle_key_value_page_vfs"
 #define OWNER_PUBKEY_PLACEHOLDER_TEXT "OSQL_OWNER_PUBKEY_V1_PLACEHOLDER"
 #define DB_ID_PLACEHOLDER_TEXT "OSQL_DATABASE_ID_V1_PLACEHOLDER0"
-/* v0.1 compatibility domain for project-local owner write intent signatures. */
+/* OSW1 project-local owner write intent signature domain. */
 #define OWNER_WRITE_INTENT_DOMAIN "octra-sqlite.osw1.v1"
 #define OWNER_WRITE_INTENT_DOMAIN_LEN 21u /* Includes the trailing NUL domain separator. */
 #define MAX_METHOD_BYTES 16u

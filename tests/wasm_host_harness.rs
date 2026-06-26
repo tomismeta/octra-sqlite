@@ -13,7 +13,7 @@ mod wasm_behavior {
 
     const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
     const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
-    const OWNER_WRITE_INTENT_DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
+    const OSW1_DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
 
     #[derive(Default)]
     struct Host {
@@ -371,10 +371,9 @@ mod wasm_behavior {
         method: &str,
         sql: &str,
     ) -> Vec<u8> {
-        let mut msg = Vec::with_capacity(
-            OWNER_WRITE_INTENT_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len(),
-        );
-        msg.extend_from_slice(OWNER_WRITE_INTENT_DOMAIN);
+        let mut msg =
+            Vec::with_capacity(OSW1_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len());
+        msg.extend_from_slice(OSW1_DOMAIN);
         msg.extend_from_slice(db_id);
         msg.extend_from_slice(&sequence.to_be_bytes());
         msg.extend_from_slice(&(method.len() as u16).to_be_bytes());

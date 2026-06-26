@@ -26,7 +26,7 @@ const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
 const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.1.0.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
-const OWNER_WRITE_INTENT_DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
+const OSW1_DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
 const EXPECTED_WASM_SHA256: &str =
     "0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a";
 const EXPECTED_WASM_BYTES: usize = 607_496;
@@ -1149,7 +1149,7 @@ fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash
     match auth_info(session) {
         Ok(auth) => {
             if auth.configured {
-                report.ok("auth", "owner write intent");
+                report.ok("auth", "OSW1 owner write intent");
                 if let Some(owner_pubkey) = auth.owner_pubkey.as_deref() {
                     report.ok("auth owner pubkey", owner_pubkey);
                     match intent_public_key(session) {
@@ -1317,7 +1317,7 @@ fn patch_wasm_auth_bytes(
 
 fn patch_wasm_auth_from_info(wasm: &mut [u8], auth: &AuthInfo) -> Result<AuthPatch> {
     if !auth.configured {
-        bail!("auth_info reports unconfigured owner write intent auth");
+        bail!("auth_info reports unconfigured OSW1 auth");
     }
     let owner_pubkey = hex_to_32(
         "owner_pubkey",
@@ -2397,15 +2397,14 @@ fn owner_write_intent_message(
     sql: &str,
 ) -> Result<Vec<u8>> {
     if method.is_empty() || method.len() > 16 {
-        bail!("owner write intent method must be 1..16 bytes");
+        bail!("OSW1 method must be 1..16 bytes");
     }
     if sql.len() > u32::MAX as usize {
-        bail!("owner write intent SQL is too large");
+        bail!("OSW1 SQL is too large");
     }
-    let mut message = Vec::with_capacity(
-        OWNER_WRITE_INTENT_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len(),
-    );
-    message.extend_from_slice(OWNER_WRITE_INTENT_DOMAIN);
+    let mut message =
+        Vec::with_capacity(OSW1_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len());
+    message.extend_from_slice(OSW1_DOMAIN);
     message.extend_from_slice(db_id);
     message.extend_from_slice(&sequence.to_be_bytes());
     message.extend_from_slice(&(method.len() as u16).to_be_bytes());
@@ -2642,7 +2641,7 @@ fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> 
     if let Ok(auth) = auth_info(session) {
         if auth.configured {
             println!(
-                "auth: owner_write_intent owner={}, db_id={}, sequence={}",
+                "auth: OSW1 owner={}, db_id={}, sequence={}",
                 auth.owner_pubkey.as_deref().unwrap_or("?"),
                 auth.db_id,
                 auth.owner_sequence
@@ -2704,11 +2703,11 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
     let auth_patch = match auth_info(&session) {
         Ok(auth) if auth.configured => Some(patch_wasm_auth_from_info(&mut wasm, &auth).with_context(|| {
-            "preserving existing owner write intent personalization; pass --allow-unconfigured to deploy raw WASM"
+            "preserving existing OSW1 personalization; pass --allow-unconfigured to deploy raw WASM"
         })?),
         Ok(_) if args.allow_unconfigured => None,
         Ok(_) => bail!(
-            "database Circle is not owner-write-intent personalized; refusing to deploy raw unsigned-write WASM without --allow-unconfigured"
+            "database Circle is not OSW1-personalized; refusing to deploy raw unsigned-write WASM without --allow-unconfigured"
         ),
         Err(error) if args.allow_unconfigured => {
             eprintln!("warning: auth_info unavailable; deploying unconfigured WASM because --allow-unconfigured was passed: {error:#}");

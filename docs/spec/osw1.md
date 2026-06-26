@@ -1,12 +1,12 @@
-# Owner Write Intent
+# OSW1 Owner Write Intent
 
-Owner write intent is the project-local signed frame used by `octra-sqlite`
-before a state-changing SQL statement is sent to the Circle `exec` method.
+`OSW1` is the versioned owner write intent frame used by `octra-sqlite` before a
+state-changing SQL statement is sent to the Circle `exec` method.
 
 It is not a SQLite standard, an Octra standard, or a general-purpose protocol.
 It is deliberately smaller than SQL policy. Octra authenticates the wallet that
-sends the Circle call. The owner write intent authenticates the exact SQLite
-write inside that call.
+sends the Circle call. OSW1 authenticates the exact SQLite write inside that
+call.
 
 ## Frame
 
@@ -22,11 +22,8 @@ sql_len        4 bytes   length of SQL bytes
 sql            M bytes   UTF-8 SQL text
 ```
 
-The `osw1` text in the domain is a v0.1 compatibility label from the first
-implementation. It is not intended to name a public standard.
-
-For the same compatibility reason, low-level Circle JSON from the v0.1 WASM may
-still include `"auth":"osw1"`. Clients should present that as owner write intent.
+Low-level Circle JSON can include `"auth":"osw1"`. Clients should present that
+as OSW1 owner write intent authorization.
 
 The Ed25519 signature is over the exact frame bytes. The contract receives four
 string parameters:
@@ -42,18 +39,18 @@ The owner public key must match the public key patched into the Circle WASM. The
 
 ## Security Notes
 
-`octra-sqlite` signs owner write intents with the configured Octra wallet key.
+`octra-sqlite` signs OSW1 frames with the configured Octra wallet key.
 That key is also used for Octra transactions, so the frame relies on the
 versioned domain prefix above to keep SQLite write intents distinct from every
 other signature made by the wallet.
 
 Until Octra exposes native method access control or a trusted caller identity to
-the WASM runtime, an owner write intent signature is a caller-independent write
+the WASM runtime, an OSW1 signature is a caller-independent write
 capability for one database id, one method, one sequence, and one SQL string. Do
 not log, publish, or reuse owner write intent parameters before they are
 submitted.
 
-Owner write intent authorization state is keyed by owner public key and
+OSW1 authorization state is keyed by owner public key and
 sequence, not by raw signature bytes. Do not use Ed25519 signature bytes for
 deduplication, idempotency, or authorization decisions.
 

@@ -40,8 +40,9 @@ RPC path. The Octra webcli helper is not required for the maintained SQLite
 workflow.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
-For owner-personalized databases, the CLI also includes an owner write intent
-that binds the Circle method, database id, sequence, and SQL before SQLite runs.
+For owner-personalized databases, the CLI also includes an OSW1 owner write
+intent that binds the Circle method, database id, sequence, and SQL before
+SQLite runs.
 Set
 `OCTRA_SQLITE_TRACE_SQL_EVENT=1` to use `exec_trace` and emit SQL text in
 addition to the default SQL hash event.
@@ -59,7 +60,7 @@ They should stay expressive enough that users do not need to inspect
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.
-- `docs/spec/owner-write-intent.md`: owner write intent frame.
+- `docs/spec/osw1.md`: OSW1 owner write intent frame.
 - `release/octra-sqlite-0.1.0.json`: release manifest for the bundled Circle
   WASM and published network-specific deployment.
 - `examples/`: concrete runnable walkthroughs kept out of the README.

@@ -64,7 +64,7 @@ Owner-only write policy:
 
 ```text
 owner wallet: octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB
-auth: owner write intent
+auth: OSW1 owner write intent
 owner wallet can write: yes
 other authenticated wallets can read through the signed view path
 other authenticated wallets cannot write unless they hold the owner key
