@@ -11,8 +11,6 @@
 Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls with your
 wallet, and gives you SQLite-shaped commands over live Circle state.
 
-No Docker. No Python. No local database file pretending to be proof.
-
 ## Quickstart
 
 You need Rust/Cargo and a funded Octra wallet for deploys and writes.
@@ -87,13 +85,37 @@ octra-sqlite DB_NAME ".tables"
 octra-sqlite DB_NAME ".schema"
 ```
 
+## SQLite Shell
+
+Open a database without a SQL argument to enter the interactive shell:
+
+```sh
+octra-sqlite remilia
+```
+
+The prompt is intentionally familiar:
+
+```sql
+sqlite> select name, launched_month from collection limit 3;
+sqlite> insert into collection(name,opensea_slug,chain,relationship,launched_month,date_precision)
+   ...> values ('Example','example','Ethereum','Remilia adjacent','2026-06-01','month');
+sqlite> .tables
+sqlite> .quit
+```
+
+`sqlite>` means the shell is ready for a new SQL statement or dot command.
+`...>` means the shell is waiting for the rest of a multiline SQL statement.
+SQL runs when the statement ends with `;`. Dot commands run immediately and must
+start at a fresh `sqlite>` prompt.
+
 Inside the shell, SQL statements are SQLite. Dot commands are client commands:
 
 | Dot command | Origin | Purpose |
 | --- | --- | --- |
+| `.help` | SQLite CLI | Show shell commands. |
 | `.tables` | SQLite CLI | List tables. |
 | `.schema` | SQLite CLI | Show schema. |
-| `.mode` | SQLite CLI | Set output mode. |
+| `.mode` | SQLite CLI | Set output mode: `box`, `table`, `list`, `json`, `line`, or `csv`. |
 | `.headers` | SQLite CLI | Show or hide column headers. |
 | `.timer` | SQLite CLI | Show query timing. |
 | `.output` | SQLite CLI | Redirect command output. |
@@ -166,8 +188,7 @@ The consensus-critical surface is intentionally small:
 - Rust stable with Cargo.
 - A funded Octra wallet for deploys and writes on the configured network.
 
-Normal users do not need Docker, Python, WABT, WASI, or a C compiler. The
-audited Circle WASM is bundled at `circle/wasm/octra_sqlite_circle.wasm`.
+The audited Circle WASM is bundled at `circle/wasm/octra_sqlite_circle.wasm`.
 The Circle program source lives at `circle/source/octra_sqlite_circle.c`.
 
 ## Alpha Feedback
