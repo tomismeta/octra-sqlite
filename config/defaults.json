@@ -1,0 +1,8 @@
+{
+  "rpc": "http://165.227.225.79:8080/rpc",
+  "network": "devnet",
+  "default_database": "remilia",
+  "databases": {
+    "remilia": "oct://devnet/oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA"
+  }
+}

@@ -9,6 +9,9 @@ octra-sqlite
 Keep routine workflows behind the Rust CLI first. Lower-level scripts are only
 for building and auditing the bundled WASM.
 
+Runtime defaults live in `config/defaults.json`. The bundled defaults preload
+devnet RPC and the public Remilia example database; user config overlays them.
+
 The reference first-run path is:
 
 ```sh
@@ -52,6 +55,7 @@ They should stay expressive enough that users do not need to inspect
 - `src/main.rs`: Rust CLI orchestration.
 - `src/output.rs`: CLI table/json/csv rendering.
 - `src/osr1.rs`: OSR1 typed-result decoding.
+- `config/defaults.json`: preloaded devnet RPC and public example database.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.

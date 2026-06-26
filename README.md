@@ -11,6 +11,10 @@
 Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls with your
 wallet, and gives you SQLite-shaped commands over live Circle state.
 
+The CLI ships with a small default config at
+[`config/defaults.json`](./config/defaults.json): devnet RPC plus the public
+Remilia example database. Your local `~/.octra/sqlite.json` overlays it.
+
 ## Quickstart
 
 You need Rust/Cargo and a funded Octra wallet for deploys and writes.
@@ -42,6 +46,12 @@ For non-interactive setup, use `init` instead of the wizard:
 
 ```sh
 octra-sqlite init --wallet ./wallet.json
+```
+
+Advanced users can override the preloaded connection settings:
+
+```sh
+octra-sqlite init --wallet ./wallet.json --rpc http://YOUR_RPC/rpc --network devnet
 ```
 
 More CRUD examples live in [`examples/`](./examples/).

@@ -20,10 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const DEFAULT_RPC: &str = "http://165.227.225.79:8080/rpc";
-const DEFAULT_CIRCLE: &str = "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA";
-const DEFAULT_CALLER: &str = "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB";
-const DEFAULT_NETWORK: &str = "devnet";
+const DEFAULT_CONFIG_JSON: &str = include_str!("../config/defaults.json");
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
 const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.1.0.json";
@@ -171,11 +168,11 @@ struct InitArgs {
     #[arg(long)]
     wallet: Option<PathBuf>,
     /// Octra RPC URL.
-    #[arg(long, default_value = DEFAULT_RPC)]
-    rpc: String,
+    #[arg(long)]
+    rpc: Option<String>,
     /// Octra network name.
-    #[arg(long, default_value = DEFAULT_NETWORK)]
-    network: String,
+    #[arg(long)]
+    network: Option<String>,
     /// Default database name, Circle id, or oct:// database URI.
     #[arg(long, alias = "target")]
     database: Option<String>,
@@ -235,11 +232,11 @@ struct NewArgs {
     #[arg(long, default_value = "200000")]
     create_ou: String,
     /// Octra RPC URL.
-    #[arg(long, default_value = DEFAULT_RPC)]
-    rpc: String,
+    #[arg(long)]
+    rpc: Option<String>,
     /// Octra network name.
-    #[arg(long, default_value = DEFAULT_NETWORK)]
-    network: String,
+    #[arg(long)]
+    network: Option<String>,
     /// Do not wait for Circle creation confirmation or initializer SQL receipts.
     #[arg(long)]
     no_wait: bool,
@@ -332,8 +329,8 @@ struct DeployArgs {
     #[arg(long, default_value = "200000")]
     ou: String,
     /// Octra RPC URL.
-    #[arg(long, default_value = DEFAULT_RPC)]
-    rpc: String,
+    #[arg(long)]
+    rpc: Option<String>,
     /// Do not wait for update confirmation.
     #[arg(long)]
     no_wait: bool,
@@ -572,8 +569,12 @@ fn cmd_init(args: InitArgs) -> Result<()> {
         .wallet
         .map(|p| p.to_string_lossy().to_string())
         .or(config.wallet);
-    config.rpc = Some(args.rpc);
-    config.network = Some(args.network);
+    if let Some(rpc) = args.rpc {
+        config.rpc = Some(rpc);
+    }
+    if let Some(network) = args.network {
+        config.network = Some(network);
+    }
     if let Some(database) = args.database {
         config.default_database = Some(database);
     }
@@ -617,8 +618,9 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     let rpc_default = args
         .rpc
         .clone()
+        .or_else(|| env::var("OCTRA_RPC_URL").ok())
         .or_else(|| config.rpc.clone())
-        .unwrap_or_else(|| DEFAULT_RPC.to_string());
+        .ok_or_else(|| anyhow!("RPC is required; pass --rpc or set OCTRA_RPC_URL"))?;
     let rpc = if interactive {
         prompt_default("RPC", &rpc_default)?
     } else {
@@ -629,7 +631,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         .network
         .clone()
         .or_else(|| config.network.clone())
-        .unwrap_or_else(|| DEFAULT_NETWORK.to_string());
+        .ok_or_else(|| anyhow!("network is required; pass --network"))?;
     let network = if interactive {
         prompt_default("Network", &network_default)?
     } else {
@@ -688,16 +690,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
 fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
     sample_sql(&args.sample)?;
     let config = load_config().unwrap_or_default();
-    let rpc = args
-        .rpc
-        .clone()
-        .or_else(|| config.rpc.clone())
-        .unwrap_or_else(|| DEFAULT_RPC.to_string());
-    let network = args
-        .network
-        .clone()
-        .or_else(|| config.network.clone())
-        .unwrap_or_else(|| DEFAULT_NETWORK.to_string());
+    let rpc = args.rpc.clone().or_else(|| config.rpc.clone());
+    let network = args.network.clone().or_else(|| config.network.clone());
     let name = args.name.clone();
     cmd_new(NewArgs {
         name: args.name,
@@ -726,18 +720,24 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
 }
 
 fn cmd_new(args: NewArgs) -> Result<()> {
+    let config = load_config().unwrap_or_default();
+    let network = args
+        .network
+        .clone()
+        .or_else(|| config.network.clone())
+        .ok_or_else(|| anyhow!("network is required; run octra-sqlite setup or pass --network"))?;
     let control_args = TargetArgs {
-        target: Some(format!("oct://{}/{}", args.network, DEFAULT_CIRCLE)),
+        target: None,
         wallet: args.wallet.clone(),
-        rpc: Some(args.rpc.clone()),
+        rpc: args.rpc.clone(),
         caller: args.caller.clone(),
         private_key_b64: args.private_key_b64.clone(),
         public_key_b64: args.public_key_b64.clone(),
     };
-    let control_session = build_session(&control_args)?;
+    let control_session = build_control_session(&control_args, &network)?;
 
-    let created = create_circle(&control_session, &args)?;
-    let target_uri = format!("oct://{}/{}", args.network, created.circle);
+    let created = create_circle(&control_session, &args, &network)?;
+    let target_uri = format!("oct://{}/{}", network, created.circle);
     if args.no_name {
         println!("database: (not saved)");
     } else {
@@ -787,7 +787,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         let session_args = TargetArgs {
             target: Some(target_uri.clone()),
             wallet: args.wallet.clone(),
-            rpc: Some(args.rpc.clone()),
+            rpc: Some(control_session.rpc.clone()),
             caller: args.caller.clone(),
             private_key_b64: args.private_key_b64.clone(),
             public_key_b64: args.public_key_b64.clone(),
@@ -846,7 +846,7 @@ fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
             } else {
                 report.warn(
                     "default database",
-                    "not set; commands without a database use the bundled proof database",
+                    "not set; run octra-sqlite database use DB_NAME or pass a database argument",
                 );
             }
 
@@ -928,9 +928,12 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     );
     println!(
         "network: {}",
-        config.network.as_deref().unwrap_or(DEFAULT_NETWORK)
+        config.network.as_deref().unwrap_or("(not configured)")
     );
-    println!("rpc: {}", config.rpc.as_deref().unwrap_or(DEFAULT_RPC));
+    println!(
+        "rpc: {}",
+        config.rpc.as_deref().unwrap_or("(not configured)")
+    );
     println!(
         "default database: {}",
         config
@@ -1234,7 +1237,7 @@ struct AuthInfo {
     owner_sequence: Option<u64>,
 }
 
-fn create_circle(session: &Session, args: &NewArgs) -> Result<CreatedCircle> {
+fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<CreatedCircle> {
     let wasm_path = resolve_wasm_for_new(args)?;
     let mut wasm =
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
@@ -1271,8 +1274,8 @@ fn create_circle(session: &Session, args: &NewArgs) -> Result<CreatedCircle> {
     };
     let mut circle_session = session.clone();
     circle_session.target = Target {
-        raw: format!("oct://{}/{}", args.network, circle),
-        network: args.network.clone(),
+        raw: format!("oct://{}/{}", network, circle),
+        network: network.to_string(),
         circle: circle.clone(),
         rpc: session.rpc.clone(),
     };
@@ -1614,7 +1617,14 @@ fn print_database_info(config: &Config, database: Option<&str>) -> Result<()> {
     println!("uri: {}", target.raw);
     println!("network: {}", target.network);
     println!("circle: {}", target.circle);
-    println!("rpc: {}", target.rpc);
+    println!(
+        "rpc: {}",
+        if target.rpc.is_empty() {
+            "(not configured)"
+        } else {
+            target.rpc.as_str()
+        }
+    );
     println!("open: octra-sqlite {}", requested);
     println!("status: octra-sqlite status {}", requested);
     Ok(())
@@ -1923,34 +1933,53 @@ fn build_session(args: &TargetArgs) -> Result<Session> {
         .or_else(|| env::var("OCTRA_SQLITE_DATABASE").ok())
         .or_else(|| env::var("OCTRA_SQLITE_TARGET").ok())
         .or_else(|| env::var("OCTRA_CIRCLE_ID").ok())
-        .unwrap_or_else(|| DEFAULT_CIRCLE.to_string());
-    let mut target = resolve_target(&target_value, &config)?;
-    if let Some(rpc) = args
-        .rpc
-        .clone()
-        .or_else(|| env::var("OCTRA_RPC_URL").ok())
-        .or_else(|| config.rpc.clone())
-    {
+        .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
+    let target = resolve_target(&target_value, &config)?;
+    build_session_for_target(args, &config, target)
+}
+
+fn build_control_session(args: &TargetArgs, network: &str) -> Result<Session> {
+    let config = load_config().unwrap_or_default();
+    let target = Target {
+        raw: format!("oct://{network}"),
+        network: network.to_string(),
+        circle: String::new(),
+        rpc: config.rpc.clone().unwrap_or_default(),
+    };
+    build_session_for_target(args, &config, target)
+}
+
+fn build_session_for_target(
+    args: &TargetArgs,
+    config: &Config,
+    mut target: Target,
+) -> Result<Session> {
+    if let Some(rpc) = first_string(&[
+        args.rpc.clone(),
+        env::var("OCTRA_RPC_URL").ok(),
+        config.rpc.clone(),
+    ]) {
         target.rpc = rpc;
     }
-    let wallet_path = resolve_wallet_path(args, &config);
+    let wallet_path = resolve_wallet_path(args, config);
     let wallet = load_wallet(wallet_path.as_deref())?;
     let rpc = first_string(&[
         args.rpc.clone(),
+        env::var("OCTRA_RPC_URL").ok(),
         wallet.rpc.clone(),
         Some(target.rpc.clone()),
         config.rpc.clone(),
-        Some(DEFAULT_RPC.to_string()),
     ])
-    .unwrap();
+    .ok_or_else(|| {
+        anyhow!("RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL")
+    })?;
     let caller = first_string(&[
         args.caller.clone(),
         wallet.addr.clone(),
         wallet.address.clone(),
         env::var("OCTRA_CALLER").ok(),
-        Some(DEFAULT_CALLER.to_string()),
     ])
-    .ok_or_else(|| anyhow!("caller is required"))?;
+    .ok_or_else(|| anyhow!("caller wallet address is required; configure a wallet, pass --caller, or set OCTRA_CALLER"))?;
     let private_key_text = first_string(&[
         args.private_key_b64.clone(),
         wallet.priv_field.clone(),
@@ -2091,14 +2120,8 @@ fn resolve_target(value: &str, config: &Config) -> Result<Target> {
 }
 
 fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
-    let default_rpc = config
-        .rpc
-        .clone()
-        .unwrap_or_else(|| DEFAULT_RPC.to_string());
-    let default_network = config
-        .network
-        .clone()
-        .unwrap_or_else(|| DEFAULT_NETWORK.to_string());
+    let default_rpc = config.rpc.clone().unwrap_or_default();
+    let default_network = config.network.clone();
     if let Some(rest) = value.strip_prefix("oct://") {
         let without_query = rest.split('?').next().unwrap_or(rest);
         let pieces: Vec<&str> = without_query
@@ -2107,7 +2130,12 @@ fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
             .filter(|p| !p.is_empty())
             .collect();
         let (network, circle) = match pieces.as_slice() {
-            [circle] => (default_network, (*circle).to_string()),
+            [circle] => (
+                default_network
+                    .clone()
+                    .ok_or_else(|| anyhow!("network is required for oct://<circle-id> URIs"))?,
+                (*circle).to_string(),
+            ),
             [network, circle] => ((*network).to_string(), (*circle).to_string()),
             _ => bail!("oct database URI must look like oct://NETWORK/<circle-id>"),
         };
@@ -2124,7 +2152,8 @@ fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
     if value.starts_with("oct") {
         return Ok(Target {
             raw: value.to_string(),
-            network: default_network,
+            network: default_network
+                .ok_or_else(|| anyhow!("network is required for bare Circle ids"))?,
             circle: value.to_string(),
             rpc: default_rpc,
         });
@@ -2141,12 +2170,15 @@ fn config_path() -> Result<PathBuf> {
 }
 
 fn load_config() -> Result<Config> {
+    let defaults = bundled_default_config()?;
     let path = config_path()?;
     if !path.exists() {
-        return Ok(Config::default());
+        return Ok(defaults);
     }
     let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    Ok(serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?)
+    let user_config =
+        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    Ok(merge_config(defaults, user_config))
 }
 
 fn write_config(config: &Config) -> Result<()> {
@@ -2156,6 +2188,19 @@ fn write_config(config: &Config) -> Result<()> {
     }
     fs::write(&path, serde_json::to_string_pretty(config)? + "\n")?;
     Ok(())
+}
+
+fn bundled_default_config() -> Result<Config> {
+    serde_json::from_str(DEFAULT_CONFIG_JSON).context("parsing bundled default config")
+}
+
+fn merge_config(mut defaults: Config, user: Config) -> Config {
+    defaults.wallet = user.wallet.or(defaults.wallet);
+    defaults.rpc = user.rpc.or(defaults.rpc);
+    defaults.network = user.network.or(defaults.network);
+    defaults.default_database = user.default_database.or(defaults.default_database);
+    defaults.databases.extend(user.databases);
+    defaults
 }
 
 fn signing_key_from_text(text: &str) -> Result<SigningKey> {
@@ -2641,11 +2686,14 @@ insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('C
 }
 
 fn cmd_deploy(args: DeployArgs) -> Result<()> {
-    let circle = args.circle.unwrap_or_else(|| DEFAULT_CIRCLE.to_string());
+    let circle = args
+        .circle
+        .clone()
+        .ok_or_else(|| anyhow!("deploy requires --circle CIRCLE_ID"))?;
     let target_args = TargetArgs {
         target: Some(circle.clone()),
         wallet: args.wallet.clone(),
-        rpc: Some(args.rpc.clone()),
+        rpc: args.rpc.clone(),
         caller: args.caller.clone(),
         private_key_b64: args.private_key_b64.clone(),
         public_key_b64: args.public_key_b64.clone(),
@@ -2866,6 +2914,45 @@ mod tests {
     }
 
     #[test]
+    fn bundled_defaults_preload_public_example_config() {
+        let config = bundled_default_config().unwrap();
+        assert_eq!(config.network.as_deref(), Some("devnet"));
+        assert_eq!(config.default_database.as_deref(), Some("remilia"));
+        assert!(config
+            .rpc
+            .as_deref()
+            .is_some_and(|rpc| rpc.starts_with("http")));
+        assert!(config
+            .databases
+            .get("remilia")
+            .is_some_and(|uri| uri.starts_with("oct://devnet/oct")));
+    }
+
+    #[test]
+    fn user_config_overlays_bundled_defaults() {
+        let defaults: Config = serde_json::from_str(
+            r#"{"rpc":"http://default","network":"devnet","default_database":"remilia","databases":{"remilia":"oct://devnet/octA"}}"#,
+        )
+        .unwrap();
+        let user: Config = serde_json::from_str(
+            r#"{"rpc":"http://custom","default_database":"organization","databases":{"organization":"oct://devnet/octB"}}"#,
+        )
+        .unwrap();
+        let merged = merge_config(defaults, user);
+        assert_eq!(merged.rpc.as_deref(), Some("http://custom"));
+        assert_eq!(merged.network.as_deref(), Some("devnet"));
+        assert_eq!(merged.default_database.as_deref(), Some("organization"));
+        assert_eq!(
+            merged.databases.get("remilia").map(String::as_str),
+            Some("oct://devnet/octA")
+        );
+        assert_eq!(
+            merged.databases.get("organization").map(String::as_str),
+            Some("oct://devnet/octB")
+        );
+    }
+
+    #[test]
     fn owner_write_intent_message_matches_golden_vector() {
         let digest = Sha256::digest(b"test-db-id");
         let mut db_id = [0u8; 32];
@@ -2884,6 +2971,25 @@ mod tests {
             Commands::Deploy(args) => assert!(args.allow_unconfigured),
             _ => panic!("expected deploy command"),
         }
+    }
+
+    #[test]
+    fn deploy_requires_explicit_circle() {
+        let args = DeployArgs {
+            build: false,
+            circle: None,
+            wasm: None,
+            ou: "200000".to_string(),
+            rpc: None,
+            no_wait: false,
+            allow_unconfigured: false,
+            wallet: None,
+            caller: None,
+            private_key_b64: None,
+            public_key_b64: None,
+        };
+        let error = cmd_deploy(args).unwrap_err().to_string();
+        assert!(error.contains("requires --circle"));
     }
 
     #[test]
