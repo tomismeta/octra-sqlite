@@ -1,10 +1,10 @@
 {
-  "rpc": "http://165.227.225.79:8080/rpc",
+  "rpc": "https://devnet.octrascan.io/rpc",
   "explorer": "https://devnet.octrascan.io",
   "network": "devnet",
   "networks": {
     "devnet": {
-      "rpc": "http://165.227.225.79:8080/rpc",
+      "rpc": "https://devnet.octrascan.io/rpc",
       "explorer": "https://devnet.octrascan.io"
     },
     "mainnet": {

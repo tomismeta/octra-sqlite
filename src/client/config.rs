@@ -172,10 +172,17 @@ mod tests {
         let config = bundled_default_config().unwrap();
         assert_eq!(config.network.as_deref(), Some("devnet"));
         assert_eq!(config.default_database.as_deref(), Some("remilia"));
-        assert!(config
-            .rpc
-            .as_deref()
-            .is_some_and(|rpc| rpc.starts_with("http")));
+        assert_eq!(
+            config.rpc.as_deref(),
+            Some("https://devnet.octrascan.io/rpc")
+        );
+        assert_eq!(
+            config
+                .networks
+                .get("devnet")
+                .and_then(|network| network.rpc.as_deref()),
+            Some("https://devnet.octrascan.io/rpc")
+        );
         assert_eq!(
             config.explorer.as_deref(),
             Some("https://devnet.octrascan.io")

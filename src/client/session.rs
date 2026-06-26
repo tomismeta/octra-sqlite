@@ -142,18 +142,18 @@ fn build_session_for_target(
     config: &Config,
     mut target: DatabaseTarget,
 ) -> Result<Session> {
-    if let Some(rpc) = first_string(&[options.rpc.clone(), env::var("OCTRA_RPC_URL").ok()]) {
+    let explicit_rpc = first_string(&[options.rpc.clone(), env::var("OCTRA_RPC_URL").ok()]);
+    if let Some(rpc) = explicit_rpc.clone() {
         target.rpc = rpc;
     }
     let wallet_path = resolve_wallet_path(options, config);
     let wallet = load_wallet(wallet_path.as_deref())?;
-    let rpc = first_string(&[
-        options.rpc.clone(),
-        env::var("OCTRA_RPC_URL").ok(),
-        wallet.rpc.clone(),
+    let rpc = choose_session_rpc(
+        explicit_rpc,
         Some(target.rpc.clone()),
         config.rpc.clone(),
-    ])
+        wallet.rpc.clone(),
+    )
     .ok_or_else(|| {
         ClientError::with_kind(
             ClientErrorKind::Config,
@@ -214,6 +214,15 @@ fn first_string(values: &[Option<String>]) -> Option<String> {
         .find_map(|value| value.as_ref().filter(|v| !v.is_empty()).cloned())
 }
 
+fn choose_session_rpc(
+    explicit_rpc: Option<String>,
+    target_rpc: Option<String>,
+    config_rpc: Option<String>,
+    wallet_rpc: Option<String>,
+) -> Option<String> {
+    first_string(&[explicit_rpc, target_rpc, config_rpc, wallet_rpc])
+}
+
 fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let cleaned = text.trim();
     let raw = general_purpose::STANDARD
@@ -231,4 +240,51 @@ fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&raw[..32]);
     Ok(SigningKey::from_bytes(&seed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_network_rpc_wins_over_wallet_rpc() {
+        assert_eq!(
+            choose_session_rpc(
+                None,
+                Some("https://devnet.octrascan.io/rpc".to_string()),
+                Some("https://config.example/rpc".to_string()),
+                Some("http://wallet.example/rpc".to_string()),
+            )
+            .as_deref(),
+            Some("https://devnet.octrascan.io/rpc")
+        );
+    }
+
+    #[test]
+    fn explicit_rpc_wins_over_target_network_rpc() {
+        assert_eq!(
+            choose_session_rpc(
+                Some("https://override.example/rpc".to_string()),
+                Some("https://devnet.octrascan.io/rpc".to_string()),
+                Some("https://config.example/rpc".to_string()),
+                Some("http://wallet.example/rpc".to_string()),
+            )
+            .as_deref(),
+            Some("https://override.example/rpc")
+        );
+    }
+
+    #[test]
+    fn wallet_rpc_is_only_a_fallback() {
+        assert_eq!(
+            choose_session_rpc(
+                None,
+                Some(String::new()),
+                None,
+                Some("http://wallet.example/rpc".to_string()),
+            )
+            .as_deref(),
+            Some("http://wallet.example/rpc")
+        );
+    }
 }
