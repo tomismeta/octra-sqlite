@@ -55,7 +55,7 @@ They should stay expressive enough that users do not need to inspect
 
 - `src/main.rs`: Rust CLI orchestration.
 - `src/output.rs`: CLI table/json/csv rendering.
-- `src/osr1.rs`: OSR1 typed-result decoding.
+- `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `config/defaults.json`: preloaded devnet RPC and public example database.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.

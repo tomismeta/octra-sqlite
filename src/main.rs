@@ -1,22 +1,27 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use clap::{Args, Parser, Subcommand};
-use ed25519_dalek::{Signer, SigningKey};
 mod output;
-use octra_sqlite::protocol::{
-    osr1::{decode_typed_result, TYPED_PREFIX},
-    osw1,
-    target::{parse_database_target, DatabaseTarget as Target},
-    tx::{canonical_tx, Tx},
+use octra_sqlite::{
+    client::{
+        build_control_session as client_build_control_session,
+        build_session as client_build_session, config_path, discover_wallet_path, load_config,
+        resolve_wallet_path as client_resolve_wallet_path, wallet_caller, write_config, Config,
+        Session, SessionOptions,
+    },
+    protocol::{
+        osr1::{decode_typed_result, TYPED_PREFIX},
+        osw1,
+        target::{parse_database_target, DatabaseTarget as Target},
+        tx::{canonical_tx, Tx},
+    },
 };
 use output::{
     format_exec_result, format_json, format_result, print_exec_result, print_json, print_result,
     value_to_string, write_text, OutputMode,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
@@ -24,7 +29,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const DEFAULT_CONFIG_JSON: &str = include_str!("../config/defaults.json");
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
 const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.1.0.json";
@@ -385,44 +389,6 @@ struct ConfigArgs {
     json: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct Config {
-    wallet: Option<String>,
-    rpc: Option<String>,
-    network: Option<String>,
-    #[serde(default, alias = "default_target")]
-    default_database: Option<String>,
-    #[serde(default, alias = "aliases")]
-    databases: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct WalletFile {
-    addr: Option<String>,
-    address: Option<String>,
-    priv_: Option<String>,
-    #[serde(rename = "priv")]
-    priv_field: Option<String>,
-    private_key: Option<String>,
-    private_key_b64: Option<String>,
-    pub_: Option<String>,
-    #[serde(rename = "pub")]
-    pub_field: Option<String>,
-    public_key: Option<String>,
-    public_key_b64: Option<String>,
-    rpc: Option<String>,
-}
-
-#[derive(Clone)]
-struct Session {
-    target: Target,
-    wallet_path: Option<PathBuf>,
-    rpc: String,
-    caller: String,
-    private_key_text: String,
-    public_key_b64: String,
-}
-
 struct ShellState {
     session: Session,
     mode: OutputMode,
@@ -740,7 +706,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
     println!("uri: {target_uri}");
     println!("circle: {}", created.circle);
-    println!("wallet: {}", control_session.caller);
+    println!("wallet: {}", control_session.caller());
     println!(
         "code: {} bytes, hash {}",
         created.code_bytes, created.code_hash
@@ -782,7 +748,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         let session_args = TargetArgs {
             target: Some(target_uri.clone()),
             wallet: args.wallet.clone(),
-            rpc: Some(control_session.rpc.clone()),
+            rpc: Some(control_session.rpc().to_string()),
             caller: args.caller.clone(),
             private_key_b64: args.private_key_b64.clone(),
             public_key_b64: args.public_key_b64.clone(),
@@ -846,8 +812,8 @@ fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
             }
 
             let wallet_path = resolve_wallet_path(&args.target, &config);
-            match load_wallet(wallet_path.as_deref()) {
-                Ok(wallet) => {
+            match wallet_caller(wallet_path.as_deref(), args.target.caller.as_deref()) {
+                Ok(caller) => {
                     if let Some(path) = wallet_path {
                         report.ok("wallet", format!("read {}", path.display()));
                     } else if env::var("OCTRA_PRIVATE_KEY_B64").is_ok() {
@@ -858,12 +824,7 @@ fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
                             "not configured; reads/writes that need signed RPC will be skipped",
                         );
                     }
-                    if let Some(caller) = first_string(&[
-                        args.target.caller.clone(),
-                        wallet.addr,
-                        wallet.address,
-                        env::var("OCTRA_CALLER").ok(),
-                    ]) {
+                    if let Some(caller) = caller {
                         report.ok("caller", caller);
                     } else {
                         report.warn("caller", "not found in wallet/env");
@@ -1066,10 +1027,10 @@ fn check_release_manifest(report: &mut DoctorReport) {
 }
 
 fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash: &str) {
-    report.ok("rpc", &session.rpc);
+    report.ok("rpc", &session.rpc());
     match program_info(session) {
         Ok(info) => {
-            report.ok("circle", &session.target.circle);
+            report.ok("circle", &session.target().circle);
             let version = info
                 .get("version")
                 .and_then(Value::as_str)
@@ -1081,7 +1042,7 @@ fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash
             report.ok("program version", version);
             if let Some(owner) = program_owner(&info) {
                 report.ok("circle owner", owner);
-                if owner == session.caller {
+                if owner == session.caller() {
                     report.ok("circle owner wallet", "current wallet");
                 } else {
                     report.warn(
@@ -1147,7 +1108,7 @@ fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash
                 report.ok("auth", "OSW1 owner write intent");
                 if let Some(owner_pubkey) = auth.owner_pubkey.as_deref() {
                     report.ok("auth owner pubkey", owner_pubkey);
-                    match intent_public_key(session) {
+                    match session.intent_public_key() {
                         Ok(wallet_pubkey) if hex::encode(wallet_pubkey) == owner_pubkey => {
                             report.ok("auth owner wallet", "current wallet can write")
                         }
@@ -1241,9 +1202,9 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
     let code_b64 = general_purpose::STANDARD.encode(&wasm);
     let payload_json = circle_deploy_payload_json(Some(&code_b64))?;
     let nonce = next_nonce(session)?;
-    let circle = circle_id_of_deploy(&session.caller, nonce as u64, &payload_json);
+    let circle = circle_id_of_deploy(session.caller(), nonce as u64, &payload_json);
     let tx = Tx {
-        from: session.caller.clone(),
+        from: session.caller().to_string(),
         to_: circle.clone(),
         amount: "0".to_string(),
         nonce,
@@ -1253,7 +1214,7 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
         encrypted_data: String::new(),
         message: payload_json,
         signature: String::new(),
-        public_key: session.public_key_b64.clone(),
+        public_key: session.public_key_b64().to_string(),
     };
     let result = submit_tx(session, tx, true)?;
     let tx_hash = result
@@ -1267,13 +1228,12 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
     } else {
         None
     };
-    let mut circle_session = session.clone();
-    circle_session.target = Target {
+    let circle_session = session.with_database_target(Target {
         raw: format!("oct://{}/{}", network, circle),
         network: network.to_string(),
         circle: circle.clone(),
-        rpc: session.rpc.clone(),
-    };
+        rpc: session.rpc().to_string(),
+    });
     if !args.no_wait {
         wait_for_program_info(&circle_session, &code_hash)?;
     }
@@ -1287,7 +1247,7 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
 }
 
 fn patch_wasm_auth_for_owner(wasm: &mut [u8], session: &Session) -> Result<AuthPatch> {
-    let owner_pubkey = intent_public_key(session)?;
+    let owner_pubkey = session.intent_public_key()?;
     let db_id = derive_db_id(session, &owner_pubkey);
     patch_wasm_auth_bytes(wasm, &owner_pubkey, &db_id)
 }
@@ -1353,7 +1313,7 @@ fn replace_wasm_placeholder(
 fn derive_db_id(session: &Session, owner_pubkey: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"octra-sqlite.db-id.v1");
-    hasher.update(session.caller.as_bytes());
+    hasher.update(session.caller().as_bytes());
     hasher.update(owner_pubkey);
     hasher.update(now_timestamp().to_string().as_bytes());
     let digest = hasher.finalize();
@@ -1693,9 +1653,9 @@ fn run_one_sql_to(
 }
 
 fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
-    println!("SQLite on Octra ({})", session.target.network);
-    println!("circle: {}", session.target.circle);
-    println!("wallet: {}", session.caller);
+    println!("SQLite on Octra ({})", session.target().network);
+    println!("circle: {}", session.target().circle);
+    println!("wallet: {}", session.caller());
     println!("type .help for usage");
     let mut state = ShellState {
         session,
@@ -1806,8 +1766,8 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
             &format_json(&program_info(&state.session)?)?,
         )?,
         ".wallet" => {
-            println!("{}", state.session.caller);
-            if let Some(path) = &state.session.wallet_path {
+            println!("{}", state.session.caller());
+            if let Some(path) = state.session.wallet_path() {
                 println!("wallet: {}", path.display());
             }
         }
@@ -1848,16 +1808,8 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
             let target = parts
                 .next()
                 .ok_or_else(|| anyhow!("usage: .open DATABASE"))?;
-            let args = TargetArgs {
-                target: Some(target.to_string()),
-                wallet: state.session.wallet_path.clone(),
-                rpc: Some(state.session.rpc.clone()),
-                caller: Some(state.session.caller.clone()),
-                private_key_b64: Some(state.session.private_key_text.clone()),
-                public_key_b64: Some(state.session.public_key_b64.clone()),
-            };
-            state.session = build_session(&args)?;
-            println!("circle: {}", state.session.target.circle);
+            state.session = state.session.open_database(target)?;
+            println!("circle: {}", state.session.target().circle);
         }
         _ => bail!("unknown command {cmd}; try .help"),
     }
@@ -1889,15 +1841,15 @@ fn print_help() {
 fn print_current_database(session: &Session) {
     println!("seq  name  file");
     println!("---  ----  ----");
-    println!("0    main  {}", session.target.raw);
+    println!("0    main  {}", session.target().raw);
 }
 
 fn print_shell_show(state: &ShellState) {
-    println!("database: {}", state.session.target.raw);
-    println!("circle: {}", state.session.target.circle);
-    println!("network: {}", state.session.target.network);
-    println!("rpc: {}", state.session.rpc);
-    println!("wallet: {}", state.session.caller);
+    println!("database: {}", state.session.target().raw);
+    println!("circle: {}", state.session.target().circle);
+    println!("network: {}", state.session.target().network);
+    println!("rpc: {}", state.session.rpc());
+    println!("wallet: {}", state.session.caller());
     println!("mode: {}", state.mode.name());
     println!("headers: {}", if state.headers { "on" } else { "off" });
     println!("timer: {}", if state.timer { "on" } else { "off" });
@@ -1911,136 +1863,27 @@ fn print_shell_show(state: &ShellState) {
     );
 }
 
+fn session_options(args: &TargetArgs) -> SessionOptions {
+    SessionOptions {
+        target: args.target.clone(),
+        wallet: args.wallet.clone(),
+        rpc: args.rpc.clone(),
+        caller: args.caller.clone(),
+        private_key: args.private_key_b64.clone(),
+        public_key: args.public_key_b64.clone(),
+    }
+}
+
 fn resolve_wallet_path(args: &TargetArgs, config: &Config) -> Option<PathBuf> {
-    args.wallet
-        .clone()
-        .or_else(|| env::var("OCTRA_WALLET").ok().map(PathBuf::from))
-        .or_else(|| config.wallet.as_ref().map(PathBuf::from))
-        .or_else(discover_wallet_path)
+    client_resolve_wallet_path(&session_options(args), config)
 }
 
 fn build_session(args: &TargetArgs) -> Result<Session> {
-    let config = load_config().unwrap_or_default();
-    let target_value = args
-        .target
-        .clone()
-        .or_else(|| config.default_database.clone())
-        .or_else(|| env::var("OCTRA_SQLITE_DATABASE").ok())
-        .or_else(|| env::var("OCTRA_SQLITE_TARGET").ok())
-        .or_else(|| env::var("OCTRA_CIRCLE_ID").ok())
-        .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
-    let target = resolve_target(&target_value, &config)?;
-    build_session_for_target(args, &config, target)
+    client_build_session(&session_options(args))
 }
 
 fn build_control_session(args: &TargetArgs, network: &str) -> Result<Session> {
-    let config = load_config().unwrap_or_default();
-    let target = Target {
-        raw: format!("oct://{network}"),
-        network: network.to_string(),
-        circle: String::new(),
-        rpc: config.rpc.clone().unwrap_or_default(),
-    };
-    build_session_for_target(args, &config, target)
-}
-
-fn build_session_for_target(
-    args: &TargetArgs,
-    config: &Config,
-    mut target: Target,
-) -> Result<Session> {
-    if let Some(rpc) = first_string(&[
-        args.rpc.clone(),
-        env::var("OCTRA_RPC_URL").ok(),
-        config.rpc.clone(),
-    ]) {
-        target.rpc = rpc;
-    }
-    let wallet_path = resolve_wallet_path(args, config);
-    let wallet = load_wallet(wallet_path.as_deref())?;
-    let rpc = first_string(&[
-        args.rpc.clone(),
-        env::var("OCTRA_RPC_URL").ok(),
-        wallet.rpc.clone(),
-        Some(target.rpc.clone()),
-        config.rpc.clone(),
-    ])
-    .ok_or_else(|| {
-        anyhow!("RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL")
-    })?;
-    let caller = first_string(&[
-        args.caller.clone(),
-        wallet.addr.clone(),
-        wallet.address.clone(),
-        env::var("OCTRA_CALLER").ok(),
-    ])
-    .ok_or_else(|| anyhow!("caller wallet address is required; configure a wallet, pass --caller, or set OCTRA_CALLER"))?;
-    let private_key_text = first_string(&[
-        args.private_key_b64.clone(),
-        wallet.priv_field.clone(),
-        wallet.priv_.clone(),
-        wallet.private_key.clone(),
-        wallet.private_key_b64.clone(),
-        env::var("OCTRA_PRIVATE_KEY_B64").ok(),
-    ])
-    .ok_or_else(|| {
-        anyhow!("wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64")
-    })?;
-    let signing_key = signing_key_from_text(&private_key_text)?;
-    let derived_pub = general_purpose::STANDARD.encode(signing_key.verifying_key().to_bytes());
-    let public_key_b64 = first_string(&[
-        args.public_key_b64.clone(),
-        wallet.pub_field.clone(),
-        wallet.pub_.clone(),
-        wallet.public_key.clone(),
-        wallet.public_key_b64.clone(),
-        env::var("OCTRA_PUBLIC_KEY_B64").ok(),
-        Some(derived_pub),
-    ])
-    .unwrap();
-    Ok(Session {
-        target,
-        wallet_path,
-        rpc,
-        caller,
-        private_key_text,
-        public_key_b64,
-    })
-}
-
-fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
-    match path {
-        Some(path) => {
-            let text = fs::read_to_string(path)
-                .with_context(|| format!("reading wallet {}", path.display()))?;
-            Ok(serde_json::from_str(&text)
-                .with_context(|| format!("parsing wallet {}", path.display()))?)
-        }
-        None => Ok(WalletFile::default()),
-    }
-}
-
-fn discover_wallet_path() -> Option<PathBuf> {
-    wallet_candidates().into_iter().find(|path| path.is_file())
-}
-
-fn wallet_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(cwd) = env::current_dir() {
-        candidates.push(cwd.join("wallet.json"));
-        candidates.push(cwd.join(".octra").join("wallet.json"));
-    }
-    if let Some(home) = dirs::home_dir() {
-        candidates.push(home.join(".octra").join("wallet.json"));
-        candidates.push(home.join(".octra").join("devnet-wallet.json"));
-    }
-    candidates
-}
-
-fn first_string(values: &[Option<String>]) -> Option<String> {
-    values
-        .iter()
-        .find_map(|value| value.as_ref().filter(|v| !v.is_empty()).cloned())
+    client_build_control_session(&session_options(args), network)
 }
 
 fn sample_sql(name: &str) -> Result<String> {
@@ -2118,80 +1961,6 @@ fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
     parse_database_target(value, config.network.as_deref(), config.rpc.as_deref())
 }
 
-fn config_path() -> Result<PathBuf> {
-    if let Ok(path) = env::var("OCTRA_SQLITE_CONFIG") {
-        return Ok(PathBuf::from(path));
-    }
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not locate home directory"))?;
-    Ok(home.join(".octra").join("sqlite.json"))
-}
-
-fn load_config() -> Result<Config> {
-    let defaults = bundled_default_config()?;
-    let path = config_path()?;
-    if !path.exists() {
-        return Ok(defaults);
-    }
-    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let user_config =
-        serde_json::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(merge_config(defaults, user_config))
-}
-
-fn write_config(config: &Config) -> Result<()> {
-    let path = config_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&path, serde_json::to_string_pretty(config)? + "\n")?;
-    Ok(())
-}
-
-fn bundled_default_config() -> Result<Config> {
-    serde_json::from_str(DEFAULT_CONFIG_JSON).context("parsing bundled default config")
-}
-
-fn merge_config(mut defaults: Config, user: Config) -> Config {
-    defaults.wallet = user.wallet.or(defaults.wallet);
-    defaults.rpc = user.rpc.or(defaults.rpc);
-    defaults.network = user.network.or(defaults.network);
-    defaults.default_database = user.default_database.or(defaults.default_database);
-    defaults.databases.extend(user.databases);
-    defaults
-}
-
-fn signing_key_from_text(text: &str) -> Result<SigningKey> {
-    let cleaned = text.trim();
-    let raw = general_purpose::STANDARD
-        .decode(cleaned)
-        .or_else(|_| hex::decode(cleaned))
-        .map_err(|_| anyhow!("private key must be base64 or hex"))?;
-    if raw.len() < 32 {
-        bail!("private key must decode to at least 32 bytes");
-    }
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&raw[..32]);
-    Ok(SigningKey::from_bytes(&seed))
-}
-
-fn intent_signing_key(session: &Session) -> Result<SigningKey> {
-    signing_key_from_text(&session.private_key_text)
-}
-
-fn intent_public_key(session: &Session) -> Result<[u8; 32]> {
-    Ok(intent_signing_key(session)?.verifying_key().to_bytes())
-}
-
-fn sign_b64(session: &Session, message: &str) -> Result<String> {
-    let signing_key = signing_key_from_text(&session.private_key_text)?;
-    Ok(general_purpose::STANDARD.encode(signing_key.sign(message.as_bytes()).to_bytes()))
-}
-
-fn sign_bytes_hex(session: &Session, message: &[u8]) -> Result<String> {
-    let signing_key = intent_signing_key(session)?;
-    Ok(hex::encode(signing_key.sign(message).to_bytes()))
-}
-
 fn rpc_call(session: &Session, method: &str, params: Value) -> Result<Value> {
     let client = reqwest::blocking::Client::new();
     let body = json!({
@@ -2201,7 +1970,7 @@ fn rpc_call(session: &Session, method: &str, params: Value) -> Result<Value> {
         "params": params,
     });
     let response = client
-        .post(&session.rpc)
+        .post(session.rpc())
         .json(&body)
         .send()
         .with_context(|| format!("calling {method}"))?;
@@ -2232,18 +2001,21 @@ fn view(session: &Session, method: &str, params: Vec<Value>) -> Result<Value> {
     let params_hash = sha256_hex(params_json.as_bytes());
     let message = format!(
         "octra_circle_view|{}|{}|{}|{}|0",
-        session.target.circle, session.caller, method, params_hash
+        session.target().circle,
+        session.caller(),
+        method,
+        params_hash
     );
-    let signature = sign_b64(session, &message)?;
+    let signature = session.sign_text_b64(&message)?;
     let result = rpc_call(
         session,
         "octra_circleViewAuth",
         json!([
-            session.target.circle,
+            session.target().circle,
             method,
             params,
-            session.caller,
-            session.public_key_b64,
+            session.caller(),
+            session.public_key_b64(),
             signature,
             false
         ]),
@@ -2282,16 +2054,17 @@ fn auth_info(session: &Session) -> Result<AuthInfo> {
 fn program_info(session: &Session) -> Result<Value> {
     let message = format!(
         "octra_circle_program_info|{}|{}",
-        session.target.circle, session.caller
+        session.target().circle,
+        session.caller()
     );
-    let signature = sign_b64(session, &message)?;
+    let signature = session.sign_text_b64(&message)?;
     rpc_call(
         session,
         "octra_circleProgramInfoAuth",
         json!([
-            session.target.circle,
-            session.caller,
-            session.public_key_b64,
+            session.target().circle,
+            session.caller(),
+            session.public_key_b64(),
             signature
         ]),
     )
@@ -2312,8 +2085,8 @@ fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     };
     let message = compact_json(&Value::Array(params))?;
     let tx = Tx {
-        from: session.caller.clone(),
-        to_: session.target.circle.clone(),
+        from: session.caller().to_string(),
+        to_: session.target().circle.clone(),
         amount: "0".to_string(),
         nonce,
         ou: "1000".to_string(),
@@ -2322,7 +2095,7 @@ fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
         encrypted_data: method.to_string(),
         message,
         signature: String::new(),
-        public_key: session.public_key_b64.clone(),
+        public_key: session.public_key_b64().to_string(),
     };
     submit_tx(session, tx, no_wait)
 }
@@ -2335,10 +2108,10 @@ fn signed_exec_params(
     sql: &str,
 ) -> Result<Vec<Value>> {
     let db_id = hex_to_32("db_id", &info.db_id)?;
-    let pubkey_hex = hex::encode(intent_public_key(session)?);
+    let pubkey_hex = hex::encode(session.intent_public_key()?);
     let sequence_text = sequence.to_string();
     let message = osw1::frame(&db_id, sequence, method, sql)?;
-    let sig_hex = sign_bytes_hex(session, &message)?;
+    let sig_hex = session.sign_bytes_hex(&message)?;
     Ok(vec![
         Value::String(sql.to_string()),
         Value::String(pubkey_hex),
@@ -2354,7 +2127,7 @@ fn trace_sql_event_enabled() -> bool {
 }
 
 fn next_nonce(session: &Session) -> Result<i64> {
-    let balance = rpc_call(session, "octra_balance", json!([session.caller]))?;
+    let balance = rpc_call(session, "octra_balance", json!([session.caller()]))?;
     Ok(balance
         .get("pending_nonce")
         .or_else(|| balance.get("nonce"))
@@ -2365,7 +2138,7 @@ fn next_nonce(session: &Session) -> Result<i64> {
 
 fn submit_tx(session: &Session, mut tx: Tx, no_wait: bool) -> Result<Value> {
     let canonical = canonical_tx(&tx);
-    tx.signature = sign_b64(session, &canonical)?;
+    tx.signature = session.sign_text_b64(&canonical)?;
     let tx_circle = tx.to_.clone();
     let tx_wallet = tx.from.clone();
     let result = rpc_call(session, "octra_submit", json!([tx]))?;
@@ -2450,8 +2223,8 @@ fn is_read_sql(sql: &str) -> bool {
 }
 
 fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> Result<()> {
-    println!("database: {}", session.target.raw);
-    println!("circle: {}", session.target.circle);
+    println!("database: {}", session.target().raw);
+    println!("circle: {}", session.target().circle);
     let info = program_info(session)?;
     let version = info
         .get("version")
@@ -2588,8 +2361,8 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         "code_b64": general_purpose::STANDARD.encode(&wasm),
     }))?;
     let tx = Tx {
-        from: session.caller.clone(),
-        to_: session.target.circle.clone(),
+        from: session.caller().to_string(),
+        to_: session.target().circle.clone(),
         amount: "0".to_string(),
         nonce: next_nonce(&session)?,
         ou: args.ou,
@@ -2598,7 +2371,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         encrypted_data: String::new(),
         message,
         signature: String::new(),
-        public_key: session.public_key_b64.clone(),
+        public_key: session.public_key_b64().to_string(),
     };
     let result = submit_tx(&session, tx, true)?;
     let tx_hash = result
@@ -2608,7 +2381,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
     let mut out = Map::new();
     out.insert(
         "circle".to_string(),
-        Value::String(session.target.circle.clone()),
+        Value::String(session.target().circle.clone()),
     );
     out.insert(
         "wasm".to_string(),
@@ -2757,64 +2530,6 @@ mod tests {
             Commands::Config(args) => assert!(args.json),
             _ => panic!("expected config command"),
         }
-    }
-
-    #[test]
-    fn config_reads_legacy_names_and_writes_database_names() {
-        let config: Config = serde_json::from_str(
-            r#"{"default_target":"organization","aliases":{"organization":"oct://devnet/octABC"}}"#,
-        )
-        .unwrap();
-        assert_eq!(config.default_database.as_deref(), Some("organization"));
-        assert_eq!(
-            config.databases.get("organization").map(String::as_str),
-            Some("oct://devnet/octABC")
-        );
-
-        let written = serde_json::to_string(&config).unwrap();
-        assert!(written.contains("default_database"));
-        assert!(written.contains("databases"));
-        assert!(!written.contains("default_target"));
-        assert!(!written.contains("aliases"));
-    }
-
-    #[test]
-    fn bundled_defaults_preload_public_example_config() {
-        let config = bundled_default_config().unwrap();
-        assert_eq!(config.network.as_deref(), Some("devnet"));
-        assert_eq!(config.default_database.as_deref(), Some("remilia"));
-        assert!(config
-            .rpc
-            .as_deref()
-            .is_some_and(|rpc| rpc.starts_with("http")));
-        assert!(config
-            .databases
-            .get("remilia")
-            .is_some_and(|uri| uri.starts_with("oct://devnet/oct")));
-    }
-
-    #[test]
-    fn user_config_overlays_bundled_defaults() {
-        let defaults: Config = serde_json::from_str(
-            r#"{"rpc":"http://default","network":"devnet","default_database":"remilia","databases":{"remilia":"oct://devnet/octA"}}"#,
-        )
-        .unwrap();
-        let user: Config = serde_json::from_str(
-            r#"{"rpc":"http://custom","default_database":"organization","databases":{"organization":"oct://devnet/octB"}}"#,
-        )
-        .unwrap();
-        let merged = merge_config(defaults, user);
-        assert_eq!(merged.rpc.as_deref(), Some("http://custom"));
-        assert_eq!(merged.network.as_deref(), Some("devnet"));
-        assert_eq!(merged.default_database.as_deref(), Some("organization"));
-        assert_eq!(
-            merged.databases.get("remilia").map(String::as_str),
-            Some("oct://devnet/octA")
-        );
-        assert_eq!(
-            merged.databases.get("organization").map(String::as_str),
-            Some("oct://devnet/octB")
-        );
     }
 
     #[test]

@@ -365,12 +365,7 @@ mod wasm_behavior {
         serde_json::from_str(text).unwrap()
     }
 
-    fn owner_write_intent_message(
-        db_id: &[u8; 32],
-        sequence: u64,
-        method: &str,
-        sql: &str,
-    ) -> Vec<u8> {
+    fn osw1_frame(db_id: &[u8; 32], sequence: u64, method: &str, sql: &str) -> Vec<u8> {
         let mut msg =
             Vec::with_capacity(OSW1_DOMAIN.len() + 32 + 8 + 2 + method.len() + 4 + sql.len());
         msg.extend_from_slice(OSW1_DOMAIN);
@@ -383,7 +378,7 @@ mod wasm_behavior {
         msg
     }
 
-    fn sign_owner_write_intent(
+    fn sign_osw1(
         key: &SigningKey,
         db_id: &[u8; 32],
         sequence: u64,
@@ -391,7 +386,7 @@ mod wasm_behavior {
         sql: &str,
     ) -> String {
         hex::encode(
-            key.sign(&owner_write_intent_message(db_id, sequence, method, sql))
+            key.sign(&osw1_frame(db_id, sequence, method, sql))
                 .to_bytes(),
         )
     }
@@ -430,9 +425,9 @@ mod wasm_behavior {
     }
 
     #[test]
-    fn owner_write_intent_binary_golden_vector() -> Result<()> {
+    fn osw1_binary_golden_vector() -> Result<()> {
         let (_, _, db_id) = owner_fixture();
-        let msg = owner_write_intent_message(&db_id, 42, "exec", "select 1;");
+        let msg = osw1_frame(&db_id, 42, "exec", "select 1;");
         assert_eq!(
             hex::encode(msg),
             "6f637472612d73716c6974652e6f7377312e7631001fce55ad53f355909514a6a349e2afb2a22cf3bca124d239a9ace46a4108c482000000000000002a0004657865630000000973656c65637420313b"
@@ -441,11 +436,11 @@ mod wasm_behavior {
     }
 
     #[test]
-    fn owner_write_intent_golden_vector_signature_is_accepted_by_contract() -> Result<()> {
+    fn osw1_golden_vector_signature_is_accepted_by_contract() -> Result<()> {
         let (owner, owner_pubkey, db_id_bytes) = owner_fixture();
         let mut contract = Contract::load_patched(&owner_pubkey, &db_id_bytes)?;
         let sql = "select 1;";
-        let sig = sign_owner_write_intent(&owner, &db_id_bytes, 42, "exec", sql);
+        let sig = sign_osw1(&owner, &db_id_bytes, 42, "exec", sql);
         let pubkey = hex::encode(owner_pubkey);
         let accepted = json_response(&contract.call_update("exec", &[sql, &pubkey, "42", &sig])?);
         assert_eq!(accepted["ok"], true);
@@ -518,7 +513,7 @@ select no_such_column from people;",
 insert into person(first_name) values ('Ada');";
         let pubkey = hex::encode(owner_pubkey);
 
-        let wrong_method_sig = sign_owner_write_intent(&owner, &db_id_bytes, 1, "exec", sql);
+        let wrong_method_sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", sql);
         let wrong_method = json_response(
             &contract.call_update("exec_trace", &[sql, &pubkey, "1", &wrong_method_sig])?,
         );
@@ -526,7 +521,7 @@ insert into person(first_name) values ('Ada');";
         assert_eq!(wrong_method["error"], "auth_bad_signature");
         assert_eq!(contract.host.borrow().status, 401);
 
-        let sig = sign_owner_write_intent(&owner, &db_id_bytes, 1, "exec_trace", sql);
+        let sig = sign_osw1(&owner, &db_id_bytes, 1, "exec_trace", sql);
         let written =
             json_response(&contract.call_update("exec_trace", &[sql, &pubkey, "1", &sig])?);
         assert_eq!(written["ok"], true);
@@ -548,7 +543,7 @@ insert into person(first_name) values ('Ada');";
         assert_eq!(replay["error"], "auth_replay");
 
         let denied_sql = "insert into person(first_name) values ('Mallory');";
-        let bad_sig = sign_owner_write_intent(&other, &db_id_bytes, 2, "exec", denied_sql);
+        let bad_sig = sign_osw1(&other, &db_id_bytes, 2, "exec", denied_sql);
         let bad_pubkey = hex::encode(other.verifying_key().to_bytes());
         let denied = json_response(
             &contract.call_update("exec", &[denied_sql, &bad_pubkey, "2", &bad_sig])?,
@@ -566,7 +561,7 @@ insert into person(first_name) values ('Ada');";
 
         let mut wrong_db_id = [0u8; 32];
         wrong_db_id.copy_from_slice(&Sha256::digest(b"wrong-db-id"));
-        let wrong_db_sig = sign_owner_write_intent(&owner, &wrong_db_id, 2, "exec", denied_sql);
+        let wrong_db_sig = sign_osw1(&owner, &wrong_db_id, 2, "exec", denied_sql);
         let wrong_db = json_response(
             &contract.call_update("exec", &[denied_sql, &pubkey, "2", &wrong_db_sig])?,
         );
@@ -575,20 +570,20 @@ insert into person(first_name) values ('Ada');";
 
         let signed_sql = "insert into person(first_name) values ('Grace');";
         let tampered_sql = "insert into person(first_name) values ('Mallory');";
-        let tampered_sig = sign_owner_write_intent(&owner, &db_id_bytes, 2, "exec", signed_sql);
+        let tampered_sig = sign_osw1(&owner, &db_id_bytes, 2, "exec", signed_sql);
         let tampered = json_response(
             &contract.call_update("exec", &[tampered_sql, &pubkey, "2", &tampered_sig])?,
         );
         assert_eq!(tampered["ok"], false);
         assert_eq!(tampered["error"], "auth_bad_signature");
 
-        let good_sig = sign_owner_write_intent(&owner, &db_id_bytes, 2, "exec", signed_sql);
+        let good_sig = sign_osw1(&owner, &db_id_bytes, 2, "exec", signed_sql);
         let good =
             json_response(&contract.call_update("exec", &[signed_sql, &pubkey, "2", &good_sig])?);
         assert_eq!(good["ok"], true);
 
         let failing_sql = "insert into missing_table(first_name) values ('Nope');";
-        let failing_sig = sign_owner_write_intent(&owner, &db_id_bytes, 3, "exec", failing_sql);
+        let failing_sig = sign_osw1(&owner, &db_id_bytes, 3, "exec", failing_sql);
         let failed_sql = json_response(
             &contract.call_update("exec", &[failing_sql, &pubkey, "3", &failing_sig])?,
         );
@@ -598,7 +593,7 @@ insert into person(first_name) values ('Ada');";
         assert_eq!(storage_after_failed_sql["owner_sequence"], 2);
 
         let retry_sql = "insert into person(first_name) values ('Katherine');";
-        let retry_sig = sign_owner_write_intent(&owner, &db_id_bytes, 3, "exec", retry_sql);
+        let retry_sig = sign_osw1(&owner, &db_id_bytes, 3, "exec", retry_sql);
         let retry =
             json_response(&contract.call_update("exec", &[retry_sql, &pubkey, "3", &retry_sig])?);
         assert_eq!(retry["ok"], true);
@@ -727,7 +722,7 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         let mut contract = Contract::load_patched(&owner_pubkey, &db_id_bytes)?;
         let pubkey = hex::encode(owner_pubkey);
         let sql = "create table people(first_name text not null);";
-        let sig = sign_owner_write_intent(&owner, &db_id_bytes, 1, "exec", sql);
+        let sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", sql);
 
         contract.host.borrow_mut().fail_put_after = Some(0);
         let failed = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
@@ -752,7 +747,7 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         let mut contract = Contract::load_patched(&owner_pubkey, &db_id_bytes)?;
         let pubkey = hex::encode(owner_pubkey);
         let sql = "create table people(first_name text not null);";
-        let sig = sign_owner_write_intent(&owner, &db_id_bytes, 1, "exec", sql);
+        let sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", sql);
 
         contract.host.borrow_mut().fail_put_key_contains = Some(".manifest".to_string());
         let failed = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
@@ -779,7 +774,7 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         let mut contract = Contract::load_patched(&owner_pubkey, &db_id_bytes)?;
         let pubkey = hex::encode(owner_pubkey);
         let sql = "create table people(first_name text not null);";
-        let sig = sign_owner_write_intent(&owner, &db_id_bytes, 1, "exec", sql);
+        let sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", sql);
 
         contract.host.borrow_mut().fail_put_key_contains =
             Some("octra.sqlite.vfs.v1.meta".to_string());
