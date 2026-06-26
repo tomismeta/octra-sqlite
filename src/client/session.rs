@@ -76,12 +76,12 @@ impl Session {
             .to_bytes())
     }
 
-    pub fn sign_text_b64(&self, message: &str) -> Result<String> {
+    pub(crate) fn sign_text_b64(&self, message: &str) -> Result<String> {
         let signing_key = signing_key_from_text(&self.private_key)?;
         Ok(general_purpose::STANDARD.encode(signing_key.sign(message.as_bytes()).to_bytes()))
     }
 
-    pub fn sign_bytes_hex(&self, message: &[u8]) -> Result<String> {
+    pub(crate) fn sign_bytes_hex(&self, message: &[u8]) -> Result<String> {
         let signing_key = signing_key_from_text(&self.private_key)?;
         Ok(hex::encode(signing_key.sign(message).to_bytes()))
     }

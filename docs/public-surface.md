@@ -6,7 +6,8 @@ The reference repo has one primary user-facing entrypoint:
 octra-sqlite
 ```
 
-Keep routine workflows behind the Rust CLI first. Lower-level scripts are only
+Keep routine workflows behind the Rust CLI first. The Rust client library is
+the reusable reference client for code and agents. Lower-level scripts are only
 for building and auditing the bundled WASM.
 
 Runtime defaults live in `config/defaults.json`. The bundled defaults preload
@@ -55,7 +56,13 @@ They should stay expressive enough that users do not need to inspect
 
 - `src/main.rs`: Rust CLI orchestration.
 - `src/output.rs`: CLI table/json/csv rendering.
+- `src/client/`: reusable Rust client.
+- `src/client/mod.rs`: intentional client exports. The intended path is
+  `OctraSqlite -> Database -> query/execute`; raw deploy/RPC helpers live under
+  `client::low_level`.
+- `src/protocol/`: transport-independent wire formats and target parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
+- `src/protocol/osw1.rs`: OSW1 owner write intent framing.
 - `config/defaults.json`: preloaded devnet RPC and public example database.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
