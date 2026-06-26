@@ -61,6 +61,11 @@ They should stay expressive enough that users do not need to inspect
 - `src/client/mod.rs`: intentional client exports. The intended path is
   `OctraSqlite -> Database -> query/execute` with typed results and operation
   safety metadata. Raw deploy/RPC helpers live under `client::low_level`.
+- `src/client/database.rs`: small database handle.
+- `src/client/rpc.rs`: signed RPC/view/query plumbing.
+- `src/client/results.rs`: typed client result wrappers and receipt validation.
+- `src/client/safety.rs`: operation safety metadata.
+- `src/client/write.rs`: owner-write prepare, sign, and submit lifecycle.
 - `src/client/transport.rs`: the client transport seam. The default is HTTP
   RPC; tests and future adapters can provide their own `Transport`.
 - `src/client/error.rs`: typed client error kinds for adapters that need stable

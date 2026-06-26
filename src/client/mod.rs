@@ -1,19 +1,22 @@
 mod config;
 mod database;
 mod error;
+mod results;
+mod rpc;
+mod safety;
 mod session;
 mod transport;
 mod wallet;
+mod write;
 
 pub use config::{config_path, load_config, write_config, Config};
-pub use database::{
-    operation_safety, AuthInfo, Database, DatabaseOperation, ExecResult, OctraSqlite,
-    OperationSafety, PreparedOwnerWrite, PreparedWrite, ProgramInfo, QueryResult, SignedWrite,
-    SubmittedTx,
-};
+pub use database::{Database, OctraSqlite};
 pub use error::{ClientError, ClientErrorKind, Result};
+pub use results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx};
+pub use safety::{operation_safety, DatabaseOperation, OperationSafety};
 pub use session::SessionOptions;
 pub use transport::{HttpTransport, Transport};
+pub use write::{PreparedOwnerWrite, PreparedWrite, SignedWrite};
 
 pub mod low_level {
     pub use super::database::{

@@ -28,7 +28,14 @@ fn protocol_layer_stays_transport_and_cli_free() {
 
 #[test]
 fn client_layer_does_not_depend_on_cli_rendering() {
-    let forbidden = ["clap", "crate::cli", "cli::", "OutputMode", "print_result"];
+    let forbidden = [
+        "clap",
+        "crate::cli::",
+        "crate::cli;",
+        "cli::",
+        "OutputMode",
+        "print_result",
+    ];
     for path in source_files("src/client") {
         let text = fs::read_to_string(&path).unwrap();
         for needle in forbidden {
