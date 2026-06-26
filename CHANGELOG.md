@@ -7,7 +7,7 @@
   saves an `oct://` database URI, and can initialize schema/data with sqlite-style
   positional SQL, stdin, `--sql`, or `--read`.
 - Added `octra-sqlite setup`, `octra-sqlite quickstart NAME`, wallet
-  auto-discovery, and `new --sample people` for the beginner path while keeping
+  auto-discovery, and `new --sample remilia` for the beginner path while keeping
   flag-driven `init`, `new`, and `deploy` for advanced users.
 - Added `octra-sqlite status` and `release/octra-sqlite-0.1.0.json` so a clean
   checkout can validate config, wallet discovery, the bundled WASM artifact,

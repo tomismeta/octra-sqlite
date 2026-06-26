@@ -15,16 +15,13 @@ devnet.
   delete rows, and read the final state back with SQL.
 - New databases are owner-bound by default with method-bound owner write
   intents.
-- A non-owner wallet can read but receives an explicit `octra.sqlite.auth`
-  event when it attempts to write.
-- A stock local SQLite client can load the Octra live extension and display data
-  fetched from the live Circle.
+- A non-owner wallet can read, but cannot write unless it holds the owner key.
 - The WASM import/export surface is audited by script.
 - Local tests cover the typed result codec, owner write intent vectors, and core
   contract behavior.
 - `octra-sqlite status` checks local config, wallet discovery, release manifest,
   bundled WASM bytes/hash, and live database health when credentials are present.
-- The public proof Circle contains one intentional sample table, `person`.
+- The public proof Circle contains one intentional sample table, `collection`.
 
 ## Not Claimed Yet
 
@@ -37,13 +34,12 @@ devnet.
 ## Live Devnet Proof
 
 ```text
-circle: oct236kMS6wDL9r3S5UnwgFJoS79V4kPUpgPVcQNcdnfsPR
+circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
 version: 1
-personalized_code_hash: 1725953bb3dfccf9363a1eb27c4a1eeab1f5da53913465dbf4d061ca23e41c8d
+personalized_code_hash: f2adefb06cd7134fefe056ea74132a195e430550c17e3f4b0091bf40abf47213
 bundled_wasm_hash: 0e28ecc233306fd59539a22209be633fa7e6ca7410c84ce7c940abfcfb372e7a
 code_bytes: 607496
-circle_create_tx: c6f8bfad04e380bbdc460c8841c4d680edcbcc0a37bac20864fa9e6ccc35381d
-initializer_tx: 41616f60bf2047c8374d3d3b0af7ae70960cfc9400aa12d0d4518ec6e9a222dd
-non_owner_denied_tx: 9f8f32c600ff1952b256ba40a4326b56b897d198c324de0708d48c4631851e00
+sample: remilia collection
 manifest: release/octra-sqlite-0.1.0.json
+proof: docs/proofs/devnet.md
 ```

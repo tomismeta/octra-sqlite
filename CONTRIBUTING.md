@@ -20,7 +20,7 @@ Run:
 cargo fmt
 cargo test --locked
 find scripts -name '*.sh' -exec bash -n {} \;
-octra-sqlite doctor --skip-network
+octra-sqlite status --skip-network
 ```
 
 If you changed the bundled WASM, also run:
@@ -32,5 +32,5 @@ OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm \
   cargo test --locked --features wasm-behavior --test wasm_host_harness
 ```
 
-Update `release/octra-sqlite-v12.json`, `docs/toolchain.md`, and
+Update `release/octra-sqlite-0.1.0.json`, `docs/toolchain.md`, and
 `CHANGELOG.md` when artifact bytes or hashes change.
