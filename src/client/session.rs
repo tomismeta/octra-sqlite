@@ -112,7 +112,7 @@ pub fn build_control_session(options: &SessionOptions, network: &str) -> Result<
         raw: format!("oct://{network}"),
         network: network.to_string(),
         circle: String::new(),
-        rpc: config.rpc.clone().unwrap_or_default(),
+        rpc: config.rpc_for_network(network).unwrap_or_default(),
     };
     build_session_for_target(options, &config, target)
 }
@@ -130,11 +130,11 @@ fn resolve_target(value: &str, config: &Config) -> Result<DatabaseTarget> {
     if let Some(database) = config.databases.get(value) {
         return resolve_target(database, config);
     }
-    Ok(parse_database_target(
-        value,
-        config.network.as_deref(),
-        config.rpc.as_deref(),
-    )?)
+    let mut target = parse_database_target(value, config.network.as_deref(), None)?;
+    if target.rpc.is_empty() {
+        target.rpc = config.rpc_for_network(&target.network).unwrap_or_default();
+    }
+    Ok(target)
 }
 
 fn build_session_for_target(
@@ -142,11 +142,7 @@ fn build_session_for_target(
     config: &Config,
     mut target: DatabaseTarget,
 ) -> Result<Session> {
-    if let Some(rpc) = first_string(&[
-        options.rpc.clone(),
-        env::var("OCTRA_RPC_URL").ok(),
-        config.rpc.clone(),
-    ]) {
+    if let Some(rpc) = first_string(&[options.rpc.clone(), env::var("OCTRA_RPC_URL").ok()]) {
         target.rpc = rpc;
     }
     let wallet_path = resolve_wallet_path(options, config);

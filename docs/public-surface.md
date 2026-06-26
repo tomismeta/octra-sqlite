@@ -10,8 +10,9 @@ Keep routine workflows behind the Rust CLI first. The Rust client library is
 the reusable reference client for code and agents. Lower-level scripts are only
 for building and auditing the bundled WASM.
 
-Runtime defaults live in `config/defaults.json`. The bundled defaults preload
-devnet RPC and the public Remilia example database; user config overlays them.
+Runtime defaults live in `config/defaults.json`. The bundled defaults keep
+devnet active, preload devnet and mainnet URL profiles, and include the public
+Remilia example database; user config overlays them.
 
 The reference first-run path is:
 
@@ -54,6 +55,7 @@ addition to the default SQL hash event.
 `status`, `config`, and `database info` are the primary inspection commands.
 They should stay expressive enough that users do not need to inspect
 `~/.octra/sqlite.json`, transaction JSON, or explorer pages for the common path.
+`config` shows the active RPC/explorer plus all bundled network profiles.
 
 ## Public
 
@@ -76,7 +78,8 @@ They should stay expressive enough that users do not need to inspect
 - `src/protocol/`: transport-independent wire formats and database URI parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `src/protocol/osw1.rs`: OSW1 owner write intent framing.
-- `config/defaults.json`: preloaded devnet RPC and public example database.
+- `config/defaults.json`: active devnet config, devnet/mainnet URL profiles,
+  and public example database.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.

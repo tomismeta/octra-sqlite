@@ -527,11 +527,12 @@ fn cmd_init(args: InitArgs) -> Result<()> {
         .wallet
         .map(|p| p.to_string_lossy().to_string())
         .or(config.wallet);
-    if let Some(rpc) = args.rpc {
-        config.rpc = Some(rpc);
-    }
     if let Some(network) = args.network {
         config.network = Some(network);
+        config.apply_active_network_profile();
+    }
+    if let Some(rpc) = args.rpc {
+        config.rpc = Some(rpc);
     }
     if let Some(database) = args.database {
         config.default_database = Some(database);
@@ -540,6 +541,15 @@ fn cmd_init(args: InitArgs) -> Result<()> {
     println!("wrote {}", config_path()?.display());
     if let Some(default_database) = &config.default_database {
         println!("default database: {default_database}");
+    }
+    if let Some(network) = &config.network {
+        println!("network: {network}");
+    }
+    if let Some(rpc) = &config.rpc {
+        println!("rpc: {rpc}");
+    }
+    if let Some(explorer) = &config.explorer {
+        println!("explorer: {explorer}");
     }
     if let Some(wallet) = &config.wallet {
         println!("wallet: {wallet}");
@@ -573,18 +583,6 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         );
     }
 
-    let rpc_default = args
-        .rpc
-        .clone()
-        .or_else(|| env::var("OCTRA_RPC_URL").ok())
-        .or_else(|| config.rpc.clone())
-        .ok_or_else(|| anyhow!("RPC is required; pass --rpc or set OCTRA_RPC_URL"))?;
-    let rpc = if interactive {
-        prompt_default("RPC", &rpc_default)?
-    } else {
-        rpc_default
-    };
-
     let network_default = args
         .network
         .clone()
@@ -594,6 +592,19 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         prompt_default("Network", &network_default)?
     } else {
         network_default
+    };
+
+    let rpc_default = args
+        .rpc
+        .clone()
+        .or_else(|| env::var("OCTRA_RPC_URL").ok())
+        .or_else(|| config.rpc_for_network(&network))
+        .or_else(|| config.rpc.clone())
+        .ok_or_else(|| anyhow!("RPC is required; pass --rpc or set OCTRA_RPC_URL"))?;
+    let rpc = if interactive {
+        prompt_default("RPC", &rpc_default)?
+    } else {
+        rpc_default
     };
 
     let database_default = args
@@ -607,8 +618,9 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     };
 
     config.wallet = Some(wallet_path.to_string_lossy().to_string());
-    config.rpc = Some(rpc.clone());
     config.network = Some(network.clone());
+    config.apply_active_network_profile();
+    config.rpc = Some(rpc.clone());
     if let Some(database) = database.filter(|value| !value.trim().is_empty()) {
         config.default_database = Some(database);
     }
@@ -617,6 +629,9 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     println!("wallet: {}", wallet_path.display());
     println!("network: {network}");
     println!("rpc: {rpc}");
+    if let Some(explorer) = config.explorer_for_network(&network) {
+        println!("explorer: {explorer}");
+    }
     if let Some(default_database) = &config.default_database {
         println!("default database: {default_database}");
     }
@@ -649,8 +664,13 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
 fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
     sample_sql(&args.sample)?;
     let config = load_config().unwrap_or_default();
-    let rpc = args.rpc.clone().or_else(|| config.rpc.clone());
     let network = args.network.clone().or_else(|| config.network.clone());
+    let rpc = args.rpc.clone().or_else(|| {
+        network
+            .as_deref()
+            .and_then(|network| config.rpc_for_network(network))
+            .or_else(|| config.rpc.clone())
+    });
     let name = args.name.clone();
     cmd_new(NewArgs {
         name: args.name,
@@ -870,6 +890,8 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
             "wallet": config.wallet,
             "network": config.network,
             "rpc": config.rpc,
+            "explorer": config.explorer,
+            "networks": config.networks,
             "default_database": config.default_database,
             "databases": config.databases,
         }));
@@ -889,12 +911,26 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
         config.rpc.as_deref().unwrap_or("(not configured)")
     );
     println!(
+        "explorer: {}",
+        config.explorer.as_deref().unwrap_or("(not configured)")
+    );
+    println!(
         "default database: {}",
         config
             .default_database
             .as_deref()
             .unwrap_or("(not configured)")
     );
+    if !config.networks.is_empty() {
+        println!("networks:");
+        for (name, profile) in &config.networks {
+            println!(
+                "  {name}: rpc {}, explorer {}",
+                profile.rpc.as_deref().unwrap_or("(not configured)"),
+                profile.explorer.as_deref().unwrap_or("(not configured)")
+            );
+        }
+    }
     println!("databases: {}", config.databases.len());
     if !config.databases.is_empty() {
         println!("next: octra-sqlite database list");
@@ -1571,6 +1607,9 @@ fn print_database_info(config: &Config, database: Option<&str>) -> Result<()> {
             target.rpc.as_str()
         }
     );
+    if let Some(explorer) = config.explorer_for_network(&target.network) {
+        println!("explorer: {explorer}");
+    }
     println!("open: octra-sqlite {}", requested);
     println!("status: octra-sqlite status {}", requested);
     Ok(())
@@ -1952,11 +1991,11 @@ fn resolve_target(value: &str, config: &Config) -> Result<Target> {
 }
 
 fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
-    Ok(parse_database_target(
-        value,
-        config.network.as_deref(),
-        config.rpc.as_deref(),
-    )?)
+    let mut target = parse_database_target(value, config.network.as_deref(), None)?;
+    if target.rpc.is_empty() {
+        target.rpc = config.rpc_for_network(&target.network).unwrap_or_default();
+    }
+    Ok(target)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

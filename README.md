@@ -12,8 +12,9 @@ Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls with your
 wallet, and gives you SQLite-shaped commands over live Circle state.
 
 The CLI ships with a small default config at
-[`config/defaults.json`](./config/defaults.json): devnet RPC plus the public
-Remilia example database. Your local `~/.octra/sqlite.json` overlays it.
+[`config/defaults.json`](./config/defaults.json): devnet as the active network,
+devnet and mainnet URL profiles, plus the public Remilia example database. Your
+local `~/.octra/sqlite.json` overlays it.
 
 ## Quickstart
 
@@ -65,6 +66,12 @@ Advanced users can override the preloaded connection settings:
 octra-sqlite init --wallet ./wallet.json --rpc http://YOUR_RPC/rpc --network devnet
 ```
 
+Switch to the bundled mainnet profile:
+
+```sh
+octra-sqlite init --wallet ./wallet.json --network mainnet
+```
+
 More CRUD examples live in [`examples/`](./examples/).
 
 ## Ontology
@@ -76,6 +83,7 @@ More CRUD examples live in [`examples/`](./examples/).
 - **Circle**: the Octra program and storage identity underneath a database.
 - **Wallet**: the Octra key used to sign reads and writes.
 - **RPC and network**: the Octra endpoint and network used by the CLI.
+- **Explorer**: the OctraScan base URL for the active network.
 - **OSR1 and OSW1**: small `octra-sqlite` wire formats for typed results and
   owner write authorization. They are project protocols, not SQLite or Octra
   standards.
@@ -88,7 +96,7 @@ Commands manage setup, databases, verification, and Octra deployment:
 | --- | --- |
 | `octra-sqlite setup` | Configure wallet, RPC, network, and default database. |
 | `octra-sqlite init ...` | Non-interactive config for scripts and advanced users. |
-| `octra-sqlite config` | Show wallet, RPC, network, and default database. |
+| `octra-sqlite config` | Show wallet, network, RPC, explorer, and saved databases. |
 | `octra-sqlite status [DATABASE]` | Verify config, wallet, bundled WASM, manifest, and live database health. |
 | `octra-sqlite quickstart DATABASE` | Create a new SQLite database with the built-in Remilia sample. |
 | `octra-sqlite new DATABASE` | Create a fresh SQLite database and save `DATABASE` locally. |
