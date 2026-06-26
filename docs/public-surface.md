@@ -54,8 +54,9 @@ They should stay expressive enough that users do not need to inspect
 
 ## Public
 
-- `src/main.rs`: Rust CLI orchestration.
-- `src/output.rs`: CLI table/json/csv rendering.
+- `src/main.rs`: tiny binary entrypoint.
+- `src/cli/mod.rs`: Rust CLI orchestration.
+- `src/cli/output.rs`: CLI table/json/csv rendering.
 - `src/client/`: reusable Rust client.
 - `src/client/mod.rs`: intentional client exports. The intended path is
   `OctraSqlite -> Database -> query/execute`; raw deploy/RPC helpers live under
