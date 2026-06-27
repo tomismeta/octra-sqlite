@@ -15,10 +15,13 @@ pub use error::{ClientError, ClientErrorKind, Result};
 pub use results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx};
 pub use safety::{operation_safety, DatabaseOperation, OperationSafety};
 pub use session::SessionOptions;
-pub use transport::{HttpTransport, Transport};
+#[cfg(feature = "http")]
+pub use transport::HttpTransport;
+pub use transport::Transport;
 pub use write::{PreparedOwnerWrite, PreparedWrite, SignedWrite};
 
 pub mod low_level {
+    #[cfg(feature = "http")]
     pub use super::database::{
         auth_info, exec_sql, next_nonce, program_info, query_typed, submit_tx, view,
         wait_for_transaction,

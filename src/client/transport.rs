@@ -1,16 +1,23 @@
-use super::error::{ClientError, ClientErrorKind, Result};
-use serde_json::{json, Value};
+use super::error::Result;
+#[cfg(feature = "http")]
+use super::error::{ClientError, ClientErrorKind};
+#[cfg(feature = "http")]
+use serde_json::json;
+use serde_json::Value;
+#[cfg(feature = "http")]
 use std::time::Duration;
 
 pub trait Transport {
     fn call(&self, rpc: &str, method: &str, params: Value) -> Result<Value>;
 }
 
+#[cfg(feature = "http")]
 #[derive(Clone)]
 pub struct HttpTransport {
     client: reqwest::blocking::Client,
 }
 
+#[cfg(feature = "http")]
 impl Default for HttpTransport {
     fn default() -> Self {
         let client = reqwest::blocking::Client::builder()
@@ -21,6 +28,7 @@ impl Default for HttpTransport {
     }
 }
 
+#[cfg(feature = "http")]
 impl Transport for HttpTransport {
     fn call(&self, rpc: &str, method: &str, params: Value) -> Result<Value> {
         let body = json!({

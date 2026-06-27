@@ -1,5 +1,34 @@
 # Release Notes
 
+## 0.2.1
+
+This is a hardening release for the Rust CLI/client and bundled Circle WASM.
+
+## Added
+
+- `cargo build --no-default-features --lib` coverage for the protocol/client
+  core without HTTP or CLI dependencies.
+- Plain `circle_url` and `tx_url` fields in write output when the active network
+  has an explorer profile.
+
+## Changed
+
+- CLI SQL routing now lets SQLite inside the Circle classify single statements
+  and only submits a signed write when SQLite returns `sqlite_readonly_required`.
+- Wallet sessions now keep signing state instead of cloned private-key strings,
+  verify supplied public keys, and zeroize decoded/intermediate key material
+  where practical.
+- `new --no-name` status follow-up now uses the generated `oct://` URI.
+- The Circle query path accepts SQLite trailing comments on single-statement
+  reads.
+
+## Removed
+
+- Undocumented hidden top-level aliases: `query`, `exec`, `tables`, `schema`,
+  `storage`, `circle`, `proof`, `doctor`, and `alias`.
+- `.proof` as a shell synonym. Use `.verify`; reserve “proof” for a future
+  durable proof artifact.
+
 ## 0.2.0
 
 This release refactors the Rust client and protocol boundary while keeping the
@@ -66,11 +95,15 @@ devnet.
 
 ```text
 circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
-version: 3
-personalized_code_hash: 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15
-bundled_wasm_hash: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
-code_bytes: 607640
+version: 4
+personalized_code_hash: 37e377095b33437ad3ebbda0cd67766e005cfe0b82967d6abdcfabb5427f2f46
+bundled_wasm_hash: 29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c
+code_bytes: 607800
+circle_create_tx: 1a1817d310278a3814d5446b1869a098ce4055be2421aa31694d3bb4a51312cb
+initializer_tx: da10d2af72c3b4be2053fe47cc65b9e4073bd31f52fcdc85451a0cefbbbdbf43
+program_update_tx: 98ce68ef74d9c4ef50bdf0654201d67cd74822da0231f6ce4cd5c30e1f0311f1
+non_owner_denied_tx: 08ea0b734025ed87d5694af6f2800bcec55411815e6b7724a325159ac6b6d3b3
 sample: remilia collection
-manifest: release/octra-sqlite-0.2.0.json
+manifest: release/octra-sqlite-0.2.1.json
 proof: docs/proofs/devnet.md
 ```

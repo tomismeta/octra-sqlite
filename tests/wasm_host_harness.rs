@@ -818,6 +818,12 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         assert!(missing["detail"]
             .as_str()
             .is_some_and(|detail| detail.contains("no such table: companion")));
+        let trailing_line_comment =
+            contract.call_query("query_typed", &["select 1 as one; -- trailing comment"])?;
+        assert!(trailing_line_comment.starts_with("OSR1:"));
+        let trailing_block_comment =
+            contract.call_query("query_typed", &["select /* ; */ 1 as one; /* trailing */"])?;
+        assert!(trailing_block_comment.starts_with("OSR1:"));
         let denied = json_response(
             &contract.call_query("query", &["insert into people(first_name) values ('Ada');"])?,
         );

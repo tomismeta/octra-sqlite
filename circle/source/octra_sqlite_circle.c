@@ -167,6 +167,25 @@ static int is_space(char ch) {
   return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t' || ch == '\f';
 }
 
+static const char *skip_sql_tail(const char *tail) {
+  if (!tail) return tail;
+  for (;;) {
+    while (is_space(*tail)) ++tail;
+    if (tail[0] == '-' && tail[1] == '-') {
+      tail += 2;
+      while (*tail && *tail != '\n' && *tail != '\r') ++tail;
+      continue;
+    }
+    if (tail[0] == '/' && tail[1] == '*') {
+      tail += 2;
+      while (tail[0] && !(tail[0] == '*' && tail[1] == '/')) ++tail;
+      if (tail[0]) tail += 2;
+      continue;
+    }
+    return tail;
+  }
+}
+
 usize strspn(const char *s, const char *accept) {
   usize n = 0;
   for (; s[n]; ++n) {
@@ -1508,7 +1527,7 @@ static int run_sqlite_query(const char *sql) {
     sqlite3_close(db);
     return 1;
   }
-  while (tail && is_space(*tail)) ++tail;
+  tail = skip_sql_tail(tail);
   if (tail && *tail) {
     append_json_error("sqlite_single_query_required", "query accepts one read-only SQLite statement");
     sqlite3_finalize(stmt);
@@ -1589,7 +1608,7 @@ static int run_sqlite_query_typed(const char *sql) {
     sqlite3_close(db);
     return 1;
   }
-  while (tail && is_space(*tail)) ++tail;
+  tail = skip_sql_tail(tail);
   if (tail && *tail) {
     append_json_error("sqlite_single_query_required", "query accepts one read-only SQLite statement");
     sqlite3_finalize(stmt);

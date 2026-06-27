@@ -6,6 +6,8 @@ use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signer, SigningKey};
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use zeroize::Zeroize;
 
 #[derive(Clone, Default)]
 pub struct SessionOptions {
@@ -22,9 +24,45 @@ pub struct Session {
     target: DatabaseTarget,
     wallet_path: Option<PathBuf>,
     rpc: String,
+    rpc_override: bool,
     caller: String,
-    private_key: String,
-    public_key: String,
+    signer: Arc<LocalSigner>,
+}
+
+struct LocalSigner {
+    key: SigningKey,
+    public_key_b64: String,
+}
+
+impl LocalSigner {
+    fn from_private_key_text(private_key: &str, public_key: Option<String>) -> Result<Self> {
+        let key = signing_key_from_text(private_key)?;
+        let derived_public_key = key.verifying_key().to_bytes();
+        let public_key_b64 = match public_key {
+            Some(text) => normalized_public_key_b64(&text, &derived_public_key)?,
+            None => general_purpose::STANDARD.encode(derived_public_key),
+        };
+        Ok(Self {
+            key,
+            public_key_b64,
+        })
+    }
+
+    fn public_key_b64(&self) -> &str {
+        &self.public_key_b64
+    }
+
+    fn intent_public_key(&self) -> [u8; 32] {
+        self.key.verifying_key().to_bytes()
+    }
+
+    fn sign_text_b64(&self, message: &str) -> String {
+        general_purpose::STANDARD.encode(self.key.sign(message.as_bytes()).to_bytes())
+    }
+
+    fn sign_bytes_hex(&self, message: &[u8]) -> String {
+        hex::encode(self.key.sign(message).to_bytes())
+    }
 }
 
 impl Session {
@@ -45,7 +83,7 @@ impl Session {
     }
 
     pub fn public_key_b64(&self) -> &str {
-        &self.public_key
+        self.signer.public_key_b64()
     }
 
     pub fn with_database_target(&self, target: DatabaseTarget) -> Session {
@@ -53,37 +91,46 @@ impl Session {
             target,
             wallet_path: self.wallet_path.clone(),
             rpc: self.rpc.clone(),
+            rpc_override: self.rpc_override,
             caller: self.caller.clone(),
-            private_key: self.private_key.clone(),
-            public_key: self.public_key.clone(),
+            signer: Arc::clone(&self.signer),
         }
     }
 
     pub fn open_database(&self, target: impl Into<String>) -> Result<Session> {
-        build_session(&SessionOptions {
-            target: Some(target.into()),
-            wallet: self.wallet_path.clone(),
-            rpc: Some(self.rpc.clone()),
-            caller: Some(self.caller.clone()),
-            private_key: Some(self.private_key.clone()),
-            public_key: Some(self.public_key.clone()),
+        let config = load_config().unwrap_or_default();
+        let mut target = resolve_target(&target.into(), &config)?;
+        if target.rpc.is_empty() {
+            target.rpc = self.rpc.clone();
+        }
+        Ok(Session {
+            rpc: open_database_rpc(&self.rpc, self.rpc_override, Some(target.rpc.clone())),
+            target,
+            wallet_path: self.wallet_path.clone(),
+            rpc_override: self.rpc_override,
+            caller: self.caller.clone(),
+            signer: Arc::clone(&self.signer),
         })
     }
 
     pub fn intent_public_key(&self) -> Result<[u8; 32]> {
-        Ok(signing_key_from_text(&self.private_key)?
-            .verifying_key()
-            .to_bytes())
+        Ok(self.signer.intent_public_key())
     }
 
-    pub(crate) fn sign_text_b64(&self, message: &str) -> Result<String> {
-        let signing_key = signing_key_from_text(&self.private_key)?;
-        Ok(general_purpose::STANDARD.encode(signing_key.sign(message.as_bytes()).to_bytes()))
+    pub(crate) fn sign_view_auth_b64(&self, message: &str) -> String {
+        self.signer.sign_text_b64(message)
     }
 
-    pub(crate) fn sign_bytes_hex(&self, message: &[u8]) -> Result<String> {
-        let signing_key = signing_key_from_text(&self.private_key)?;
-        Ok(hex::encode(signing_key.sign(message).to_bytes()))
+    pub(crate) fn sign_program_info_b64(&self, message: &str) -> String {
+        self.signer.sign_text_b64(message)
+    }
+
+    pub(crate) fn sign_transaction_b64(&self, message: &str) -> String {
+        self.signer.sign_text_b64(message)
+    }
+
+    pub(crate) fn sign_owner_write_hex(&self, message: &[u8]) -> String {
+        self.signer.sign_bytes_hex(message)
     }
 }
 
@@ -142,17 +189,19 @@ fn build_session_for_target(
     config: &Config,
     mut target: DatabaseTarget,
 ) -> Result<Session> {
-    let explicit_rpc = first_string(&[options.rpc.clone(), env::var("OCTRA_RPC_URL").ok()]);
+    let explicit_rpc = first_string([options.rpc.clone(), env::var("OCTRA_RPC_URL").ok()]);
     if let Some(rpc) = explicit_rpc.clone() {
         target.rpc = rpc;
     }
+    let rpc_override = explicit_rpc.is_some();
     let wallet_path = resolve_wallet_path(options, config);
     let wallet = load_wallet(wallet_path.as_deref())?;
+    let wallet_rpc = wallet.rpc;
     let rpc = choose_session_rpc(
         explicit_rpc,
         Some(target.rpc.clone()),
         config.rpc.clone(),
-        wallet.rpc.clone(),
+        wallet_rpc,
     )
     .ok_or_else(|| {
         ClientError::with_kind(
@@ -160,10 +209,10 @@ fn build_session_for_target(
             "RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL",
         )
     })?;
-    let caller = first_string(&[
+    let caller = first_string([
         options.caller.clone(),
-        wallet.addr.clone(),
-        wallet.address.clone(),
+        wallet.addr,
+        wallet.address,
         env::var("OCTRA_CALLER").ok(),
     ])
     .ok_or_else(|| {
@@ -172,12 +221,12 @@ fn build_session_for_target(
             "caller wallet address is required; configure a wallet, pass --caller, or set OCTRA_CALLER",
         )
     })?;
-    let private_key = first_string(&[
+    let mut private_key = first_secret_string([
         options.private_key.clone(),
-        wallet.priv_field.clone(),
-        wallet.priv_.clone(),
-        wallet.private_key.clone(),
-        wallet.private_key_b64.clone(),
+        wallet.priv_field,
+        wallet.priv_,
+        wallet.private_key,
+        wallet.private_key_b64,
         env::var("OCTRA_PRIVATE_KEY_B64").ok(),
     ])
     .ok_or_else(|| {
@@ -186,32 +235,54 @@ fn build_session_for_target(
             "wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64",
         )
     })?;
-    let signing_key = signing_key_from_text(&private_key)?;
-    let derived_pub = general_purpose::STANDARD.encode(signing_key.verifying_key().to_bytes());
-    let public_key = first_string(&[
+    let supplied_public_key = first_string([
         options.public_key.clone(),
-        wallet.pub_field.clone(),
-        wallet.pub_.clone(),
-        wallet.public_key.clone(),
-        wallet.public_key_b64.clone(),
+        wallet.pub_field,
+        wallet.pub_,
+        wallet.public_key,
+        wallet.public_key_b64,
         env::var("OCTRA_PUBLIC_KEY_B64").ok(),
-        Some(derived_pub),
-    ])
-    .unwrap();
+    ]);
+    let signer = LocalSigner::from_private_key_text(&private_key, supplied_public_key);
+    private_key.zeroize();
+    let signer = Arc::new(signer?);
     Ok(Session {
         target,
         wallet_path,
         rpc,
+        rpc_override,
         caller,
-        private_key,
-        public_key,
+        signer,
     })
 }
 
-fn first_string(values: &[Option<String>]) -> Option<String> {
+fn first_string(values: impl IntoIterator<Item = Option<String>>) -> Option<String> {
     values
-        .iter()
-        .find_map(|value| value.as_ref().filter(|v| !v.is_empty()).cloned())
+        .into_iter()
+        .find_map(|value| value.filter(|v| !v.is_empty()))
+}
+
+fn first_secret_string(values: impl IntoIterator<Item = Option<String>>) -> Option<String> {
+    let mut selected = None;
+    for mut value in values.into_iter().flatten() {
+        if value.is_empty() {
+            value.zeroize();
+            continue;
+        }
+        if selected.is_none() {
+            selected = Some(value);
+        } else {
+            value.zeroize();
+        }
+    }
+    selected
+}
+
+fn open_database_rpc(current_rpc: &str, rpc_override: bool, target_rpc: Option<String>) -> String {
+    if rpc_override {
+        return current_rpc.to_string();
+    }
+    first_string([target_rpc, Some(current_rpc.to_string())]).unwrap()
 }
 
 fn choose_session_rpc(
@@ -220,26 +291,68 @@ fn choose_session_rpc(
     config_rpc: Option<String>,
     wallet_rpc: Option<String>,
 ) -> Option<String> {
-    first_string(&[explicit_rpc, target_rpc, config_rpc, wallet_rpc])
+    first_string([explicit_rpc, target_rpc, config_rpc, wallet_rpc])
 }
 
 fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let cleaned = text.trim();
-    let raw = general_purpose::STANDARD
-        .decode(cleaned)
-        .or_else(|_| hex::decode(cleaned))
-        .map_err(|_| {
-            ClientError::with_kind(ClientErrorKind::Wallet, "private key must be base64 or hex")
-        })?;
-    if raw.len() < 32 {
+    let mut raw = decode_key_text(cleaned).ok_or_else(|| {
+        ClientError::with_kind(ClientErrorKind::Wallet, "private key must be base64 or hex")
+    })?;
+    if raw.len() != 32 && raw.len() != 64 {
+        raw.zeroize();
         return Err(ClientError::with_kind(
             ClientErrorKind::Wallet,
-            "private key must decode to at least 32 bytes",
+            "private key must decode to a 32-byte seed or 64-byte keypair",
         ));
     }
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&raw[..32]);
-    Ok(SigningKey::from_bytes(&seed))
+    let signing_key = SigningKey::from_bytes(&seed);
+    if raw.len() == 64 && raw[32..] != signing_key.verifying_key().to_bytes() {
+        seed.zeroize();
+        raw.zeroize();
+        return Err(ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "64-byte private key public half does not match seed",
+        ));
+    }
+    seed.zeroize();
+    raw.zeroize();
+    Ok(signing_key)
+}
+
+fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> {
+    let cleaned = text.trim();
+    let mut raw = decode_key_text(cleaned).ok_or_else(|| {
+        ClientError::with_kind(ClientErrorKind::Wallet, "public key must be base64 or hex")
+    })?;
+    if raw.len() != 32 {
+        raw.zeroize();
+        return Err(ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "public key must decode to 32 bytes",
+        ));
+    }
+    if raw.as_slice() != expected {
+        raw.zeroize();
+        return Err(ClientError::with_kind(
+            ClientErrorKind::Wallet,
+            "wallet public key does not match private key",
+        ));
+    }
+    let public_key = general_purpose::STANDARD.encode(&raw);
+    raw.zeroize();
+    Ok(public_key)
+}
+
+fn decode_key_text(cleaned: &str) -> Option<Vec<u8>> {
+    let looks_hex =
+        cleaned.len().is_multiple_of(2) && cleaned.as_bytes().iter().all(|b| b.is_ascii_hexdigit());
+    if looks_hex {
+        return hex::decode(cleaned).ok();
+    }
+    general_purpose::STANDARD.decode(cleaned).ok()
 }
 
 #[cfg(test)]
@@ -286,5 +399,77 @@ mod tests {
             .as_deref(),
             Some("http://wallet.example/rpc")
         );
+    }
+
+    #[test]
+    fn open_database_rpc_uses_target_network_unless_rpc_was_explicit() {
+        assert_eq!(
+            open_database_rpc(
+                "https://devnet.octrascan.io/rpc",
+                false,
+                Some("https://octra.network/rpc".to_string()),
+            ),
+            "https://octra.network/rpc"
+        );
+        assert_eq!(
+            open_database_rpc(
+                "http://127.0.0.1:8080/rpc",
+                true,
+                Some("https://octra.network/rpc".to_string()),
+            ),
+            "http://127.0.0.1:8080/rpc"
+        );
+    }
+
+    #[test]
+    fn supplied_public_key_must_match_private_key() {
+        let error = match build_session(&SessionOptions {
+            target: Some("oct://devnet/octABC".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCaller".to_string()),
+            private_key: Some(
+                "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+            ),
+            public_key: Some(general_purpose::STANDARD.encode([2u8; 32])),
+            ..SessionOptions::default()
+        }) {
+            Ok(_) => panic!("mismatched public key should fail"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), ClientErrorKind::Wallet);
+        assert!(error
+            .to_string()
+            .contains("wallet public key does not match private key"));
+    }
+
+    #[test]
+    fn accepts_explicit_64_byte_keypair_form() {
+        let seed = [3u8; 32];
+        let key = SigningKey::from_bytes(&seed);
+        let public_key = key.verifying_key().to_bytes();
+        let mut keypair = Vec::from(seed);
+        keypair.extend_from_slice(&public_key);
+        let session = build_session(&SessionOptions {
+            target: Some("oct://devnet/octABC".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCaller".to_string()),
+            private_key: Some(hex::encode(keypair)),
+            public_key: Some(general_purpose::STANDARD.encode(public_key)),
+            ..SessionOptions::default()
+        })
+        .unwrap();
+        assert_eq!(
+            session.public_key_b64(),
+            general_purpose::STANDARD.encode(public_key)
+        );
+    }
+
+    #[test]
+    fn rejects_private_keys_with_ambiguous_length() {
+        let error = signing_key_from_text("0102").unwrap_err();
+        assert_eq!(error.kind(), ClientErrorKind::Wallet);
+        assert!(error
+            .to_string()
+            .contains("32-byte seed or 64-byte keypair"));
     }
 }

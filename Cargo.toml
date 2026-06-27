@@ -1,30 +1,37 @@
 [package]
 name = "octra-sqlite"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "MIT"
 description = "Real SQLite inside an Octra Circle, with a Rust CLI and client library"
 
 [features]
+default = ["cli", "http"]
+cli = ["dep:anyhow", "dep:clap", "dep:rustyline", "http"]
+http = ["dep:reqwest"]
 wasm-behavior = ["dep:wasmtime"]
 
 [[bin]]
 name = "octra-sqlite"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [[example]]
 name = "remilia-read-api"
 path = "examples/remilia-read-api/main.rs"
+required-features = ["http"]
 
 [dependencies]
-anyhow = "1"
+anyhow = { version = "1", optional = true }
 base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 dirs = "6"
 ed25519-dalek = "2"
 hex = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+rustyline = { version = "18.0.1", default-features = false, features = ["with-file-history"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 wasmtime = { version = "39", optional = true }
+zeroize = "1"

@@ -4,10 +4,7 @@ use super::{
     session::Session,
     transport::Transport,
 };
-use crate::protocol::{
-    osr1::{decode_typed_result, TYPED_PREFIX},
-    tx::{canonical_tx, Tx},
-};
+use crate::protocol::osr1::{decode_typed_result, TYPED_PREFIX};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -28,7 +25,7 @@ pub(super) fn view_with<T: Transport>(
         method,
         params_hash
     );
-    let signature = session.sign_text_b64(&message)?;
+    let signature = session.sign_view_auth_b64(&message);
     let result = rpc_call(
         transport,
         session,
@@ -89,7 +86,7 @@ pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) 
         session.target().circle,
         session.caller()
     );
-    let signature = session.sign_text_b64(&message)?;
+    let signature = session.sign_program_info_b64(&message);
     rpc_call(
         transport,
         session,
@@ -147,6 +144,7 @@ pub(super) fn wait_for_receipt_with<T: Transport>(
     ))
 }
 
+#[cfg(feature = "http")]
 pub(super) fn wait_for_transaction_with<T: Transport>(
     transport: &T,
     session: &Session,
@@ -219,10 +217,4 @@ fn contract_error_text(value: &Value) -> Option<String> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
-}
-
-pub(super) fn sign_canonical_tx(session: &Session, tx: &mut Tx) -> Result<()> {
-    let canonical = canonical_tx(tx);
-    tx.signature = session.sign_text_b64(&canonical)?;
-    Ok(())
 }

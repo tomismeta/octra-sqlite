@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.1
+
+- Made the protocol/client core build without HTTP or CLI dependencies.
+- Kept normal `cargo install --path . --locked` behavior unchanged through
+  default features.
+- Hardened wallet signing state so sessions keep a signer instead of cloned
+  private-key strings.
+- Verified supplied public keys match the private key and tightened supported
+  private-key forms.
+- Removed the client-side SQL read/write prefix heuristic; the CLI now defers
+  single-statement classification to SQLite inside the Circle.
+- Preserved script-style `.read` and multi-statement execution through the
+  signed write path.
+- Removed undocumented legacy top-level aliases in favor of the SQLite-shaped
+  `octra-sqlite DATABASE "SQL"` path, `database`/`db`, `status`, and `verify`.
+- Retired `.proof` as a synonym until a real proof artifact exists.
+- Added plain explorer links for writes and live status when a network explorer
+  profile is configured.
+- Fixed `new --no-name` follow-up instructions so status uses the `oct://` URI.
+- Rebuilt the bundled Circle WASM so single-statement reads accept SQLite
+  trailing comments.
+
 ## 0.2.0
 
 - Refactored the Rust code around a reusable protocol/client boundary while

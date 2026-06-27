@@ -79,6 +79,7 @@ impl From<std::io::Error> for ClientError {
     }
 }
 
+#[cfg(feature = "http")]
 impl From<reqwest::Error> for ClientError {
     fn from(error: reqwest::Error) -> Self {
         Self::with_kind(ClientErrorKind::Transport, error.to_string())

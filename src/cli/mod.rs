@@ -11,7 +11,7 @@ use crate::{
             program_info, query_typed, resolve_wallet_path as client_resolve_wallet_path,
             submit_tx, view, wait_for_transaction, wallet_caller, Session,
         },
-        write_config, AuthInfo, Config, SessionOptions,
+        write_config, AuthInfo, ClientError, ClientErrorKind, Config, SessionOptions,
     },
     protocol::{
         target::{parse_database_target, DatabaseTarget as Target},
@@ -19,9 +19,11 @@ use crate::{
     },
 };
 use output::{
-    format_exec_result, format_json, format_result, print_exec_result, print_json, print_result,
-    value_to_string, write_text, OutputMode,
+    dim, format_exec_result, format_field, format_json, format_result, format_status_line,
+    hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
+    OutputMode,
 };
+use rustyline::error::ReadlineError;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::env;
@@ -33,12 +35,12 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.2.0.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.2.1.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf";
-const EXPECTED_WASM_BYTES: usize = 607_640;
+    "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c";
+const EXPECTED_WASM_BYTES: usize = 607_800;
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -76,42 +78,12 @@ enum Commands {
         #[command(subcommand)]
         command: DatabaseCommand,
     },
-    /// Legacy spelling for database.
-    #[command(hide = true)]
-    Alias {
-        #[command(subcommand)]
-        command: DatabaseCommand,
-    },
     /// Open a SQLite shell or run SQL against a database.
     Open(OpenArgs),
-    /// Run read-only SQL.
-    #[command(hide = true)]
-    Query(SqlArgs),
-    /// Run state-changing SQL and wait for a receipt.
-    #[command(hide = true)]
-    Exec(SqlArgs),
-    /// Show tables from sqlite_master.
-    #[command(hide = true)]
-    Tables(TargetArgs),
-    /// Show SQLite schema.
-    #[command(hide = true)]
-    Schema(TargetArgs),
-    /// Show SQLite page storage info.
-    #[command(hide = true)]
-    Storage(TargetArgs),
-    /// Show Octra Circle program metadata.
-    #[command(hide = true)]
-    Circle(TargetArgs),
-    /// Verify live database metadata, storage, SQLite version, and tables.
-    #[command(hide = true)]
-    Proof(TargetArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
-    Status(DoctorArgs),
-    /// Legacy spelling for status.
-    #[command(hide = true)]
-    Doctor(DoctorArgs),
+    Status(StatusArgs),
     /// Show local wallet, RPC, network, and database configuration.
     Config(ConfigArgs),
     /// Deploy/update a Circle program through native signed RPC.
@@ -374,7 +346,7 @@ struct VerifyArgs {
 }
 
 #[derive(Args)]
-struct DoctorArgs {
+struct StatusArgs {
     #[command(flatten)]
     target: TargetArgs,
     /// Expected deployed code hash. Defaults to the bundled release artifact hash.
@@ -421,53 +393,13 @@ pub fn run() -> Result<()> {
         }
         Commands::Quickstart(args) => cmd_quickstart(args),
         Commands::New(args) => cmd_new(args),
-        Commands::Database { command } | Commands::Alias { command } => cmd_database(command),
+        Commands::Database { command } => cmd_database(command),
         Commands::Open(args) => cmd_open(args),
-        Commands::Query(args) => {
-            let sql = required_sql(args.sql)?;
-            let session = build_session(&args.target)?;
-            let result = query_typed(&session, &sql)?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Exec(args) => {
-            let sql = required_sql(args.sql)?;
-            let session = build_session(&args.target)?;
-            let result = exec_sql(&session, &sql, args.no_wait)?;
-            print_exec_result(&result)
-        }
-        Commands::Tables(args) => {
-            let session = build_session(&args)?;
-            let result = query_typed(
-                &session,
-                "select name from sqlite_master where type='table' order by name;",
-            )?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Schema(args) => {
-            let session = build_session(&args)?;
-            let result = view(&session, "schema_typed", vec![])?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Storage(args) => {
-            let session = build_session(&args)?;
-            let result = view(&session, "storage_info", vec![])?;
-            print_json(&result)
-        }
-        Commands::Circle(args) => {
-            let session = build_session(&args)?;
-            let result = program_info(&session)?;
-            print_json(&result)
-        }
-        Commands::Proof(args) => {
-            let session = build_session(&args)?;
-            verify(&session, None, false)
-        }
         Commands::Verify(args) => {
             let session = build_session(&args.target)?;
             verify(&session, args.expected_hash.as_deref(), args.write_smoke)
         }
         Commands::Status(args) => cmd_status(args, "status"),
-        Commands::Doctor(args) => cmd_status(args, "doctor"),
         Commands::Config(args) => cmd_config(args),
         Commands::Deploy(args) => cmd_deploy(args),
         Commands::Install => {
@@ -490,18 +422,9 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "new",
         "database",
         "db",
-        "alias",
         "open",
-        "query",
-        "exec",
-        "tables",
-        "schema",
-        "storage",
-        "circle",
-        "proof",
         "verify",
         "status",
-        "doctor",
         "config",
         "deploy",
         "install",
@@ -515,10 +438,6 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         args.insert(1, "open".to_string());
     }
     args
-}
-
-fn required_sql(value: Option<String>) -> Result<String> {
-    value.ok_or_else(|| anyhow!("--sql is required"))
 }
 
 fn cmd_init(args: InitArgs) -> Result<()> {
@@ -538,21 +457,21 @@ fn cmd_init(args: InitArgs) -> Result<()> {
         config.default_database = Some(database);
     }
     write_config(&config)?;
-    println!("wrote {}", config_path()?.display());
+    print_field("wrote", config_path()?.display().to_string());
     if let Some(default_database) = &config.default_database {
-        println!("default database: {default_database}");
+        print_field("default database", default_database);
     }
     if let Some(network) = &config.network {
-        println!("network: {network}");
+        print_field("network", network);
     }
     if let Some(rpc) = &config.rpc {
-        println!("rpc: {rpc}");
+        print_field("rpc", rpc);
     }
     if let Some(explorer) = &config.explorer {
-        println!("explorer: {explorer}");
+        print_field("explorer", explorer);
     }
     if let Some(wallet) = &config.wallet {
-        println!("wallet: {wallet}");
+        print_field("wallet", wallet);
     }
     Ok(())
 }
@@ -564,7 +483,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         bail!("setup is interactive; run it in a terminal, pass --yes, or use init with flags");
     }
 
-    println!("Octra SQLite setup");
+    println!("{}", strong("Octra SQLite setup"));
     let wallet_default = args
         .wallet
         .clone()
@@ -578,7 +497,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     };
     if !wallet_path.is_file() {
         println!(
-            "warning: wallet not found at {}; writes need a funded wallet",
+            "{} wallet not found at {}; writes need a funded wallet",
+            strong("warning:"),
             wallet_path.display()
         );
     }
@@ -625,15 +545,15 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         config.default_database = Some(database);
     }
     write_config(&config)?;
-    println!("wrote {}", config_path()?.display());
-    println!("wallet: {}", wallet_path.display());
-    println!("network: {network}");
-    println!("rpc: {rpc}");
+    print_field("wrote", config_path()?.display().to_string());
+    print_field("wallet", wallet_path.display().to_string());
+    print_field("network", &network);
+    print_field("rpc", &rpc);
     if let Some(explorer) = config.explorer_for_network(&network) {
-        println!("explorer: {explorer}");
+        print_field("explorer", explorer);
     }
     if let Some(default_database) = &config.default_database {
-        println!("default database: {default_database}");
+        print_field("default database", default_database);
     }
 
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
@@ -655,8 +575,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        println!("next: octra-sqlite remilia \".tables\"");
-        println!("create: octra-sqlite quickstart my_collections");
+        print_field("next", "octra-sqlite remilia \".tables\"");
+        print_field("create", "octra-sqlite quickstart my_collections");
     }
     Ok(())
 }
@@ -718,27 +638,30 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     let created = create_circle(&control_session, &args, &network)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
     if args.no_name {
-        println!("database: (not saved)");
+        print_field("database", "(not saved)");
     } else {
-        println!("database: {}", args.name);
+        print_field("database", &args.name);
     }
-    println!("uri: {target_uri}");
-    println!("circle: {}", created.circle);
-    println!("wallet: {}", control_session.caller());
-    println!(
-        "code: {} bytes, hash {}",
-        created.code_bytes, created.code_hash
+    print_field("uri", &target_uri);
+    print_field("circle", linked_circle(&network, &created.circle));
+    print_field("wallet", control_session.caller());
+    print_field(
+        "code",
+        format!("{} bytes, hash {}", created.code_bytes, created.code_hash),
     );
-    println!("auth: owner-only writes");
+    print_field("auth", "owner-only writes");
     if let Some(hash) = &created.tx_hash {
-        println!("create_tx: {hash}");
+        print_field("create_tx", linked_tx(&network, hash));
+        if let Some(url) = explorer_tx_url(&network, hash) {
+            print_field("create_tx_url", url);
+        }
         if let Some(confirmation) = &created.confirmation {
-            println!(
-                "create_status: {}",
+            print_field(
+                "create_status",
                 confirmation
                     .get("status")
                     .map(value_to_string)
-                    .unwrap_or_else(|| "unknown".to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
             );
         }
     }
@@ -773,7 +696,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         };
         let session = build_session(&session_args)?;
         for sql in init_sql {
-            let result = exec_sql(&session, &sql, args.no_wait)?;
+            let result = with_explorer(exec_sql(&session, &sql, args.no_wait)?, &session);
             if let Some(receipt) = result.get("receipt") {
                 ensure_receipt_success(receipt, "initializer SQL")?;
             }
@@ -790,22 +713,35 @@ fn cmd_new(args: NewArgs) -> Result<()> {
             config.default_database = Some(args.name.clone());
         }
         write_config(&config)?;
-        println!("saved: yes");
+        print_field("saved", "yes");
     } else {
-        println!("saved: no");
+        print_field("saved", "no");
     }
 
+    let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
     if args.no_name {
-        println!("open: octra-sqlite open {target_uri}");
+        print_field("open", format!("octra-sqlite open {target_uri}"));
     } else {
-        println!("open: octra-sqlite open {}", args.name);
+        print_field("open", format!("octra-sqlite open {}", args.name));
     }
-    println!("status: octra-sqlite status {}", args.name);
+    print_field("status", format!("octra-sqlite status {followup_target}"));
     Ok(())
 }
 
-fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
-    let mut report = DoctorReport::default();
+fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) -> &'a str {
+    if no_name {
+        target_uri
+    } else {
+        name
+    }
+}
+
+fn print_field(label: &str, detail: impl AsRef<str>) {
+    print!("{}", format_field(label, detail));
+}
+
+fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
+    let mut report = StatusReport::default();
     let config_path = config_path()?;
     match load_config() {
         Ok(config) => {
@@ -897,32 +833,29 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
         }));
     }
 
-    println!("config: {}", path.display());
-    println!(
-        "wallet: {}",
-        config.wallet.as_deref().unwrap_or("(not configured)")
+    print_field("config", path.display().to_string());
+    print_field(
+        "wallet",
+        config.wallet.as_deref().unwrap_or("(not configured)"),
     );
-    println!(
-        "network: {}",
-        config.network.as_deref().unwrap_or("(not configured)")
+    print_field(
+        "network",
+        config.network.as_deref().unwrap_or("(not configured)"),
     );
-    println!(
-        "rpc: {}",
-        config.rpc.as_deref().unwrap_or("(not configured)")
+    print_field("rpc", config.rpc.as_deref().unwrap_or("(not configured)"));
+    print_field(
+        "explorer",
+        config.explorer.as_deref().unwrap_or("(not configured)"),
     );
-    println!(
-        "explorer: {}",
-        config.explorer.as_deref().unwrap_or("(not configured)")
-    );
-    println!(
-        "default database: {}",
+    print_field(
+        "default database",
         config
             .default_database
             .as_deref()
-            .unwrap_or("(not configured)")
+            .unwrap_or("(not configured)"),
     );
     if !config.networks.is_empty() {
-        println!("networks:");
+        println!("{}", dim("networks:"));
         for (name, profile) in &config.networks {
             println!(
                 "  {name}: rpc {}, explorer {}",
@@ -931,37 +864,37 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
             );
         }
     }
-    println!("databases: {}", config.databases.len());
+    print_field("databases", config.databases.len().to_string());
     if !config.databases.is_empty() {
-        println!("next: octra-sqlite database list");
+        print_field("next", "octra-sqlite database list");
     } else {
-        println!("create: octra-sqlite quickstart my_collections");
+        print_field("create", "octra-sqlite quickstart my_collections");
     }
     Ok(())
 }
 
 #[derive(Default)]
-struct DoctorReport {
+struct StatusReport {
     failures: usize,
 }
 
-impl DoctorReport {
+impl StatusReport {
     fn ok(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!("ok   {label}: {}", detail.as_ref());
+        print!("{}", format_status_line("ok", label, detail));
     }
 
     fn warn(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!("warn {label}: {}", detail.as_ref());
+        print!("{}", format_status_line("warn", label, detail));
     }
 
     fn fail(&mut self, label: &str, detail: impl AsRef<str>) {
         self.failures += 1;
-        println!("fail {label}: {}", detail.as_ref());
+        print!("{}", format_status_line("fail", label, detail));
     }
 
     fn finish(self, label: &str) -> Result<()> {
         if self.failures == 0 {
-            println!("{label}: ready");
+            println!("{} ready", dim(format!("{label}:")));
             Ok(())
         } else {
             bail!("{label} found {} issue(s)", self.failures)
@@ -969,7 +902,7 @@ impl DoctorReport {
     }
 }
 
-fn check_bundled_wasm(report: &mut DoctorReport) {
+fn check_bundled_wasm(report: &mut StatusReport) {
     match resolve_wasm_path(false, None) {
         Ok(path) => match fs::read(&path) {
             Ok(bytes) => {
@@ -1005,7 +938,7 @@ fn check_bundled_wasm(report: &mut DoctorReport) {
     }
 }
 
-fn check_release_manifest(report: &mut DoctorReport) {
+fn check_release_manifest(report: &mut StatusReport) {
     let Some(path) = find_project_file(RELEASE_MANIFEST_REL) else {
         report.fail(
             "release manifest",
@@ -1060,11 +993,17 @@ fn check_release_manifest(report: &mut DoctorReport) {
     }
 }
 
-fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash: &str) {
+fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
+    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
+        report.ok("explorer", url);
+    }
     match program_info(session) {
         Ok(info) => {
-            report.ok("circle", &session.target().circle);
+            report.ok(
+                "circle",
+                linked_circle(&session.target().network, &session.target().circle),
+            );
             let version = info
                 .get("version")
                 .and_then(Value::as_str)
@@ -1164,9 +1103,22 @@ fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash
         Err(error) => report.fail("auth info", error.to_string()),
     }
     match query_typed(session, "select sqlite_version() as sqlite_version;") {
-        Ok(result) => report.ok("typed query", value_to_string(&result)),
-        Err(error) => report.fail("typed query", error.to_string()),
+        Ok(result) => report.ok(
+            "sqlite version",
+            first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
+        ),
+        Err(error) => report.fail("sqlite version", error.to_string()),
     }
+}
+
+fn first_result_cell(result: &Value) -> Option<String> {
+    result
+        .get("rows")?
+        .as_array()?
+        .first()?
+        .as_array()?
+        .first()
+        .map(value_to_string)
 }
 
 fn program_owner(info: &Value) -> Option<&str> {
@@ -1271,6 +1223,60 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
         tx_hash,
         confirmation,
     })
+}
+
+fn with_explorer(mut result: Value, session: &Session) -> Value {
+    let Some(object) = result.as_object_mut() else {
+        return result;
+    };
+    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
+        object.insert("circle_url".to_string(), Value::String(url));
+    }
+    if let Some(tx_hash) = object
+        .get("tx_hash")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    {
+        if let Some(url) = explorer_tx_url(&session.target().network, &tx_hash) {
+            object.insert("tx_url".to_string(), Value::String(url));
+        }
+    }
+    result
+}
+
+fn linked_circle(network: &str, circle: &str) -> String {
+    match explorer_circle_url(network, circle) {
+        Some(url) => hyperlink(circle, url),
+        None => circle.to_string(),
+    }
+}
+
+fn linked_tx(network: &str, hash: &str) -> String {
+    match explorer_tx_url(network, hash) {
+        Some(url) => hyperlink(hash, url),
+        None => hash.to_string(),
+    }
+}
+
+fn explorer_base_url(network: &str) -> Option<String> {
+    load_config()
+        .unwrap_or_default()
+        .explorer_for_network(network)
+        .map(|url| url.trim_end_matches('/').to_string())
+}
+
+fn explorer_tx_url(network: &str, hash: &str) -> Option<String> {
+    Some(format!(
+        "{}/tx.html?hash={hash}",
+        explorer_base_url(network)?
+    ))
+}
+
+fn explorer_circle_url(network: &str, circle: &str) -> Option<String> {
+    Some(format!(
+        "{}/address.html?addr={circle}",
+        explorer_base_url(network)?
+    ))
 }
 
 fn patch_wasm_auth_for_owner(wasm: &mut [u8], session: &Session) -> Result<AuthPatch> {
@@ -1535,8 +1541,8 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
                 config.default_database = Some(name.clone());
             }
             write_config(&config)?;
-            println!("{name} -> {database}");
-            println!("open: octra-sqlite {name}");
+            print_field("database", format!("{name} -> {database}"));
+            print_field("open", format!("octra-sqlite {name}"));
         }
         DatabaseCommand::Use { name } => {
             if !config.databases.contains_key(&name) {
@@ -1544,8 +1550,8 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
             }
             config.default_database = Some(name.clone());
             write_config(&config)?;
-            println!("default database: {name}");
-            println!("open: octra-sqlite");
+            print_field("default database", name);
+            print_field("open", "octra-sqlite");
         }
         DatabaseCommand::Remove { name } => {
             config.databases.remove(&name);
@@ -1553,7 +1559,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
                 config.default_database = None;
             }
             write_config(&config)?;
-            println!("removed {name}");
+            print_field("removed", name);
         }
     }
     Ok(())
@@ -1561,12 +1567,12 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
-        println!("no databases");
-        println!("create: octra-sqlite quickstart my_collections");
+        println!("{}", dim("no databases"));
+        print_field("create", "octra-sqlite quickstart my_collections");
         return;
     }
-    println!("default  name  uri");
-    println!("-------  ----  ---");
+    println!("{}  name  uri", dim("default"));
+    println!("{}", dim("-------  ----  ---"));
     for (name, database) in &config.databases {
         let default_mark = if config.default_database.as_deref() == Some(name) {
             "*"
@@ -1584,34 +1590,34 @@ fn print_database_info(config: &Config, database: Option<&str>) -> Result<()> {
         .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
     let saved_uri = config.databases.get(&requested);
     let target = resolve_target(&requested, config)?;
-    println!(
-        "name: {}",
+    print_field(
+        "name",
         if saved_uri.is_some() {
             requested.as_str()
         } else {
             "(not saved)"
-        }
+        },
     );
-    println!(
-        "default: {}",
-        config.default_database.as_deref() == Some(requested.as_str())
+    print_field(
+        "default",
+        (config.default_database.as_deref() == Some(requested.as_str())).to_string(),
     );
-    println!("uri: {}", target.raw);
-    println!("network: {}", target.network);
-    println!("circle: {}", target.circle);
-    println!(
-        "rpc: {}",
+    print_field("uri", &target.raw);
+    print_field("network", &target.network);
+    print_field("circle", linked_circle(&target.network, &target.circle));
+    print_field(
+        "rpc",
         if target.rpc.is_empty() {
             "(not configured)"
         } else {
             target.rpc.as_str()
-        }
+        },
     );
     if let Some(explorer) = config.explorer_for_network(&target.network) {
-        println!("explorer: {explorer}");
+        print_field("explorer", explorer);
     }
-    println!("open: octra-sqlite {}", requested);
-    println!("status: octra-sqlite status {}", requested);
+    print_field("open", format!("octra-sqlite {}", requested));
+    print_field("status", format!("octra-sqlite status {}", requested));
     Ok(())
 }
 
@@ -1669,24 +1675,72 @@ fn run_one_sql_to(
         handle_dot_command(&mut state, trimmed)?;
         return Ok(());
     }
-    if is_read_sql(sql) {
-        let result = query_typed(session, sql)?;
-        write_text(output, &format_result(&result, mode, headers)?)
-    } else {
-        let result = exec_sql(session, sql, false)?;
-        if mode == OutputMode::Json {
-            write_text(output, &format_json(&result)?)
-        } else {
-            write_text(output, &format_exec_result(&result)?)
-        }
+    if looks_like_sql_script(sql) {
+        return run_exec_sql_to(session, sql, mode, output);
+    }
+    match query_typed(session, sql) {
+        Ok(result) => write_text(output, &format_result(&result, mode, headers)?),
+        Err(error) if sqlite_requires_exec(&error) => run_exec_sql_to(session, sql, mode, output),
+        Err(error) => Err(error.into()),
     }
 }
 
+fn run_exec_sql_to(
+    session: &Session,
+    sql: &str,
+    mode: OutputMode,
+    output: Option<&Path>,
+) -> Result<()> {
+    let result = with_explorer(exec_sql(session, sql, false)?, session);
+    if mode == OutputMode::Json {
+        write_text(output, &format_json(&result)?)
+    } else {
+        write_text(output, &format_exec_result(&result)?)
+    }
+}
+
+fn format_schema_result(result: &Value) -> Result<String> {
+    let columns = result
+        .get("columns")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("schema result missing columns"))?;
+    let sql_idx = columns
+        .iter()
+        .position(|column| column.as_str() == Some("sql"))
+        .ok_or_else(|| anyhow!("schema result missing sql column"))?;
+    let rows = result
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("schema result missing rows"))?;
+    let mut out = String::new();
+    for row in rows.iter().filter_map(Value::as_array) {
+        let Some(sql) = row.get(sql_idx).map(value_to_string) else {
+            continue;
+        };
+        let sql = sql.trim();
+        if sql.is_empty() {
+            continue;
+        }
+        out.push_str(sql);
+        if !sql.ends_with(';') {
+            out.push(';');
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
-    println!("SQLite on Octra ({})", session.target().network);
-    println!("circle: {}", session.target().circle);
-    println!("wallet: {}", session.caller());
-    println!("type .help for usage");
+    println!(
+        "{}",
+        strong(format!("SQLite on Octra ({})", session.target().network))
+    );
+    print_field(
+        "circle",
+        linked_circle(&session.target().network, &session.target().circle),
+    );
+    print_field("wallet", session.caller());
+    println!("{}", dim("type .help for usage"));
     let mut state = ShellState {
         session,
         mode,
@@ -1694,6 +1748,9 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         timer: false,
         output: None,
     };
+    let mut editor = rustyline::DefaultEditor::new()?;
+    let history_path = shell_history_path()?;
+    let _ = editor.load_history(&history_path);
     let mut buffer = String::new();
     loop {
         let prompt = if buffer.trim().is_empty() {
@@ -1701,16 +1758,16 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         } else {
             "   ...> "
         };
-        print!("{prompt}");
-        io::stdout().flush()?;
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line)? == 0 {
-            break;
-        }
+        let line = match editor.readline(prompt) {
+            Ok(line) => line,
+            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
+            Err(error) => return Err(error.into()),
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
+        let _ = editor.add_history_entry(line.as_str());
         if buffer.trim().is_empty() && trimmed.starts_with('.') {
             if handle_dot_command(&mut state, trimmed)? {
                 break;
@@ -1718,6 +1775,7 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
             continue;
         }
         buffer.push_str(&line);
+        buffer.push('\n');
         if trimmed.ends_with(';') {
             let sql = buffer.trim().to_string();
             buffer.clear();
@@ -1736,7 +1794,16 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
             }
         }
     }
+    let _ = editor.save_history(&history_path);
     Ok(())
+}
+
+fn shell_history_path() -> Result<PathBuf> {
+    let path = config_path()?.with_file_name("sqlite_history");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(path)
 }
 
 fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
@@ -1780,10 +1847,7 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
         }
         ".schema" => {
             let result = view(&state.session, "schema_typed", vec![])?;
-            write_text(
-                state.output.as_deref(),
-                &format_result(&result, state.mode, state.headers)?,
-            )?;
+            write_text(state.output.as_deref(), &format_schema_result(&result)?)?;
         }
         ".show" => print_shell_show(state),
         ".databases" => print_current_database(&state.session),
@@ -1798,10 +1862,10 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
         ".wallet" => {
             println!("{}", state.session.caller());
             if let Some(path) = state.session.wallet_path() {
-                println!("wallet: {}", path.display());
+                print_field("wallet", path.display().to_string());
             }
         }
-        ".proof" | ".verify" => verify(&state.session, None, false)?,
+        ".verify" => verify(&state.session, None, false)?,
         ".read" => {
             let path = parts.next().ok_or_else(|| anyhow!("usage: .read FILE"))?;
             let sql = fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
@@ -1839,7 +1903,13 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
                 .next()
                 .ok_or_else(|| anyhow!("usage: .open DATABASE"))?;
             state.session = state.session.open_database(target)?;
-            println!("circle: {}", state.session.target().circle);
+            print_field(
+                "circle",
+                linked_circle(
+                    &state.session.target().network,
+                    &state.session.target().circle,
+                ),
+            );
         }
         _ => bail!("unknown command {cmd}; try .help"),
     }
@@ -1864,32 +1934,37 @@ fn print_help() {
     println!("  .storage             show SQLite page storage info");
     println!("  .circle              show Circle program metadata");
     println!("  .wallet              show active wallet address");
-    println!("  .proof               verify live Circle SQLite status");
-    println!("  .verify              same as .proof");
+    println!("  .verify              verify live Circle SQLite status");
 }
 
 fn print_current_database(session: &Session) {
     println!("seq  name  file");
-    println!("---  ----  ----");
+    println!("{}", dim("---  ----  ----"));
     println!("0    main  {}", session.target().raw);
 }
 
 fn print_shell_show(state: &ShellState) {
-    println!("database: {}", state.session.target().raw);
-    println!("circle: {}", state.session.target().circle);
-    println!("network: {}", state.session.target().network);
-    println!("rpc: {}", state.session.rpc());
-    println!("wallet: {}", state.session.caller());
-    println!("mode: {}", state.mode.name());
-    println!("headers: {}", if state.headers { "on" } else { "off" });
-    println!("timer: {}", if state.timer { "on" } else { "off" });
-    println!(
-        "output: {}",
+    print_field("database", &state.session.target().raw);
+    print_field(
+        "circle",
+        linked_circle(
+            &state.session.target().network,
+            &state.session.target().circle,
+        ),
+    );
+    print_field("network", &state.session.target().network);
+    print_field("rpc", state.session.rpc());
+    print_field("wallet", state.session.caller());
+    print_field("mode", state.mode.name());
+    print_field("headers", if state.headers { "on" } else { "off" });
+    print_field("timer", if state.timer { "on" } else { "off" });
+    print_field(
+        "output",
         state
             .output
             .as_ref()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "stdout".to_string())
+            .unwrap_or_else(|| "stdout".to_string()),
     );
 }
 
@@ -2009,14 +2084,122 @@ fn now_timestamp() -> f64 {
     duration.as_secs() as f64 + f64::from(duration.subsec_millis()) / 1000.0
 }
 
-fn is_read_sql(sql: &str) -> bool {
-    let lower = sql.trim_start().to_ascii_lowercase();
-    lower.starts_with("select") || lower.starts_with("with") || lower.starts_with("explain")
+fn sqlite_requires_exec(error: &ClientError) -> bool {
+    error.kind() == ClientErrorKind::Rpc
+        && error
+            .to_string()
+            .starts_with("database error (sqlite_readonly_required)")
+}
+
+fn looks_like_sql_script(sql: &str) -> bool {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backtick = false;
+    let mut in_bracket = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut chars = sql.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if in_line_comment {
+            if ch == '\n' || ch == '\r' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                chars.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if in_bracket {
+            if ch == ']' {
+                if chars.peek().is_some_and(|(_, next)| *next == ']') {
+                    chars.next();
+                } else {
+                    in_bracket = false;
+                }
+            }
+            continue;
+        }
+        if in_backtick {
+            if ch == '`' {
+                if chars.peek().is_some_and(|(_, next)| *next == '`') {
+                    chars.next();
+                } else {
+                    in_backtick = false;
+                }
+            }
+            continue;
+        }
+        match ch {
+            '\'' if !in_double_quote => {
+                if in_single_quote && chars.peek().is_some_and(|(_, next)| *next == '\'') {
+                    chars.next();
+                } else {
+                    in_single_quote = !in_single_quote;
+                }
+            }
+            '"' if !in_single_quote => {
+                if in_double_quote && chars.peek().is_some_and(|(_, next)| *next == '"') {
+                    chars.next();
+                } else {
+                    in_double_quote = !in_double_quote;
+                }
+            }
+            '`' if !in_single_quote && !in_double_quote => in_backtick = true,
+            '[' if !in_single_quote && !in_double_quote => in_bracket = true,
+            '-' if !in_single_quote
+                && !in_double_quote
+                && chars.peek().is_some_and(|(_, next)| *next == '-') =>
+            {
+                chars.next();
+                in_line_comment = true;
+            }
+            '/' if !in_single_quote
+                && !in_double_quote
+                && chars.peek().is_some_and(|(_, next)| *next == '*') =>
+            {
+                chars.next();
+                in_block_comment = true;
+            }
+            ';' if !in_single_quote && !in_double_quote => {
+                let rest = &sql[index + ch.len_utf8()..];
+                if sql_tail_has_statement(rest) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn sql_tail_has_statement(mut tail: &str) -> bool {
+    loop {
+        tail = tail.trim_start();
+        if tail.is_empty() {
+            return false;
+        }
+        if let Some(rest) = tail.strip_prefix("--") {
+            tail = rest.split_once('\n').map(|(_, after)| after).unwrap_or("");
+            continue;
+        }
+        if let Some(rest) = tail.strip_prefix("/*") {
+            tail = rest.split_once("*/").map(|(_, after)| after).unwrap_or("");
+            continue;
+        }
+        return true;
+    }
 }
 
 fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> Result<()> {
-    println!("database: {}", session.target().raw);
-    println!("circle: {}", session.target().circle);
+    print_field("database", &session.target().raw);
+    print_field(
+        "circle",
+        linked_circle(&session.target().network, &session.target().circle),
+    );
     let info = program_info(session)?;
     let version = info
         .get("version")
@@ -2030,13 +2213,16 @@ fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> 
         .get("code_bytes")
         .map(value_to_string)
         .unwrap_or_else(|| "unknown".to_string());
-    println!("program: version {version}, bytes {bytes}, hash {hash}");
+    print_field(
+        "program",
+        format!("version {version}, bytes {bytes}, hash {hash}"),
+    );
     if let Some(expected) = expected_hash {
         if hash != expected {
             if expected == EXPECTED_WASM_SHA256 {
                 match personalized_wasm_hash(session) {
                     Ok(Some(personalized_hash)) if hash == personalized_hash => {
-                        println!("program: owner-personalized bundled WASM");
+                        print_field("program", "owner-personalized bundled WASM");
                     }
                     Ok(Some(personalized_hash)) => bail!(
                         "deployed code hash {hash} does not match expected {expected} or owner-personalized {personalized_hash}"
@@ -2054,33 +2240,39 @@ fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> 
         }
     }
     let storage = view(session, "storage_info", vec![])?;
-    println!(
-        "storage: {} pages, {} bytes, generation {}",
-        storage
-            .get("page_count")
-            .map(value_to_string)
-            .unwrap_or_else(|| "?".to_string()),
-        storage
-            .get("file_bytes")
-            .map(value_to_string)
-            .unwrap_or_else(|| "?".to_string()),
-        storage
-            .get("generation")
-            .map(value_to_string)
-            .unwrap_or_else(|| "?".to_string())
+    print_field(
+        "storage",
+        format!(
+            "{} pages, {} bytes, generation {}",
+            storage
+                .get("page_count")
+                .map(value_to_string)
+                .unwrap_or_else(|| "?".to_string()),
+            storage
+                .get("file_bytes")
+                .map(value_to_string)
+                .unwrap_or_else(|| "?".to_string()),
+            storage
+                .get("generation")
+                .map(value_to_string)
+                .unwrap_or_else(|| "?".to_string())
+        ),
     );
     if let Ok(auth) = auth_info(session) {
         if auth.configured {
-            println!(
-                "auth: OSW1 owner={}, db_id={}, sequence={}",
-                auth.owner_pubkey.as_deref().unwrap_or("?"),
-                auth.db_id,
-                auth.owner_sequence
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "?".to_string())
+            print_field(
+                "auth",
+                format!(
+                    "OSW1 owner={}, db_id={}, sequence={}",
+                    auth.owner_pubkey.as_deref().unwrap_or("?"),
+                    auth.db_id,
+                    auth.owner_sequence
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "?".to_string())
+                ),
             );
         } else {
-            println!("auth: unconfigured");
+            print_field("auth", "unconfigured");
         }
     }
     let sqlite_version = query_typed(session, "select sqlite_version() as sqlite_version;")?;
@@ -2098,13 +2290,13 @@ fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> 
     )?;
     print_result(&tables, OutputMode::Table, true)?;
     if write_smoke {
-        let result = exec_sql(
+        let result = with_explorer(exec_sql(
             session,
             "create table if not exists octra_sqlite_verify(first_name text not null, last_name text not null);
 delete from octra_sqlite_verify;
 insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');",
             false,
-        )?;
+        )?, session);
         print_exec_result(&result)?;
         let rows = query_typed(
             session,
@@ -2325,6 +2517,60 @@ mod tests {
     }
 
     #[test]
+    fn sqlite_readonly_required_routes_to_signed_exec() {
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_readonly_required): use exec for state-changing SQL",
+        );
+        assert!(sqlite_requires_exec(&error));
+
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_prepare_failed): no such table: missing",
+        );
+        assert!(!sqlite_requires_exec(&error));
+
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_prepare_failed): detail mentions sqlite_readonly_required",
+        );
+        assert!(!sqlite_requires_exec(&error));
+    }
+
+    #[test]
+    fn script_detection_preserves_sqlite_read_vs_exec_boundary() {
+        assert!(!looks_like_sql_script("select ';' as semi;"));
+        assert!(!looks_like_sql_script("select /* ; */ 1;"));
+        assert!(!looks_like_sql_script("select -- ;\n 1;"));
+        assert!(!looks_like_sql_script("select `semi;name` from demo;"));
+        assert!(!looks_like_sql_script("select [semi;name] from demo;"));
+        assert!(!looks_like_sql_script("select 1; -- trailing comment"));
+        assert!(!looks_like_sql_script("select 1; /* trailing comment */"));
+        assert!(looks_like_sql_script(
+            "create table person(first_name text); insert into person values ('Ada');"
+        ));
+        assert!(looks_like_sql_script("select 1; /* comment */ select 2;"));
+    }
+
+    #[test]
+    fn schema_dot_command_formats_sql_not_metadata_table() {
+        let result = json!({
+            "columns": ["type", "name", "sql"],
+            "rows": [
+                ["index", "sqlite_autoindex_collection_1", ""],
+                ["table", "collection", "CREATE TABLE collection(\n  name text primary key\n)"]
+            ]
+        });
+        let rendered = format_schema_result(&result).unwrap();
+        assert_eq!(
+            rendered,
+            "CREATE TABLE collection(\n  name text primary key\n);\n"
+        );
+        assert!(!rendered.contains("sqlite_autoindex"));
+        assert!(!rendered.contains("+---"));
+    }
+
+    #[test]
     fn deploy_requires_explicit_unconfigured_escape_hatch() {
         let cli = Cli::try_parse_from(["octra-sqlite", "deploy", "--allow-unconfigured"]).unwrap();
         match cli.command {
@@ -2395,6 +2641,18 @@ mod tests {
     }
 
     #[test]
+    fn new_no_name_followup_uses_database_uri() {
+        assert_eq!(
+            new_followup_target("organization", "oct://devnet/octABC", true),
+            "oct://devnet/octABC"
+        );
+        assert_eq!(
+            new_followup_target("organization", "oct://devnet/octABC", false),
+            "organization"
+        );
+    }
+
+    #[test]
     fn quickstart_defaults_to_remilia_sample() {
         let cli = Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).unwrap();
         match cli.command {
@@ -2417,11 +2675,11 @@ mod tests {
     }
 
     #[test]
-    fn doctor_accepts_local_only_mode() {
-        let cli = Cli::try_parse_from(["octra-sqlite", "doctor", "--skip-network"]).unwrap();
+    fn status_accepts_local_only_mode() {
+        let cli = Cli::try_parse_from(["octra-sqlite", "status", "--skip-network"]).unwrap();
         match cli.command {
-            Commands::Doctor(args) => assert!(args.skip_network),
-            _ => panic!("expected doctor command"),
+            Commands::Status(args) => assert!(args.skip_network),
+            _ => panic!("expected status command"),
         }
     }
 

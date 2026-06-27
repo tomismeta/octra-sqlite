@@ -10,8 +10,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      EXPECTED_WASM_SHA256: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
-      EXPECTED_WASM_BYTES: "607640"
+      EXPECTED_WASM_SHA256: 29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c
+      EXPECTED_WASM_BYTES: "607800"
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust
@@ -24,6 +24,8 @@ jobs:
           sudo apt-get install -y wabt
       - name: Rust tests
         run: cargo test --locked
+      - name: Protocol/client core without HTTP
+        run: cargo build --locked --no-default-features --lib
       - name: Script syntax
         run: find scripts -name '*.sh' -exec bash -n {} \;
       - name: Check bundled WASM artifact

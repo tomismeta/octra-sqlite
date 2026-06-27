@@ -1,0 +1,84 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.2.1",
+  "circle_program_version": "4",
+  "network": "devnet",
+  "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
+  "public_example": "remilia",
+  "public_example_sql": "examples/remilia-collections.sql",
+  "circle_create_tx": "1a1817d310278a3814d5446b1869a098ce4055be2421aa31694d3bb4a51312cb",
+  "initializer_tx": "da10d2af72c3b4be2053fe47cc65b9e4073bd31f52fcdc85451a0cefbbbdbf43",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 607800,
+    "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
+  },
+  "sqlite": {
+    "version": "3.53.2",
+    "source_path": "vendor/sqlite/3.53.2/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530200",
+    "source_sha256": "d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8192,
+    "max_dirty_pages_per_exec": 1024
+  },
+  "limits": {
+    "max_stable_bytes": 33554432,
+    "max_assets_bytes": 33554432,
+    "max_inline_value": 65536,
+    "max_wasm_bytes": 33554432
+  },
+  "typed_results": {
+    "codec": "OSR1",
+    "spec": "docs/spec/osr1.md"
+  },
+  "write_intents": {
+    "codec": "OSW1",
+    "wire_domain": "octra-sqlite.osw1.v1\\0",
+    "spec": "docs/spec/osw1.md"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "personalized_sha256": "37e377095b33437ad3ebbda0cd67766e005cfe0b82967d6abdcfabb5427f2f46",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d",
+    "owner_pubkey_offset": 601536,
+    "db_id_offset": 601568,
+    "program_update_tx": "98ce68ef74d9c4ef50bdf0654201d67cd74822da0231f6ce4cd5c30e1f0311f1",
+    "non_owner_denied_tx": "08ea0b734025ed87d5694af6f2800bcec55411815e6b7724a325159ac6b6d3b3"
+  },
+  "client_release": {
+    "notes": "Hardening release: core library can build without HTTP/CLI, wallet signing state avoids cloned private-key strings, CLI routing defers to SQLite, undocumented legacy aliases were removed, write output includes explorer links when configured, and the Circle query path accepts SQLite trailing comments.",
+    "read_only_api_example": "examples/remilia-read-api"
+  },
+  "samples": [
+    "remilia"
+  ],
+  "status": "network-specific reference artifact"
+}
