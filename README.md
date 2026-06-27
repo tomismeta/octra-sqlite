@@ -181,8 +181,9 @@ sqlite3 organization.sqlite "pragma integrity_check;"
 ```
 
 Move a whole database through SQL text. This is the portable SQL path for
-restoring into another Circle; large `.read` files are applied in batches on
-Octra, so restart from a fresh database if a restore is interrupted.
+restoring into another Circle. `.read` accepts SQLite shell dumps by stripping
+shell transaction/foreign-key wrappers before submitting signed writes to
+Octra. Restart from a fresh database if a restore is interrupted or fails.
 
 ```sh
 octra-sqlite organization ".dump" > organization.sql

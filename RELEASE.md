@@ -26,9 +26,10 @@ Circle while keeping the CLI familiar to `sqlite3` users.
 
 ## Notes
 
-- `.read` restores SQL text into a Circle through signed writes. Large files are
-  applied in batches because Octra SQL frames are capped; restart from a fresh
-  database if an interrupted large restore must be retried.
+- `.read` restores SQL text into a Circle through signed writes. SQLite shell
+  transaction/foreign-key wrappers are stripped before submission, and large
+  files are applied in batches because Octra SQL frames are capped. Restart from
+  a fresh database if an interrupted restore must be retried.
 - Binary `.restore` from a `.sqlite` file remains deferred until it can be kept
   as small and auditable as `.backup`.
 

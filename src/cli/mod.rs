@@ -1971,7 +1971,7 @@ fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
         exec_sql(session, &script, false)?;
         return Ok(statements
             .iter()
-            .filter(|statement| !should_skip_foreign_keys_pragma(statement))
+            .filter(|statement| !should_skip_import_wrapper(statement))
             .count());
     }
     let mut batch = String::new();
@@ -2037,7 +2037,7 @@ fn should_skip_foreign_keys_pragma(statement: &str) -> bool {
 fn sql_script_for_single_exec(statements: &[String]) -> String {
     let mut script = String::new();
     for statement in statements {
-        if should_skip_foreign_keys_pragma(statement) {
+        if should_skip_import_wrapper(statement) {
             continue;
         }
         script.push_str(statement.trim());
@@ -3418,7 +3418,7 @@ insert into person values (1);",
     }
 
     #[test]
-    fn small_sqlite_dump_restore_skips_foreign_key_pragma_only() {
+    fn small_sqlite_dump_restore_skips_shell_wrappers() {
         let statements = split_sql_statements(
             "PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -3427,9 +3427,9 @@ COMMIT;",
         );
         let script = sql_script_for_single_exec(&statements);
         assert!(!script.contains("foreign_keys"));
-        assert!(script.contains("BEGIN TRANSACTION;"));
+        assert!(!script.contains("BEGIN TRANSACTION"));
         assert!(script.contains("CREATE TABLE person"));
-        assert!(script.contains("COMMIT;"));
+        assert!(!script.contains("COMMIT"));
     }
 
     #[test]
