@@ -2,8 +2,7 @@
 
 ## 0.2.1
 
-This is a hardening release for the Rust CLI/client. The bundled Circle WASM is
-unchanged from `0.2.0`.
+This is a hardening release for the Rust CLI/client and bundled Circle WASM.
 
 ## Added
 
@@ -20,6 +19,8 @@ unchanged from `0.2.0`.
   verify supplied public keys, and zeroize decoded/intermediate key material
   where practical.
 - `new --no-name` status follow-up now uses the generated `oct://` URI.
+- The Circle query path accepts SQLite trailing comments on single-statement
+  reads.
 
 ## Removed
 
@@ -96,8 +97,9 @@ devnet.
 circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
 version: 3
 personalized_code_hash: 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15
-bundled_wasm_hash: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
-code_bytes: 607640
+bundled_wasm_hash: 29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c
+code_bytes: 607800
+live_program_update: pending owner deployment
 sample: remilia collection
 manifest: release/octra-sqlite-0.2.1.json
 proof: docs/proofs/devnet.md

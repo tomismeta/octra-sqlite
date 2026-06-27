@@ -19,7 +19,8 @@
 - Added plain explorer links for writes and live status when a network explorer
   profile is configured.
 - Fixed `new --no-name` follow-up instructions so status uses the `oct://` URI.
-- Kept the bundled Circle WASM artifact unchanged from `0.2.0`.
+- Rebuilt the bundled Circle WASM so single-statement reads accept SQLite
+  trailing comments.
 
 ## 0.2.0
 

@@ -246,9 +246,19 @@ pub(super) fn submit_signed_write_with<T: Transport>(
     no_wait: bool,
 ) -> Result<Value> {
     ensure_signed_for_session(session, &signed)?;
-    let tx_circle = signed.tx.to_.clone();
-    let tx_wallet = signed.tx.from.clone();
-    let result = rpc_call(transport, session, "octra_submit", json!([signed.tx]))?;
+    submit_signed_tx_with(transport, session, signed.tx, no_wait)
+}
+
+pub(super) fn submit_signed_tx_with<T: Transport>(
+    transport: &T,
+    session: &Session,
+    mut tx: Tx,
+    no_wait: bool,
+) -> Result<Value> {
+    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx));
+    let tx_circle = tx.to_.clone();
+    let tx_wallet = tx.from.clone();
+    let result = rpc_call(transport, session, "octra_submit", json!([tx]))?;
     let tx_hash = result
         .get("tx_hash")
         .or_else(|| result.get("hash"))

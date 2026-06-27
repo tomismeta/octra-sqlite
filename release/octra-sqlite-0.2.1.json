@@ -10,8 +10,8 @@
   "initializer_tx": null,
   "wasm": {
     "path": "circle/wasm/octra_sqlite_circle.wasm",
-    "bytes": 607640,
-    "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
+    "bytes": 607800,
+    "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
   },
   "sqlite": {
     "version": "3.53.2",
@@ -64,16 +64,17 @@
     "spec": "docs/spec/osw1.md"
   },
   "public_deployment": {
-    "personalized_sha256": "179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15",
-    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
-    "db_id": "d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d",
-    "owner_pubkey_offset": 601376,
-    "db_id_offset": 601408,
-    "program_update_tx": "3fc593c0b2d23c3e740a9ebcfda8a72932fecc3333597f0ec66d326b825db4d5",
+    "status": "pending_owner_program_update",
+    "personalized_sha256": null,
+    "owner_pubkey": null,
+    "db_id": null,
+    "owner_pubkey_offset": null,
+    "db_id_offset": null,
+    "program_update_tx": null,
     "non_owner_denied_tx": null
   },
   "client_release": {
-    "notes": "Hardening release: core library can build without HTTP/CLI, wallet signing state avoids cloned private-key strings, CLI routing defers to SQLite, undocumented legacy aliases were removed, and write output includes explorer links when configured. Bundled Circle WASM unchanged from 0.2.0.",
+    "notes": "Hardening release: core library can build without HTTP/CLI, wallet signing state avoids cloned private-key strings, CLI routing defers to SQLite, undocumented legacy aliases were removed, write output includes explorer links when configured, and the Circle query path accepts SQLite trailing comments.",
     "read_only_api_example": "examples/remilia-read-api"
   },
   "samples": [

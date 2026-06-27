@@ -37,8 +37,8 @@ const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.2.1.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf";
-const EXPECTED_WASM_BYTES: usize = 607_640;
+    "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c";
+const EXPECTED_WASM_BYTES: usize = 607_800;
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -2001,26 +2001,79 @@ fn sqlite_requires_exec(error: &ClientError) -> bool {
 fn looks_like_sql_script(sql: &str) -> bool {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
-    let mut chars = sql.chars().peekable();
-    while let Some(ch) = chars.next() {
+    let mut in_backtick = false;
+    let mut in_bracket = false;
+    let mut in_line_comment = false;
+    let mut in_block_comment = false;
+    let mut chars = sql.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if in_line_comment {
+            if ch == '\n' || ch == '\r' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+        if in_block_comment {
+            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                chars.next();
+                in_block_comment = false;
+            }
+            continue;
+        }
+        if in_bracket {
+            if ch == ']' {
+                if chars.peek().is_some_and(|(_, next)| *next == ']') {
+                    chars.next();
+                } else {
+                    in_bracket = false;
+                }
+            }
+            continue;
+        }
+        if in_backtick {
+            if ch == '`' {
+                if chars.peek().is_some_and(|(_, next)| *next == '`') {
+                    chars.next();
+                } else {
+                    in_backtick = false;
+                }
+            }
+            continue;
+        }
         match ch {
             '\'' if !in_double_quote => {
-                if in_single_quote && chars.peek() == Some(&'\'') {
+                if in_single_quote && chars.peek().is_some_and(|(_, next)| *next == '\'') {
                     chars.next();
                 } else {
                     in_single_quote = !in_single_quote;
                 }
             }
             '"' if !in_single_quote => {
-                if in_double_quote && chars.peek() == Some(&'"') {
+                if in_double_quote && chars.peek().is_some_and(|(_, next)| *next == '"') {
                     chars.next();
                 } else {
                     in_double_quote = !in_double_quote;
                 }
             }
+            '`' if !in_single_quote && !in_double_quote => in_backtick = true,
+            '[' if !in_single_quote && !in_double_quote => in_bracket = true,
+            '-' if !in_single_quote
+                && !in_double_quote
+                && chars.peek().is_some_and(|(_, next)| *next == '-') =>
+            {
+                chars.next();
+                in_line_comment = true;
+            }
+            '/' if !in_single_quote
+                && !in_double_quote
+                && chars.peek().is_some_and(|(_, next)| *next == '*') =>
+            {
+                chars.next();
+                in_block_comment = true;
+            }
             ';' if !in_single_quote && !in_double_quote => {
-                let rest: String = chars.clone().collect();
-                if sql_tail_has_statement(&rest) {
+                let rest = &sql[index + ch.len_utf8()..];
+                if sql_tail_has_statement(rest) {
                     return true;
                 }
             }
@@ -2382,6 +2435,10 @@ mod tests {
     #[test]
     fn script_detection_preserves_sqlite_read_vs_exec_boundary() {
         assert!(!looks_like_sql_script("select ';' as semi;"));
+        assert!(!looks_like_sql_script("select /* ; */ 1;"));
+        assert!(!looks_like_sql_script("select -- ;\n 1;"));
+        assert!(!looks_like_sql_script("select `semi;name` from demo;"));
+        assert!(!looks_like_sql_script("select [semi;name] from demo;"));
         assert!(!looks_like_sql_script("select 1; -- trailing comment"));
         assert!(!looks_like_sql_script("select 1; /* trailing comment */"));
         assert!(looks_like_sql_script(

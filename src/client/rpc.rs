@@ -5,8 +5,6 @@ use super::{
     transport::Transport,
 };
 use crate::protocol::osr1::{decode_typed_result, TYPED_PREFIX};
-#[cfg(feature = "http")]
-use crate::protocol::tx::{canonical_tx, Tx};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -219,11 +217,4 @@ fn contract_error_text(value: &Value) -> Option<String> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
-}
-
-#[cfg(feature = "http")]
-pub(super) fn sign_canonical_tx(session: &Session, tx: &mut Tx) -> Result<()> {
-    let canonical = canonical_tx(tx);
-    tx.signature = session.sign_transaction_b64(&canonical);
-    Ok(())
 }
