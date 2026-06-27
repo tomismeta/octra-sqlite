@@ -78,7 +78,7 @@ fn terminal_width() -> usize {
         .ok()
         .and_then(|columns| columns.parse::<usize>().ok())
         .filter(|columns| *columns >= 40)
-        .unwrap_or(100)
+        .unwrap_or(80)
 }
 
 fn format_field_with_width(label: &str, detail: &str, width: usize) -> String {
