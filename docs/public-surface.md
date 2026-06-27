@@ -27,7 +27,7 @@ octra-sqlite organization "select * from person;"
 The reference configurable database creation path is:
 
 ```sh
-octra-sqlite quickstart my_collections
+octra-sqlite quickstart my_collections --sample remilia
 octra-sqlite new DATABASE
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."

@@ -1,6 +1,55 @@
 # Devnet Proof
 
-Current public devnet example Circle:
+Current public devnet portability proof Circle:
+
+```text
+octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
+```
+
+Published `v0.3.0` proof snapshot:
+
+```text
+database: oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
+circle: octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
+circle url: https://devnet.octrascan.io/address.html?addr=octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
+program: version 1, bytes 609475, personalized hash cbcfe49b0139356a428669d9d1f531f01d48ddbaa82b9feba97566dfcc25b5fe
+bundled wasm hash: 8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea
+storage: 3 pages, 12288 bytes
+backup: 12288 bytes, generation 1, sha256 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
+backup integrity: sqlite3 pragma integrity_check = ok
+auth owner pubkey: 2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb
+auth database id: 2b2ce4c282bba87be3a113a571a334129bd49d329a247ca170dbd8bf502c8682
+circle create tx: 318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed
+circle create: https://devnet.octrascan.io/tx.html?hash=318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed
+initializer tx: 971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
+initializer: https://devnet.octrascan.io/tx.html?hash=971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
+non-owner denied tx: d1e2a0007f1d7ffdf3906b4d703915ab1447a6c7d8456ebbbe5185c552c743fa
+non-owner denied: https://devnet.octrascan.io/tx.html?hash=d1e2a0007f1d7ffdf3906b4d703915ab1447a6c7d8456ebbbe5185c552c743fa
+full restore circle: octqdTL8vFxiLmJw7JbUYoqiJNaTDTmNT4pjWHWdLUjoRWq
+full restore create tx: a7483e37ab12bb1f74d4c43e9f7659accca996638982c54c58a0d6d43eeb1d73
+full restore create: https://devnet.octrascan.io/tx.html?hash=a7483e37ab12bb1f74d4c43e9f7659accca996638982c54c58a0d6d43eeb1d73
+full restore initializer tx: 708b0efcdad02e7efbd88a4ac2d0904cd42a0025b35077685241261335ac4c50
+full restore initializer: https://devnet.octrascan.io/tx.html?hash=708b0efcdad02e7efbd88a4ac2d0904cd42a0025b35077685241261335ac4c50
+full restore trigger write tx: 7e8d9e04241cea6d0160dc7adf32b543b14563c289cd1717d8a83edf0d5a60b3
+full restore trigger write: https://devnet.octrascan.io/tx.html?hash=7e8d9e04241cea6d0160dc7adf32b543b14563c289cd1717d8a83edf0d5a60b3
+table restore circle: octZG9aUMQ3Ho2pnw4YFmaMyyyKxUs1xkW4ArVs3jBb9txZ
+table restore create tx: 4c7c106e6de05051baf030acc409b4ab8b02b32622475f914c8a235f5a72ad0a
+table restore create: https://devnet.octrascan.io/tx.html?hash=4c7c106e6de05051baf030acc409b4ab8b02b32622475f914c8a235f5a72ad0a
+csv import circle: octHrZkieUhhJbr8Acxkk7PV3C4U2W89ceVCV5jni6LZRJ3
+csv import tx: 3e315b5b7f0847fa360d14d4103a6d28da51fe57788324a55f8d983965f8bac6
+csv import: https://devnet.octrascan.io/tx.html?hash=3e315b5b7f0847fa360d14d4103a6d28da51fe57788324a55f8d983965f8bac6
+```
+
+Verification commands:
+
+```sh
+octra-sqlite status oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
+octra-sqlite verify oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY --integrity
+octra-sqlite oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY ".backup main proof.sqlite"
+sqlite3 proof.sqlite "pragma integrity_check;"
+```
+
+`v0.2.1` public Remilia example Circle:
 
 ```text
 oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA

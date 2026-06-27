@@ -259,7 +259,7 @@ struct QuickstartArgs {
     /// Local database name for the sample database.
     name: String,
     /// Built-in sample to install.
-    #[arg(long, default_value = "remilia")]
+    #[arg(long, value_name = "NAME")]
     sample: String,
     /// Rebuild the bundled WASM before deploying.
     #[arg(long)]
@@ -595,7 +595,10 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             "create",
             "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
         );
-        print_field("example", "octra-sqlite quickstart my_collections");
+        print_field(
+            "example",
+            "octra-sqlite quickstart my_collections --sample remilia",
+        );
     }
     Ok(())
 }
@@ -889,7 +892,10 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         print_field("next", "octra-sqlite database list");
     } else {
-        print_field("create", "octra-sqlite quickstart my_collections");
+        print_field(
+            "create",
+            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
+        );
     }
     Ok(())
 }
@@ -1579,7 +1585,10 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
         println!("{}", dim("no databases"));
-        print_field("create", "octra-sqlite quickstart my_collections");
+        print_field(
+            "create",
+            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
+        );
         return;
     }
     println!("{}  name  uri", dim("default"));
@@ -3562,8 +3571,17 @@ COMMIT;",
     }
 
     #[test]
-    fn quickstart_defaults_to_remilia_sample() {
-        let cli = Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).unwrap();
+    fn quickstart_requires_explicit_sample() {
+        assert!(Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).is_err());
+
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "quickstart",
+            "my-db",
+            "--sample",
+            "remilia",
+        ])
+        .unwrap();
         match cli.command {
             Commands::Quickstart(args) => {
                 assert_eq!(args.name, "my-db");

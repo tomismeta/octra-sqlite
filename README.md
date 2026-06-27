@@ -95,7 +95,7 @@ Commands manage setup, databases, verification, and Octra deployment:
 | `octra-sqlite init ...` | Non-interactive config for scripts and advanced users. |
 | `octra-sqlite config` | Show wallet, network, RPC, explorer, and saved databases. |
 | `octra-sqlite status [DATABASE]` | Verify config, wallet, bundled WASM, manifest, and live database health. |
-| `octra-sqlite quickstart DATABASE` | Create a new SQLite database with an explicit built-in sample. |
+| `octra-sqlite quickstart DATABASE --sample NAME` | Create a new SQLite database with an explicit built-in sample. |
 | `octra-sqlite new DATABASE` | Create a fresh SQLite database and save `DATABASE` locally. |
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, network, Circle ID, and RPC. |
@@ -307,8 +307,6 @@ OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm \
   cargo test --locked --features wasm-behavior --test wasm_host_harness
 ```
 
-Architecture notes live in [`docs/`](./docs). The bundled public artifact is
-recorded in
-[`release/octra-sqlite-0.1.0.json`](./release/octra-sqlite-0.1.0.json).
-The current Rust CLI/library release manifest is
-[`release/octra-sqlite-0.2.1.json`](./release/octra-sqlite-0.2.1.json).
+Architecture notes live in [`docs/`](./docs). Release manifests live in
+[`release/`](./release). The current Rust CLI/library and Circle WASM manifest
+is [`release/octra-sqlite-0.3.0.json`](./release/octra-sqlite-0.3.0.json).
