@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0
+
+- Added `.backup ?main? FILE` and `.save FILE` to export Circle-backed SQLite
+  pages as a normal local `.sqlite` file.
+- Added `verify --integrity`, which exports a pinned backup and runs local
+  `sqlite3` `pragma integrity_check;`.
+- Added SQLite-shaped portability commands: `.dump`, `.read`, `.output`,
+  `.once`, `.import --csv`, `.indexes`, and `.fullschema`.
+- Changed `.dump` and `.fullschema` to render from a pinned local SQLite
+  snapshot using stock `sqlite3`, instead of a project-specific SQL renderer.
+- Added backup chunk streaming to the Circle view API, pinned to a generation so
+  backups fail if storage changes mid-stream.
+- Removed the public Remilia database from bundled defaults; examples remain
+  explicit under `examples/`.
+- Added crates.io package metadata and an intentional package include list.
+- Rebuilt the bundled Circle WASM for the backup view surface.
+
 ## 0.2.1
 
 - Made the protocol/client core build without HTTP or CLI dependencies.

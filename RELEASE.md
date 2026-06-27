@@ -1,5 +1,37 @@
 # Release Notes
 
+## 0.3.0
+
+This is a portability release for moving SQLite data into and out of an Octra
+Circle while keeping the CLI familiar to `sqlite3` users.
+
+## Added
+
+- `.backup ?main? FILE` and `.save FILE` for exporting a Circle-backed database
+  to a local `.sqlite` file.
+- `verify --integrity` for exporting a pinned backup and running local
+  `sqlite3` `pragma integrity_check;`.
+- `.dump ?OBJECTS?`, `.read FILE`, `.output`, `.once`, `.import --csv`,
+  `.indexes`, and `.fullschema` in the interactive shell.
+- Crates.io package metadata and an intentional package include list.
+
+## Changed
+
+- `.dump` and `.fullschema` now render from a pinned local backup through stock
+  `sqlite3`, keeping the SQL text path SQLite-native.
+- Bundled defaults now include network profiles only; Remilia remains an
+  explicit example, not a preloaded database.
+- The Circle WASM adds a read-only `backup_chunk` view for generation-pinned
+  page streaming.
+
+## Notes
+
+- `.read` restores SQL text into a Circle through signed writes. Large files are
+  applied in batches because Octra SQL frames are capped; restart from a fresh
+  database if an interrupted large restore must be retried.
+- Binary `.restore` from a `.sqlite` file remains deferred until it can be kept
+  as small and auditable as `.backup`.
+
 ## 0.2.1
 
 This is a hardening release for the Rust CLI/client and bundled Circle WASM.

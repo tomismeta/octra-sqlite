@@ -9,14 +9,14 @@
    - `oct://` database URI parsing
 2. `client`: the reusable Rust reference client.
    - `OctraSqlite::from_default_config()?`
-   - `client.database("remilia")?`
+   - `client.database("organization")?`
    - `db.query("select ...")? -> QueryResult`
    - `db.execute("insert ...")? -> ExecResult`
    - `db.prepare_write(...) -> sign_write(...) -> submit_signed_write_and_wait(...)`
    - `db.prepare_write_no_wait(...) -> sign_write(...) -> submit_signed_write(...)`
    - `Transport` for HTTP, mock tests, and future adapters
 3. `cli`: the SQLite-shaped user experience.
-   - `octra-sqlite remilia`
+   - `octra-sqlite organization`
    - `.tables`, `.schema`, `.read`, `.open`
    - Octra-aware inspection through `.circle`, `.storage`, `.wallet`, `.verify`
 
@@ -26,8 +26,8 @@ The default public Rust path should stay small:
 use octra_sqlite::client::OctraSqlite;
 
 let client = OctraSqlite::from_default_config()?;
-let db = client.database("remilia")?;
-let rows = db.query("select * from collection where opensea_slug = 'milady';")?;
+let db = client.database("organization")?;
+let rows = db.query("select * from person order by first_name;")?;
 ```
 
 `Database` methods return typed Rust wrappers over OSR1/RPC data.

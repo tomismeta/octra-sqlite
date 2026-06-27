@@ -1,6 +1,7 @@
 #[cfg(feature = "wasm-behavior")]
 mod wasm_behavior {
     use anyhow::{anyhow, bail, Result};
+    use base64::{engine::general_purpose, Engine as _};
     use ed25519_dalek::{Signer, SigningKey};
     use serde_json::Value;
     use sha2::{Digest, Sha256};
@@ -8,6 +9,7 @@ mod wasm_behavior {
     use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
+    use std::process::Command as ProcessCommand;
     use std::rc::Rc;
     use wasmtime::{Caller, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
@@ -669,6 +671,91 @@ insert into pages(payload) select hex(zeroblob(512)) from n;";
             &contract.call_query("query", &["select payload from pages where id = 32;"])?,
         );
         assert_eq!(changed["rows"][0][0], "changed");
+        Ok(())
+    }
+
+    #[test]
+    fn backup_chunk_streams_sqlite_pages_from_pinned_generation() -> Result<()> {
+        let mut contract = Contract::load()?;
+        let written = json_response(&contract.call_update(
+            "exec",
+            &[
+                "create table people(first_name text not null, last_name text not null);
+insert into people(first_name,last_name) values ('Ada','Lovelace'),('Grace','Hopper');",
+            ],
+        )?);
+        assert_eq!(written["ok"], true);
+        let storage = json_response(&contract.call_query("storage_info", &[])?);
+        let generation = storage["generation"].as_u64().unwrap();
+        let page_count = storage["page_count"].as_u64().unwrap();
+        let file_bytes = storage["file_bytes"].as_u64().unwrap();
+        assert!(page_count > 0);
+        assert!(file_bytes > 0);
+
+        let mut image = Vec::new();
+        let mut start_page = 1u64;
+        while start_page <= page_count {
+            let chunk_pages = (page_count - start_page + 1).min(8);
+            let chunk = json_response(&contract.call_query(
+                "backup_chunk",
+                &[
+                    &generation.to_string(),
+                    &start_page.to_string(),
+                    &chunk_pages.to_string(),
+                ],
+            )?);
+            assert_eq!(chunk["ok"], true);
+            assert_eq!(chunk["generation"], generation);
+            assert_eq!(chunk["page_count"], page_count);
+            assert_eq!(chunk["file_bytes"], file_bytes);
+            assert_eq!(chunk["start_page"], start_page);
+            assert_eq!(chunk["chunk_pages"], chunk_pages);
+            let bytes = general_purpose::STANDARD.decode(chunk["data_b64"].as_str().unwrap())?;
+            assert_eq!(bytes.len(), chunk_pages as usize * 4096);
+            image.extend_from_slice(&bytes);
+            start_page += chunk_pages;
+        }
+        image.truncate(file_bytes as usize);
+        assert_eq!(&image[..16], b"SQLite format 3\0");
+
+        let backup_path = std::env::temp_dir().join(format!(
+            "octra-sqlite-backup-test-{}-{generation}.sqlite",
+            std::process::id()
+        ));
+        fs::write(&backup_path, &image)?;
+        let integrity = ProcessCommand::new("sqlite3")
+            .arg(&backup_path)
+            .arg("pragma integrity_check;")
+            .output()?;
+        if !integrity.status.success() {
+            bail!(
+                "sqlite3 integrity_check failed: {}",
+                String::from_utf8_lossy(&integrity.stderr)
+            );
+        }
+        assert_eq!(String::from_utf8_lossy(&integrity.stdout).trim(), "ok");
+        let readback = ProcessCommand::new("sqlite3")
+            .arg(&backup_path)
+            .arg("select first_name || ' ' || last_name from people order by first_name;")
+            .output()?;
+        let _ = fs::remove_file(&backup_path);
+        if !readback.status.success() {
+            bail!(
+                "sqlite3 readback failed: {}",
+                String::from_utf8_lossy(&readback.stderr)
+            );
+        }
+        assert_eq!(
+            String::from_utf8_lossy(&readback.stdout),
+            "Ada Lovelace\nGrace Hopper\n"
+        );
+
+        let stale = json_response(&contract.call_query(
+            "backup_chunk",
+            &["999", "1", &page_count.min(8).to_string()],
+        )?);
+        assert_eq!(stale["ok"], false);
+        assert_eq!(stale["error"], "backup_generation_changed");
         Ok(())
     }
 

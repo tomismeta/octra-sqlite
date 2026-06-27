@@ -10,8 +10,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      EXPECTED_WASM_SHA256: 29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c
-      EXPECTED_WASM_BYTES: "607800"
+      EXPECTED_WASM_SHA256: 8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea
+      EXPECTED_WASM_BYTES: "609475"
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust
@@ -21,7 +21,7 @@ jobs:
       - name: Install WASM audit tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y wabt
+          sudo apt-get install -y sqlite3 wabt
       - name: Rust tests
         run: cargo test --locked
       - name: Protocol/client core without HTTP

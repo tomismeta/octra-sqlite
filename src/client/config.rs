@@ -168,10 +168,10 @@ mod tests {
     }
 
     #[test]
-    fn bundled_defaults_preload_public_example_config() {
+    fn bundled_defaults_are_product_clean() {
         let config = bundled_default_config().unwrap();
         assert_eq!(config.network.as_deref(), Some("devnet"));
-        assert_eq!(config.default_database.as_deref(), Some("remilia"));
+        assert!(config.default_database.is_none());
         assert_eq!(
             config.rpc.as_deref(),
             Some("https://devnet.octrascan.io/rpc")
@@ -201,10 +201,7 @@ mod tests {
                 .and_then(|network| network.explorer.as_deref()),
             Some("https://octrascan.io")
         );
-        assert!(config
-            .databases
-            .get("remilia")
-            .is_some_and(|uri| uri.starts_with("oct://devnet/oct")));
+        assert!(config.databases.is_empty());
     }
 
     #[test]

@@ -11,16 +11,17 @@ the reusable reference client for code and agents. Lower-level scripts are only
 for building and auditing the bundled WASM.
 
 Runtime defaults live in `config/defaults.json`. The bundled defaults keep
-devnet active, preload devnet and mainnet URL profiles, and include the public
-Remilia example database; user config overlays them.
+devnet active and preload devnet and mainnet URL profiles; user config overlays
+them. No database names are bundled by default.
 
 The reference first-run path is:
 
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite remilia ".tables"
-octra-sqlite remilia "select name, launched_month from collection order by launched_month;"
+octra-sqlite new organization "create table person(first_name text not null, last_name text not null);"
+octra-sqlite organization ".tables"
+octra-sqlite organization "select * from person;"
 ```
 
 The reference configurable database creation path is:
@@ -32,13 +33,12 @@ octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
 ```
 
-The bundled defaults make `remilia` the public example database. `quickstart` is
-a thin convenience layer over `new`: it creates a new database with the built-in
-Remilia sample, saves the database name, and makes that new database the
-default database. `new` submits a native signed `deploy_circle` transaction
-whose payload includes the bundled audited SQLite WASM, saves an `oct://`
-database URI, and then runs optional initializer SQL through the same signed
-`exec` path as later writes.
+`quickstart` is a thin opt-in convenience layer over `new`: it creates a new
+database with a named built-in sample, saves the database name, and makes that
+new database the default database. `new` submits a native signed `deploy_circle`
+transaction whose payload includes the bundled audited SQLite WASM, saves an
+`oct://` database URI, and then runs optional initializer SQL through the same
+signed `exec` path as later writes.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite
@@ -78,13 +78,12 @@ They should stay expressive enough that users do not need to inspect
 - `src/protocol/`: transport-independent wire formats and database URI parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `src/protocol/osw1.rs`: OSW1 owner write intent framing.
-- `config/defaults.json`: active devnet config, devnet/mainnet URL profiles,
-  and public example database.
+- `config/defaults.json`: active devnet config and devnet/mainnet URL profiles.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.
 - `docs/spec/osw1.md`: OSW1 owner write intent frame.
-- `release/octra-sqlite-0.2.1.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.3.0.json`: release manifest for the bundled Circle
   WASM and published network-specific deployment.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

@@ -42,6 +42,7 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define MAX_DB_PAGES 8192
 #define MAX_DB_PAGES_JSON STRINGIFY_VALUE(MAX_DB_PAGES)
 #define MAX_RESULT_ROWS 512
+#define MAX_BACKUP_CHUNK_PAGES 8
 #define TYPED_TEXT_PREFIX "OSR1:"
 #define FIXED_JULIAN_DAY 2460486.5
 #define FIXED_JULIAN_MS 212586033600000ll
@@ -453,6 +454,21 @@ static void append_hex_bytes(const u8 *value, u32 len) {
   for (u32 i = 0; i < len; ++i) append_hex_byte(value[i]);
 }
 
+static void append_base64_bytes(const u8 *value, u32 len) {
+  static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  for (u32 i = 0; i < len; i += 3u) {
+    u32 remain = len - i;
+    u32 a = value[i];
+    u32 b = remain > 1u ? value[i + 1u] : 0u;
+    u32 c = remain > 2u ? value[i + 2u] : 0u;
+    u32 triple = (a << 16) | (b << 8) | c;
+    append_byte((u8)alphabet[(triple >> 18) & 63u]);
+    append_byte((u8)alphabet[(triple >> 12) & 63u]);
+    append_byte(remain > 1u ? (u8)alphabet[(triple >> 6) & 63u] : (u8)'=');
+    append_byte(remain > 2u ? (u8)alphabet[triple & 63u] : (u8)'=');
+  }
+}
+
 static void append_be32_value(u32 value) {
   u8 buf[4];
   put_be32(buf, value);
@@ -618,6 +634,7 @@ static int respond_manifest(void) {
       "{\"name\":\"schema_typed\",\"view\":true},"
       "{\"name\":\"query\",\"view\":true},"
       "{\"name\":\"query_typed\",\"view\":true},"
+      "{\"name\":\"backup_chunk\",\"view\":true},"
       "{\"name\":\"auth_info\",\"view\":true},"
       "{\"name\":\"exec\",\"view\":false},"
       "{\"name\":\"exec_trace\",\"view\":false},"
@@ -1926,6 +1943,80 @@ static int parse_u64_text(const u8 *text, u32 len, u64 *out) {
   return 1;
 }
 
+static int run_backup_chunk(const u8 *params, u32 param_count, int total_len, int ptr) {
+  StringParam p[3];
+  int rc = parse_string_params(params, param_count, total_len, ptr, p, 3);
+  if (rc != 0) return rc;
+
+  u64 requested_generation = 0;
+  u64 first_page_u64 = 0;
+  u64 chunk_pages_u64 = 0;
+  if (!parse_u64_text(p[0].ptr, p[0].len, &requested_generation) ||
+      !parse_u64_text(p[1].ptr, p[1].len, &first_page_u64) ||
+      !parse_u64_text(p[2].ptr, p[2].len, &chunk_pages_u64)) {
+    append_json_error("backup_bad_params", "backup_chunk expects decimal generation, first_page, and page_count");
+    return 1;
+  }
+  if (first_page_u64 == 0 || chunk_pages_u64 == 0 || chunk_pages_u64 > MAX_BACKUP_CHUNK_PAGES) {
+    append_json_error("backup_bad_range", "backup_chunk page range is out of bounds");
+    return 1;
+  }
+
+  rc = load_meta();
+  if (rc != SQLITE_OK) {
+    append_json_error("circle_vfs_meta_failed", "could not read page VFS metadata");
+    return 1;
+  }
+  rc = load_manifest();
+  if (rc != SQLITE_OK) {
+    append_json_error("circle_vfs_manifest_failed", "could not read page VFS manifest");
+    return 1;
+  }
+  if (!meta_exists) {
+    append_json_error("backup_empty_database", "database has no SQLite pages yet");
+    return 1;
+  }
+  if (requested_generation != current_generation) {
+    append_json_error("backup_generation_changed", "database generation changed during backup");
+    return 1;
+  }
+
+  u64 last_page_u64 = first_page_u64 + chunk_pages_u64 - 1u;
+  if (last_page_u64 < first_page_u64 || last_page_u64 > (u64)manifest_page_count) {
+    append_json_error("backup_bad_range", "backup_chunk page range exceeds database page count");
+    return 1;
+  }
+
+  static u8 chunk[PAGE_SIZE * MAX_BACKUP_CHUNK_PAGES];
+  for (u64 i = 0; i < chunk_pages_u64; ++i) {
+    u32 page_no = (u32)(first_page_u64 + i);
+    u8 *page = chunk + (i * PAGE_SIZE);
+    rc = read_page_from_kv(page_no, page);
+    if (rc != SQLITE_OK) {
+      append_json_error("backup_page_read_failed", "could not read SQLite page");
+      return 1;
+    }
+    zero_tail_after_file_size(page_no, page, main_file_size);
+  }
+
+  append_cstr("{\"ok\":true,\"backup\":\"pages_v1\",\"generation\":");
+  append_i64((i64)current_generation);
+  append_cstr(",\"page_size\":");
+  append_cstr(PAGE_SIZE_JSON);
+  append_cstr(",\"file_bytes\":");
+  append_i64((i64)main_file_size);
+  append_cstr(",\"page_count\":");
+  append_i64((i64)manifest_page_count);
+  append_cstr(",\"start_page\":");
+  append_i64((i64)first_page_u64);
+  append_cstr(",\"chunk_pages\":");
+  append_i64((i64)chunk_pages_u64);
+  append_cstr(",\"data_b64\":\"");
+  append_base64_bytes(chunk, (u32)(chunk_pages_u64 * PAGE_SIZE));
+  append_cstr("\"}");
+  return out_overflow ? set_json_error("response_too_large", "backup chunk exceeded contract response buffer") : 0;
+}
+
 static int build_owner_write_intent_message(const char *sql, const u8 *method, u32 method_len, u64 sequence, u8 *out_msg, u32 *out_len) {
   u32 sql_len = (u32)strlen(sql);
   if (method_len == 0 || method_len > MAX_METHOD_BYTES) return 1;
@@ -2040,6 +2131,10 @@ int octra_query(int ptr, int len) {
   }
   if (streq_bytes(method, method_len, "auth_info")) {
     rc = run_auth_info();
+    return respond_json_result(0);
+  }
+  if (streq_bytes(method, method_len, "backup_chunk")) {
+    rc = run_backup_chunk(params, param_count, len, ptr);
     return respond_json_result(0);
   }
   int typed = 0;

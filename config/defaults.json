@@ -11,9 +11,5 @@
       "rpc": "https://octra.network/rpc",
       "explorer": "https://octrascan.io"
     }
-  },
-  "default_database": "remilia",
-  "databases": {
-    "remilia": "oct://devnet/oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA"
   }
 }

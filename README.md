@@ -12,16 +12,17 @@ Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls with your
 wallet, and gives you SQLite-shaped commands over live Circle state.
 
 The CLI ships with a small default config at
-[`config/defaults.json`](./config/defaults.json): devnet as the active network,
-devnet and mainnet URL profiles, plus the public Remilia example database. Your
-local `~/.octra/sqlite.json` overlays it.
+[`config/defaults.json`](./config/defaults.json): devnet as the active network
+plus devnet and mainnet URL profiles. Your local `~/.octra/sqlite.json`
+overlays it.
 
 ## Quickstart
 
 You need Rust/Cargo and an Octra wallet. Reads use signed RPC calls but do not
 need wallet funds. Creating databases and running writes need a funded wallet.
-The audited Circle WASM is bundled, and the default config points to the public
-Remilia database.
+The audited Circle WASM is bundled. The stock `sqlite3` CLI is used for local
+integrity checks and SQL dump rendering. Setup configures your wallet and
+network; your databases are created explicitly.
 
 ```sh
 git clone https://github.com/tomismeta/octra-sqlite.git
@@ -31,27 +32,13 @@ cargo install --path . --locked
 octra-sqlite setup
 octra-sqlite status
 
-octra-sqlite remilia ".tables"
-octra-sqlite remilia "select name, launched_month from collection order by launched_month;"
-octra-sqlite verify remilia
-```
-
-Create your own sample database:
-
-```sh
-octra-sqlite quickstart my_collections
-octra-sqlite my_collections ".tables"
-octra-sqlite my_collections "select name, launched_month from collection order by launched_month;"
-```
-
-Create your own schema:
-
-```sh
 octra-sqlite new organization "
 create table person(first_name text not null, last_name text not null);
 insert into person values ('Ada','Lovelace'),('Grace','Hopper');
 "
 octra-sqlite organization "select * from person;"
+octra-sqlite organization ".backup main organization.sqlite"
+sqlite3 organization.sqlite "pragma integrity_check;"
 ```
 
 For non-interactive setup, use `init` instead of the wizard:
@@ -72,7 +59,15 @@ Switch to the bundled mainnet profile:
 octra-sqlite init --wallet ./wallet.json --network mainnet
 ```
 
-More CRUD examples live in [`examples/`](./examples/).
+More CRUD and sample-data examples live in [`examples/`](./examples/).
+The public Remilia proof database can be saved explicitly if you want to inspect
+it:
+
+```sh
+octra-sqlite database set remilia oct://devnet/oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
+octra-sqlite remilia ".tables"
+```
+
 The tiny read-only Remilia API example lives at
 [`examples/remilia-read-api/`](./examples/remilia-read-api/).
 
@@ -80,7 +75,7 @@ The tiny read-only Remilia API example lives at
 
 - **Database**: the SQLite database you open and query.
 - **Database name**: a saved local name in `~/.octra/sqlite.json`, like
-  `remilia`.
+  `organization`.
 - **Database URI**: an explicit `oct://NETWORK/CIRCLE_ID` pointer to a database.
 - **Circle**: the Octra program and storage identity underneath a database.
 - **Wallet**: the Octra key used to sign reads and writes.
@@ -100,7 +95,7 @@ Commands manage setup, databases, verification, and Octra deployment:
 | `octra-sqlite init ...` | Non-interactive config for scripts and advanced users. |
 | `octra-sqlite config` | Show wallet, network, RPC, explorer, and saved databases. |
 | `octra-sqlite status [DATABASE]` | Verify config, wallet, bundled WASM, manifest, and live database health. |
-| `octra-sqlite quickstart DATABASE` | Create a new SQLite database with the built-in Remilia sample. |
+| `octra-sqlite quickstart DATABASE` | Create a new SQLite database with an explicit built-in sample. |
 | `octra-sqlite new DATABASE` | Create a fresh SQLite database and save `DATABASE` locally. |
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, network, Circle ID, and RPC. |
@@ -125,15 +120,15 @@ octra-sqlite DATABASE ".schema"
 Open a database without a SQL argument to enter the interactive shell:
 
 ```sh
-octra-sqlite remilia
+octra-sqlite organization
 ```
 
 The prompt is intentionally familiar:
 
 ```sql
-sqlite> select name, launched_month from collection limit 3;
-sqlite> insert into collection(name,opensea_slug,chain,relationship,launched_month,date_precision)
-   ...> values ('Example','example','Ethereum','Remilia adjacent','2026-06-01','month');
+sqlite> select first_name, last_name from person;
+sqlite> insert into person(first_name,last_name)
+   ...> values ('Katherine','Johnson');
 sqlite> .tables
 sqlite> .quit
 ```
@@ -149,13 +144,20 @@ Inside the shell, SQL statements are SQLite. Dot commands are client commands:
 | Dot command | Origin | Purpose |
 | --- | --- | --- |
 | `.help` | SQLite CLI | Show shell commands. |
+| `.backup` | SQLite CLI | Back up the database to a local SQLite file. |
+| `.save` | SQLite CLI | Save the database to a local SQLite file. |
+| `.dump` | SQLite CLI | Write SQL text for the database or named table. |
+| `.read` | SQLite CLI | Execute SQL from a file. |
+| `.output` | SQLite CLI | Redirect command output. |
+| `.once` | SQLite CLI | Redirect one command's output. |
+| `.import` | SQLite CLI | Import CSV rows into a table. |
+| `.indexes` | SQLite CLI | List indexes. |
+| `.fullschema` | SQLite CLI | Show full schema. |
 | `.tables` | SQLite CLI | List tables. |
 | `.schema` | SQLite CLI | Show schema. |
 | `.mode` | SQLite CLI | Set output mode: `box`, `table`, `list`, `json`, `line`, or `csv`. |
 | `.headers` | SQLite CLI | Show or hide column headers. |
 | `.timer` | SQLite CLI | Show query timing. |
-| `.output` | SQLite CLI | Redirect command output. |
-| `.read` | SQLite CLI | Execute SQL from a file. |
 | `.show` | SQLite CLI | Show shell settings. |
 | `.databases` | SQLite CLI | Show the current `main` database URI. |
 | `.open` | SQLite CLI | Switch to another database name, Circle ID, or `oct://` URI. |
@@ -167,6 +169,52 @@ Inside the shell, SQL statements are SQLite. Dot commands are client commands:
 
 The reference path is the SQLite-shaped `octra-sqlite DATABASE "SQL"` form
 above, plus SQLite-style dot commands inside the shell.
+
+## Backup And Restore
+
+Back up a Circle-backed database to a local SQLite file:
+
+```sh
+octra-sqlite organization ".backup main organization.sqlite"
+sqlite3 organization.sqlite ".tables"
+sqlite3 organization.sqlite "pragma integrity_check;"
+```
+
+Move a whole database through SQL text. This is the portable SQL path for
+restoring into another Circle; large `.read` files are applied in batches on
+Octra, so restart from a fresh database if a restore is interrupted.
+
+```sh
+octra-sqlite organization ".dump" > organization.sql
+octra-sqlite new organization_copy < organization.sql
+```
+
+Move one table:
+
+```sh
+octra-sqlite organization ".dump person" > person.sql
+octra-sqlite existing ".read person.sql"
+```
+
+Export a query as CSV:
+
+```sql
+sqlite> .headers on
+sqlite> .mode csv
+sqlite> .once person.csv
+sqlite> select * from person;
+```
+
+Import CSV rows:
+
+```sql
+sqlite> .import --csv --skip 1 person.csv person
+```
+
+The `sqlite3` commands above run locally against exported files. The
+`octra-sqlite` commands talk to the Octra Circle. `.dump` and `.fullschema`
+also create a pinned temporary backup and ask local `sqlite3` to render the
+SQLite output from that snapshot.
 
 ## Architecture
 
@@ -188,6 +236,8 @@ The consensus-critical surface is intentionally small:
   database pages.
 - The generation manifest is the commit record that says which page versions
   make up the current database.
+- Backups stream those SQLite pages from a pinned generation and write a normal
+  local `.sqlite` file.
 - Results use OSR1, the compact typed-result codec.
 - Writes use OSW1, the owner write authorization frame.
 - Rendering happens in Rust, outside the Circle program.

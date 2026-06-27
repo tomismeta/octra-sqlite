@@ -5,9 +5,8 @@ minimal.
 
 ## Remilia Collections
 
-The default config includes the public `remilia` example database. This
-walkthrough creates your own `my_collections` database so the example is safe to
-edit.
+The default config does not preload this database. This walkthrough creates your
+own `my_collections` database so the example is explicit and safe to edit.
 
 Create a new Circle-backed database and seed it with the example SQL:
 

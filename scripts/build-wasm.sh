@@ -34,8 +34,8 @@ if [ -n "${WASI_SYSROOT:-}" ]; then
 fi
 
 "$CC" \
-  --target=wasm32-wasi \
-  "${EXTRA_CFLAGS[@]}" \
+  --target=wasm32-wasip1 \
+  ${EXTRA_CFLAGS:+"${EXTRA_CFLAGS[@]}"} \
   -Oz \
   -flto \
   -nostdlib \
