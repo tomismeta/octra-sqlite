@@ -649,6 +649,9 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     println!("auth: owner-only writes");
     if let Some(hash) = &created.tx_hash {
         println!("create_tx: {hash}");
+        if let Some(url) = explorer_tx_url(&network, hash) {
+            println!("create_tx_url: {url}");
+        }
         if let Some(confirmation) = &created.confirmation {
             println!(
                 "create_status: {}",
@@ -690,7 +693,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         };
         let session = build_session(&session_args)?;
         for sql in init_sql {
-            let result = exec_sql(&session, &sql, args.no_wait)?;
+            let result = with_explorer(exec_sql(&session, &sql, args.no_wait)?, &session);
             if let Some(receipt) = result.get("receipt") {
                 ensure_receipt_success(receipt, "initializer SQL")?;
             }
@@ -712,13 +715,22 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         println!("saved: no");
     }
 
+    let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
     if args.no_name {
         println!("open: octra-sqlite open {target_uri}");
     } else {
         println!("open: octra-sqlite open {}", args.name);
     }
-    println!("status: octra-sqlite status {}", args.name);
+    println!("status: octra-sqlite status {followup_target}");
     Ok(())
+}
+
+fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) -> &'a str {
+    if no_name {
+        target_uri
+    } else {
+        name
+    }
 }
 
 fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
@@ -979,6 +991,9 @@ fn check_release_manifest(report: &mut StatusReport) {
 
 fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
+    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
+        report.ok("explorer", url);
+    }
     match program_info(session) {
         Ok(info) => {
             report.ok("circle", &session.target().circle);
@@ -1188,6 +1203,46 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
         tx_hash,
         confirmation,
     })
+}
+
+fn with_explorer(mut result: Value, session: &Session) -> Value {
+    let Some(object) = result.as_object_mut() else {
+        return result;
+    };
+    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
+        object.insert("circle_url".to_string(), Value::String(url));
+    }
+    if let Some(tx_hash) = object
+        .get("tx_hash")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    {
+        if let Some(url) = explorer_tx_url(&session.target().network, &tx_hash) {
+            object.insert("tx_url".to_string(), Value::String(url));
+        }
+    }
+    result
+}
+
+fn explorer_base_url(network: &str) -> Option<String> {
+    load_config()
+        .unwrap_or_default()
+        .explorer_for_network(network)
+        .map(|url| url.trim_end_matches('/').to_string())
+}
+
+fn explorer_tx_url(network: &str, hash: &str) -> Option<String> {
+    Some(format!(
+        "{}/tx.html?hash={hash}",
+        explorer_base_url(network)?
+    ))
+}
+
+fn explorer_circle_url(network: &str, circle: &str) -> Option<String> {
+    Some(format!(
+        "{}/address.html?addr={circle}",
+        explorer_base_url(network)?
+    ))
 }
 
 fn patch_wasm_auth_for_owner(wasm: &mut [u8], session: &Session) -> Result<AuthPatch> {
@@ -1602,7 +1657,7 @@ fn run_exec_sql_to(
     mode: OutputMode,
     output: Option<&Path>,
 ) -> Result<()> {
-    let result = exec_sql(session, sql, false)?;
+    let result = with_explorer(exec_sql(session, sql, false)?, session);
     if mode == OutputMode::Json {
         write_text(output, &format_json(&result)?)
     } else {
@@ -2077,13 +2132,13 @@ fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> 
     )?;
     print_result(&tables, OutputMode::Table, true)?;
     if write_smoke {
-        let result = exec_sql(
+        let result = with_explorer(exec_sql(
             session,
             "create table if not exists octra_sqlite_verify(first_name text not null, last_name text not null);
 delete from octra_sqlite_verify;
 insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');",
             false,
-        )?;
+        )?, session);
         print_exec_result(&result)?;
         let rows = query_typed(
             session,
@@ -2403,6 +2458,18 @@ mod tests {
             }
             _ => panic!("expected new command"),
         }
+    }
+
+    #[test]
+    fn new_no_name_followup_uses_database_uri() {
+        assert_eq!(
+            new_followup_target("organization", "oct://devnet/octABC", true),
+            "oct://devnet/octABC"
+        );
+        assert_eq!(
+            new_followup_target("organization", "oct://devnet/octABC", false),
+            "organization"
+        );
     }
 
     #[test]

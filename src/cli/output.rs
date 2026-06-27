@@ -54,11 +54,17 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
     }) {
         out.push_str(&format!("circle: {circle}\n"));
     }
+    if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
+        out.push_str(&format!("circle_url: {url}\n"));
+    }
     if let Some(wallet) = result.get("wallet").and_then(Value::as_str) {
         out.push_str(&format!("wallet: {wallet}\n"));
     }
     if let Some(hash) = result.get("tx_hash").and_then(Value::as_str) {
         out.push_str(&format!("tx: {hash}\n"));
+    }
+    if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
+        out.push_str(&format!("tx_url: {url}\n"));
     }
     if let Some(receipt) = receipt {
         out.push_str(&format!(
@@ -277,11 +283,13 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn exec_result_is_compact_and_keeps_octra_proof_fields() {
+    fn exec_result_is_compact_and_keeps_explorer_fields() {
         let result = json!({
             "circle": "octCircle",
+            "circle_url": "https://devnet.octrascan.io/address.html?addr=octCircle",
             "wallet": "octWallet",
             "tx_hash": "abc123",
+            "tx_url": "https://devnet.octrascan.io/tx.html?hash=abc123",
             "receipt": {
                 "contract": "octCircle",
                 "success": true,
@@ -297,8 +305,11 @@ mod tests {
         let rendered = format_exec_result(&result).unwrap();
         assert!(rendered.contains("write: confirmed"));
         assert!(rendered.contains("circle: octCircle"));
+        assert!(rendered
+            .contains("circle_url: https://devnet.octrascan.io/address.html?addr=octCircle"));
         assert!(rendered.contains("wallet: octWallet"));
         assert!(rendered.contains("tx: abc123"));
+        assert!(rendered.contains("tx_url: https://devnet.octrascan.io/tx.html?hash=abc123"));
         assert!(rendered.contains("sql: sql_fnv1a64:feedface"));
         assert!(!rendered.contains("\"receipt\""));
     }
