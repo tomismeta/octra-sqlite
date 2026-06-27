@@ -272,7 +272,12 @@ pub(super) fn submit_signed_tx_with<T: Transport>(
         out.insert("tx_hash".to_string(), Value::String(hash.clone()));
         if !no_wait {
             let receipt = wait_for_receipt_with(transport, session, &hash)?;
-            ensure_receipt_success(&receipt)?;
+            if let Err(error) = ensure_receipt_success(&receipt) {
+                return Err(ClientError::with_kind(
+                    error.kind(),
+                    format!("{error}; tx_hash: {hash}"),
+                ));
+            }
             out.insert("receipt".to_string(), receipt);
         }
     }

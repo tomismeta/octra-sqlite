@@ -373,6 +373,7 @@ mod tests {
         let error = db.execute("bad sql").unwrap_err();
         assert_eq!(error.kind(), ClientErrorKind::Receipt);
         assert!(error.to_string().contains("syntax error"));
+        assert!(error.to_string().contains("tx_hash: abc123"));
     }
 
     #[test]
