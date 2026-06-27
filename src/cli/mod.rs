@@ -11,7 +11,7 @@ use crate::{
             program_info, query_typed, resolve_wallet_path as client_resolve_wallet_path,
             submit_tx, view, wait_for_transaction, wallet_caller, Session,
         },
-        write_config, AuthInfo, Config, SessionOptions,
+        write_config, AuthInfo, ClientError, ClientErrorKind, Config, SessionOptions,
     },
     protocol::{
         target::{parse_database_target, DatabaseTarget as Target},
@@ -1669,16 +1669,27 @@ fn run_one_sql_to(
         handle_dot_command(&mut state, trimmed)?;
         return Ok(());
     }
-    if is_read_sql(sql) {
-        let result = query_typed(session, sql)?;
-        write_text(output, &format_result(&result, mode, headers)?)
+    if looks_like_sql_script(sql) {
+        return run_exec_sql_to(session, sql, mode, output);
+    }
+    match query_typed(session, sql) {
+        Ok(result) => write_text(output, &format_result(&result, mode, headers)?),
+        Err(error) if sqlite_requires_exec(&error) => run_exec_sql_to(session, sql, mode, output),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn run_exec_sql_to(
+    session: &Session,
+    sql: &str,
+    mode: OutputMode,
+    output: Option<&Path>,
+) -> Result<()> {
+    let result = exec_sql(session, sql, false)?;
+    if mode == OutputMode::Json {
+        write_text(output, &format_json(&result)?)
     } else {
-        let result = exec_sql(session, sql, false)?;
-        if mode == OutputMode::Json {
-            write_text(output, &format_json(&result)?)
-        } else {
-            write_text(output, &format_exec_result(&result)?)
-        }
+        write_text(output, &format_exec_result(&result)?)
     }
 }
 
@@ -2009,9 +2020,61 @@ fn now_timestamp() -> f64 {
     duration.as_secs() as f64 + f64::from(duration.subsec_millis()) / 1000.0
 }
 
-fn is_read_sql(sql: &str) -> bool {
-    let lower = sql.trim_start().to_ascii_lowercase();
-    lower.starts_with("select") || lower.starts_with("with") || lower.starts_with("explain")
+fn sqlite_requires_exec(error: &ClientError) -> bool {
+    error.kind() == ClientErrorKind::Rpc
+        && error
+            .to_string()
+            .starts_with("database error (sqlite_readonly_required)")
+}
+
+fn looks_like_sql_script(sql: &str) -> bool {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = sql.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !in_double_quote => {
+                if in_single_quote && chars.peek() == Some(&'\'') {
+                    chars.next();
+                } else {
+                    in_single_quote = !in_single_quote;
+                }
+            }
+            '"' if !in_single_quote => {
+                if in_double_quote && chars.peek() == Some(&'"') {
+                    chars.next();
+                } else {
+                    in_double_quote = !in_double_quote;
+                }
+            }
+            ';' if !in_single_quote && !in_double_quote => {
+                let rest: String = chars.clone().collect();
+                if sql_tail_has_statement(&rest) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+fn sql_tail_has_statement(mut tail: &str) -> bool {
+    loop {
+        tail = tail.trim_start();
+        if tail.is_empty() {
+            return false;
+        }
+        if let Some(rest) = tail.strip_prefix("--") {
+            tail = rest.split_once('\n').map(|(_, after)| after).unwrap_or("");
+            continue;
+        }
+        if let Some(rest) = tail.strip_prefix("/*") {
+            tail = rest.split_once("*/").map(|(_, after)| after).unwrap_or("");
+            continue;
+        }
+        return true;
+    }
 }
 
 fn verify(session: &Session, expected_hash: Option<&str>, write_smoke: bool) -> Result<()> {
@@ -2322,6 +2385,38 @@ mod tests {
             Commands::Config(args) => assert!(args.json),
             _ => panic!("expected config command"),
         }
+    }
+
+    #[test]
+    fn sqlite_readonly_required_routes_to_signed_exec() {
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_readonly_required): use exec for state-changing SQL",
+        );
+        assert!(sqlite_requires_exec(&error));
+
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_prepare_failed): no such table: missing",
+        );
+        assert!(!sqlite_requires_exec(&error));
+
+        let error = ClientError::with_kind(
+            ClientErrorKind::Rpc,
+            "database error (sqlite_prepare_failed): detail mentions sqlite_readonly_required",
+        );
+        assert!(!sqlite_requires_exec(&error));
+    }
+
+    #[test]
+    fn script_detection_preserves_sqlite_read_vs_exec_boundary() {
+        assert!(!looks_like_sql_script("select ';' as semi;"));
+        assert!(!looks_like_sql_script("select 1; -- trailing comment"));
+        assert!(!looks_like_sql_script("select 1; /* trailing comment */"));
+        assert!(looks_like_sql_script(
+            "create table person(first_name text); insert into person values ('Ada');"
+        ));
+        assert!(looks_like_sql_script("select 1; /* comment */ select 2;"));
     }
 
     #[test]
