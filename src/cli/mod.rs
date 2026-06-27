@@ -1964,8 +1964,15 @@ fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
         return Ok(0);
     }
     if sql.trim().len() < 7_500 {
-        exec_sql(session, sql, false)?;
-        return Ok(statements.len());
+        let script = sql_script_for_single_exec(&statements);
+        if script.trim().is_empty() {
+            return Ok(0);
+        }
+        exec_sql(session, &script, false)?;
+        return Ok(statements
+            .iter()
+            .filter(|statement| !should_skip_foreign_keys_pragma(statement))
+            .count());
     }
     let mut batch = String::new();
     let mut executed = 0usize;
@@ -2003,6 +2010,9 @@ fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
 }
 
 fn should_skip_import_wrapper(statement: &str) -> bool {
+    if should_skip_foreign_keys_pragma(statement) {
+        return true;
+    }
     let trimmed = statement
         .trim()
         .trim_end_matches(';')
@@ -2013,7 +2023,30 @@ fn should_skip_import_wrapper(statement: &str) -> bool {
         || trimmed == "commit"
         || trimmed == "end"
         || trimmed == "rollback"
-        || trimmed.starts_with("pragma foreign_keys")
+}
+
+fn should_skip_foreign_keys_pragma(statement: &str) -> bool {
+    let trimmed = statement
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .to_ascii_lowercase();
+    trimmed.starts_with("pragma foreign_keys")
+}
+
+fn sql_script_for_single_exec(statements: &[String]) -> String {
+    let mut script = String::new();
+    for statement in statements {
+        if should_skip_foreign_keys_pragma(statement) {
+            continue;
+        }
+        script.push_str(statement.trim());
+        if !statement.trim_end().ends_with(';') {
+            script.push(';');
+        }
+        script.push('\n');
+    }
+    script
 }
 
 fn split_sql_statements(sql: &str) -> Vec<String> {
@@ -3382,6 +3415,21 @@ insert into person values (1);",
         assert!(!should_skip_import_wrapper(
             "create table person(id integer);"
         ));
+    }
+
+    #[test]
+    fn small_sqlite_dump_restore_skips_foreign_key_pragma_only() {
+        let statements = split_sql_statements(
+            "PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE person(id integer);
+COMMIT;",
+        );
+        let script = sql_script_for_single_exec(&statements);
+        assert!(!script.contains("foreign_keys"));
+        assert!(script.contains("BEGIN TRANSACTION;"));
+        assert!(script.contains("CREATE TABLE person"));
+        assert!(script.contains("COMMIT;"));
     }
 
     #[test]
