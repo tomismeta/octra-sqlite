@@ -104,14 +104,117 @@ fn format_labeled_line(status: Option<&str>, label: &str, detail: &str, width: u
 
     let mut out = format!("{first}\n");
     for line in detail.lines() {
-        out.push_str("  ");
-        out.push_str(line);
-        out.push('\n');
+        push_wrapped_value_line(&mut out, line, width);
     }
     if detail.is_empty() {
         out.push_str("  \n");
     }
     out
+}
+
+fn push_wrapped_value_line(out: &mut String, line: &str, width: usize) {
+    let indent = "  ";
+    let value_width = width.saturating_sub(indent.len()).max(20);
+    if line.contains('\x1b') {
+        out.push_str(indent);
+        out.push_str(line);
+        out.push('\n');
+        return;
+    }
+    for wrapped in wrap_plain_line(line, value_width) {
+        out.push_str(indent);
+        out.push_str(&wrapped);
+        out.push('\n');
+    }
+}
+
+fn wrap_plain_line(line: &str, width: usize) -> Vec<String> {
+    if line.is_empty() {
+        return vec![String::new()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in line.split_whitespace() {
+        if current.is_empty() {
+            push_word(&mut lines, &mut current, word, width);
+            continue;
+        }
+        if visible_len(&current) + 1 + visible_len(word) <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = String::new();
+            push_word(&mut lines, &mut current, word, width);
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+fn push_word(lines: &mut Vec<String>, current: &mut String, word: &str, width: usize) {
+    if visible_len(word) <= width {
+        current.push_str(word);
+        return;
+    }
+    for chunk in chunks_by_visible_width(word, width) {
+        if current.is_empty() {
+            *current = chunk;
+        } else {
+            lines.push(std::mem::take(current));
+            *current = chunk;
+        }
+        if visible_len(current) == width {
+            lines.push(std::mem::take(current));
+        }
+    }
+}
+
+fn chunks_by_visible_width(text: &str, width: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut rest = text;
+    while visible_len(rest) > width {
+        let mut max_end = 0;
+        let mut last_strong_break = 0;
+        let mut last_soft_break = 0;
+        for (visible, (idx, ch)) in rest.char_indices().enumerate() {
+            if visible == width {
+                break;
+            }
+            max_end = idx + ch.len_utf8();
+            if is_strong_wrap_break(ch) {
+                last_strong_break = max_end;
+            } else if is_soft_wrap_break(ch) {
+                last_soft_break = max_end;
+            }
+        }
+        let end = if last_strong_break > 0 {
+            last_strong_break
+        } else if last_soft_break > 0 {
+            last_soft_break
+        } else {
+            max_end
+        };
+        if end == 0 {
+            break;
+        }
+        chunks.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    if !rest.is_empty() {
+        chunks.push(rest.to_string());
+    }
+    chunks
+}
+
+fn is_strong_wrap_break(ch: char) -> bool {
+    matches!(ch, '/' | '?' | '&' | '=')
+}
+
+fn is_soft_wrap_break(ch: char) -> bool {
+    matches!(ch, '-' | '_' | ':' | '.')
 }
 
 fn visible_len(text: &str) -> usize {
@@ -502,7 +605,7 @@ mod tests {
         let rendered = format_field_with_width("explorer", value, 40);
         assert_eq!(
             rendered,
-            "explorer:\n  https://devnet.octrascan.io/address.html?addr=octLongCircleId\n"
+            "explorer:\n  https://devnet.octrascan.io/\n  address.html?addr=octLongCircleId\n"
         );
     }
 
@@ -518,7 +621,17 @@ mod tests {
         let rendered = format_status_line_with_width("ok", "wasm sha256", value, 48);
         assert_eq!(
             rendered,
-            "ok wasm sha256:\n  29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c\n"
+            "ok wasm sha256:\n  29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe9\n  31fa1f012b7f39ca9c\n"
         );
+    }
+
+    #[test]
+    fn wrapped_lines_fit_the_requested_width() {
+        let value = "37e377095b33437ad3ebbda0cd67766e005cfe0b82967d6abdcfabb5427f2f46 (owner-personalized bundled WASM)";
+        let rendered = format_status_line_with_width("ok", "program hash", value, 80);
+        for line in rendered.lines() {
+            assert!(visible_len(line) <= 80, "{line}");
+        }
+        assert!(rendered.contains("owner-personalized bundled WASM"));
     }
 }
