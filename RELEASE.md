@@ -1,5 +1,33 @@
 # Release Notes
 
+## 0.2.1
+
+This is a hardening release for the Rust CLI/client. The bundled Circle WASM is
+unchanged from `0.2.0`.
+
+## Added
+
+- `cargo build --no-default-features --lib` coverage for the protocol/client
+  core without HTTP or CLI dependencies.
+- Plain `circle_url` and `tx_url` fields in write output when the active network
+  has an explorer profile.
+
+## Changed
+
+- CLI SQL routing now lets SQLite inside the Circle classify single statements
+  and only submits a signed write when SQLite returns `sqlite_readonly_required`.
+- Wallet sessions now keep signing state instead of cloned private-key strings,
+  verify supplied public keys, and zeroize decoded/intermediate key material
+  where practical.
+- `new --no-name` status follow-up now uses the generated `oct://` URI.
+
+## Removed
+
+- Undocumented hidden top-level aliases: `query`, `exec`, `tables`, `schema`,
+  `storage`, `circle`, `proof`, `doctor`, and `alias`.
+- `.proof` as a shell synonym. Use `.verify`; reserve “proof” for a future
+  durable proof artifact.
+
 ## 0.2.0
 
 This release refactors the Rust client and protocol boundary while keeping the
@@ -71,6 +99,6 @@ personalized_code_hash: 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fb
 bundled_wasm_hash: f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf
 code_bytes: 607640
 sample: remilia collection
-manifest: release/octra-sqlite-0.2.0.json
+manifest: release/octra-sqlite-0.2.1.json
 proof: docs/proofs/devnet.md
 ```

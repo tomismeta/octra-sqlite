@@ -259,4 +259,4 @@ Architecture notes live in [`docs/`](./docs). The bundled public artifact is
 recorded in
 [`release/octra-sqlite-0.1.0.json`](./release/octra-sqlite-0.1.0.json).
 The current Rust CLI/library release manifest is
-[`release/octra-sqlite-0.2.0.json`](./release/octra-sqlite-0.2.0.json).
+[`release/octra-sqlite-0.2.1.json`](./release/octra-sqlite-0.2.1.json).

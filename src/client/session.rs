@@ -348,7 +348,7 @@ fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> 
 
 fn decode_key_text(cleaned: &str) -> Option<Vec<u8>> {
     let looks_hex =
-        cleaned.len() % 2 == 0 && cleaned.as_bytes().iter().all(|b| b.is_ascii_hexdigit());
+        cleaned.len().is_multiple_of(2) && cleaned.as_bytes().iter().all(|b| b.is_ascii_hexdigit());
     if looks_hex {
         return hex::decode(cleaned).ok();
     }
