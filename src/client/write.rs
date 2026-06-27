@@ -219,7 +219,7 @@ pub(super) fn sign_write(session: &Session, prepared: &PreparedWrite) -> Result<
         Value::String(prepared.sql.clone()),
         Value::String(owner_write.owner_pubkey.clone()),
         Value::String(owner_write.sequence.to_string()),
-        Value::String(session.sign_bytes_hex(&hex::decode(&owner_write.frame_hex)?)?),
+        Value::String(session.sign_owner_write_hex(&hex::decode(&owner_write.frame_hex)?)),
     ];
     let message = compact_json(&Value::Array(params))?;
     let mut tx = Tx {
@@ -235,7 +235,7 @@ pub(super) fn sign_write(session: &Session, prepared: &PreparedWrite) -> Result<
         signature: String::new(),
         public_key: prepared.public_key.clone(),
     };
-    tx.signature = session.sign_text_b64(&canonical_tx(&tx))?;
+    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx));
     Ok(SignedWrite::new(tx, prepared.safety))
 }
 

@@ -1227,6 +1227,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "wasmtime",
+ "zeroize",
 ]
 
 [[package]]

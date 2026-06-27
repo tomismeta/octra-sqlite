@@ -3,8 +3,9 @@ use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use zeroize::Zeroize;
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Deserialize, Default)]
 pub(super) struct WalletFile {
     pub(super) addr: Option<String>,
     pub(super) address: Option<String>,
@@ -24,18 +25,20 @@ pub(super) struct WalletFile {
 pub(super) fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
     match path {
         Some(path) => {
-            let text = fs::read_to_string(path).map_err(|error| {
+            let mut text = fs::read_to_string(path).map_err(|error| {
                 ClientError::with_kind(
                     ClientErrorKind::Io,
                     format!("reading wallet {}: {error}", path.display()),
                 )
             })?;
-            Ok(serde_json::from_str(&text).map_err(|error| {
+            let parsed = serde_json::from_str(&text).map_err(|error| {
                 ClientError::with_kind(
                     ClientErrorKind::Wallet,
                     format!("parsing wallet {}: {error}", path.display()),
                 )
-            })?)
+            });
+            text.zeroize();
+            Ok(parsed?)
         }
         None => Ok(WalletFile::default()),
     }

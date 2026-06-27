@@ -27,7 +27,7 @@ pub(super) fn view_with<T: Transport>(
         method,
         params_hash
     );
-    let signature = session.sign_text_b64(&message)?;
+    let signature = session.sign_view_auth_b64(&message);
     let result = rpc_call(
         transport,
         session,
@@ -88,7 +88,7 @@ pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) 
         session.target().circle,
         session.caller()
     );
-    let signature = session.sign_text_b64(&message)?;
+    let signature = session.sign_program_info_b64(&message);
     rpc_call(
         transport,
         session,
@@ -224,6 +224,6 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(feature = "http")]
 pub(super) fn sign_canonical_tx(session: &Session, tx: &mut Tx) -> Result<()> {
     let canonical = canonical_tx(tx);
-    tx.signature = session.sign_text_b64(&canonical)?;
+    tx.signature = session.sign_transaction_b64(&canonical);
     Ok(())
 }
