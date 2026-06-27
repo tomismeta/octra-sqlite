@@ -30,6 +30,10 @@ Circle while keeping the CLI familiar to `sqlite3` users.
   transaction/foreign-key wrappers are stripped before submission, and large
   files are applied in batches because Octra SQL frames are capped. Restart from
   a fresh database if an interrupted restore must be retried.
+- `.read` and `.import` now fail before submission when a single SQL statement
+  exceeds the 8,191-byte Circle SQL statement limit.
+- `.import --csv` is positional and imports fields as SQLite string literals;
+  empty fields remain empty strings.
 - Binary `.restore` from a `.sqlite` file remains deferred until it can be kept
   as small and auditable as `.backup`.
 

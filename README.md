@@ -212,6 +212,11 @@ Import CSV rows:
 sqlite> .import --csv --skip 1 person.csv person
 ```
 
+CSV import is positional: rows are submitted as `insert into TABLE values (...)`.
+Fields are imported as SQLite string literals, so empty CSV fields remain empty
+strings. Use a SQL dump or hand-written `insert` statements when you need a
+column list or explicit `NULL` values.
+
 The `sqlite3` commands above run locally against exported files. The
 `octra-sqlite` commands talk to the Octra Circle. `.dump` and `.fullschema`
 also create a pinned temporary backup and ask local `sqlite3` to render the
@@ -254,8 +259,9 @@ The consensus-critical surface is intentionally small:
   current 4 KiB page size.
 - A single write can dirty up to 1,024 SQLite pages, about 4 MiB of database
   growth. Larger imports should be chunked.
-- SQL frames are capped at 8 KiB. Practically, SQL text up to 8,191 bytes is
-  accepted by the current frame parser.
+- SQL frames are capped at 8 KiB. Practically, each SQL statement may be up to
+  8,191 bytes; `.read` and `.import` fail before submission when a statement is
+  larger.
 - Query responses are capped at 512 rows and about 64 KiB. Use `limit` and
   pagination-style queries for larger tables.
 - New databases are owner-bound by default. The CLI patches the bundled WASM

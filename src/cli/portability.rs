@@ -12,7 +12,23 @@ use crate::client::low_level::{exec_sql, view, Session};
 
 use super::BackupSummary;
 
+const MAX_SQL_TEXT_BYTES: usize = 8_191;
+const SQL_BATCH_TARGET_BYTES: usize = 7_500;
+const BACKUP_RETRIES: usize = 2;
+
 pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSummary> {
+    let mut last_error = None;
+    for _ in 0..=BACKUP_RETRIES {
+        match backup_database_once(session, path) {
+            Ok(summary) => return Ok(summary),
+            Err(error) if backup_generation_changed(&error) => last_error = Some(error),
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| anyhow!("database changed during backup; retry")))
+}
+
+fn backup_database_once(session: &Session, path: &Path) -> Result<BackupSummary> {
     let storage = view(session, "storage_info", vec![])?;
     let generation = json_u64(&storage, "generation")?;
     let page_count = json_u64(&storage, "page_count")?;
@@ -22,11 +38,14 @@ pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSu
     }
 
     let tmp_path = backup_temp_path(path);
+    let _cleanup = TempPathCleanup(tmp_path.clone());
     if let Some(parent) = tmp_path.parent() {
         fs::create_dir_all(parent)?;
     }
     let mut file =
         fs::File::create(&tmp_path).with_context(|| format!("creating {}", tmp_path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut hashed_bytes = 0u64;
     let mut page = 1u64;
     while page <= page_count {
         let remaining = page_count - page + 1;
@@ -63,16 +82,21 @@ pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSu
             );
         }
         file.write_all(&bytes)?;
+        let hash_len = bytes
+            .len()
+            .min(file_bytes.saturating_sub(hashed_bytes) as usize);
+        hasher.update(&bytes[..hash_len]);
+        hashed_bytes += hash_len as u64;
         page += chunk_pages;
+    }
+    if hashed_bytes != file_bytes {
+        bail!("backup wrote {hashed_bytes} bytes into hash; expected {file_bytes}");
     }
     file.set_len(file_bytes)?;
     file.flush()?;
     drop(file);
     fs::rename(&tmp_path, path)
         .with_context(|| format!("moving {} to {}", tmp_path.display(), path.display()))?;
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
     let file_hash = hex::encode(hasher.finalize());
     Ok(BackupSummary {
         path: path.to_path_buf(),
@@ -81,6 +105,12 @@ pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSu
         generation,
         sha256: file_hash,
     })
+}
+
+fn backup_generation_changed(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains("backup_generation_changed"))
 }
 
 fn backup_temp_path(path: &Path) -> PathBuf {
@@ -100,7 +130,18 @@ fn ensure_backup_chunk_matches(
     file_bytes: u64,
 ) -> Result<()> {
     if chunk.get("ok").and_then(Value::as_bool) != Some(true) {
-        bail!("backup chunk failed: {chunk}");
+        let error = chunk
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("backup_failed");
+        let detail = chunk
+            .get("detail")
+            .and_then(Value::as_str)
+            .unwrap_or("backup chunk failed");
+        if error == "backup_generation_changed" {
+            bail!("{error}: database changed during backup; retry");
+        }
+        bail!("{error}: {detail}");
     }
     for (key, expected) in [
         ("generation", generation),
@@ -230,14 +271,18 @@ fn quote_identifier(name: &str) -> String {
 
 pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
     let statements = split_sql_statements(sql);
+    for statement in &statements {
+        ensure_sql_statement_size(statement)?;
+    }
     if statements.is_empty() {
         return Ok(0);
     }
-    if sql.trim().len() < 7_500 {
+    if sql.trim().len() < SQL_BATCH_TARGET_BYTES {
         let script = sql_script_for_single_exec(&statements);
         if script.trim().is_empty() {
             return Ok(0);
         }
+        ensure_exec_payload_size(&script)?;
         exec_sql(session, &script, false)?;
         return Ok(statements
             .iter()
@@ -251,13 +296,15 @@ pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> 
             continue;
         }
         let candidate_len = batch.len() + statement.len() + 1;
-        if !batch.is_empty() && candidate_len >= 7_500 {
+        if !batch.is_empty() && candidate_len >= SQL_BATCH_TARGET_BYTES {
+            ensure_exec_payload_size(&batch)?;
             exec_sql(session, &batch, false).context(
                 "executing SQL script batch; large .read files are applied in batches on Octra",
             )?;
             batch.clear();
         }
-        if statement.len() >= 7_500 {
+        if statement.len() >= SQL_BATCH_TARGET_BYTES {
+            ensure_exec_payload_size(&statement)?;
             exec_sql(session, &statement, false).context(
                 "executing SQL script statement; large .read files are applied in batches on Octra",
             )?;
@@ -272,11 +319,29 @@ pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> 
         executed += 1;
     }
     if !batch.trim().is_empty() {
+        ensure_exec_payload_size(&batch)?;
         exec_sql(session, &batch, false).context(
             "executing SQL script batch; large .read files are applied in batches on Octra",
         )?;
     }
     Ok(executed)
+}
+
+fn ensure_sql_statement_size(statement: &str) -> Result<()> {
+    ensure_sql_len("SQL statement", statement.len())
+}
+
+fn ensure_exec_payload_size(sql: &str) -> Result<()> {
+    ensure_sql_len("SQL payload", sql.len())
+}
+
+fn ensure_sql_len(label: &str, len: usize) -> Result<()> {
+    if len > MAX_SQL_TEXT_BYTES {
+        bail!(
+            "{label} is {len} bytes; Octra SQLite accepts at most {MAX_SQL_TEXT_BYTES} bytes per statement"
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn should_skip_import_wrapper(statement: &str) -> bool {
@@ -563,7 +628,10 @@ pub(super) fn import_csv(
                 .collect::<Vec<_>>()
                 .join(",")
         );
-        if !batch.is_empty() && batch.len() + statement.len() + 1 >= 7_500 {
+        ensure_sql_statement_size(&statement)
+            .with_context(|| format!("CSV row {} is too large to import", idx + 1))?;
+        if !batch.is_empty() && batch.len() + statement.len() + 1 >= SQL_BATCH_TARGET_BYTES {
+            ensure_exec_payload_size(&batch)?;
             exec_sql(session, &batch, false)?;
             batch.clear();
         }
@@ -572,6 +640,7 @@ pub(super) fn import_csv(
         inserted += 1;
     }
     if !batch.trim().is_empty() {
+        ensure_exec_payload_size(&batch)?;
         exec_sql(session, &batch, false)?;
     }
     Ok(inserted)
@@ -624,4 +693,71 @@ fn parse_csv_records(text: &str) -> Result<Vec<Vec<String>>> {
         rows.push(row);
     }
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sql_statement_size_limit_is_explicit() {
+        assert!(ensure_sql_statement_size(&"x".repeat(MAX_SQL_TEXT_BYTES)).is_ok());
+        let error = ensure_sql_statement_size(&"x".repeat(MAX_SQL_TEXT_BYTES + 1))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("8192 bytes"));
+        assert!(error.contains("8191 bytes"));
+    }
+
+    #[test]
+    fn rewritten_sql_script_payload_is_checked() {
+        let statements = vec!["x;".to_string(); 3_749];
+        let script = sql_script_for_single_exec(&statements);
+        assert!(script.len() > MAX_SQL_TEXT_BYTES);
+        let error = ensure_exec_payload_size(&script)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SQL payload"));
+    }
+
+    #[test]
+    fn csv_row_with_newline_cannot_cross_payload_limit() {
+        let statement = "x".repeat(MAX_SQL_TEXT_BYTES);
+        assert!(ensure_sql_statement_size(&statement).is_ok());
+        let payload = format!("{statement}\n");
+        let error = ensure_exec_payload_size(&payload).unwrap_err().to_string();
+        assert!(error.contains("8192 bytes"));
+    }
+
+    #[test]
+    fn backup_generation_change_has_clear_error() {
+        let chunk = serde_json::json!({
+            "ok": false,
+            "error": "backup_generation_changed",
+            "detail": "database generation changed during backup"
+        });
+        let error = ensure_backup_chunk_matches(&chunk, 1, 1, 1, 1, 4096)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("backup_generation_changed"));
+        assert!(error.contains("database changed during backup"));
+        assert!(backup_generation_changed(&anyhow!(error)));
+    }
+
+    #[test]
+    fn backup_chunk_errors_hide_raw_json() {
+        let chunk = serde_json::json!({
+            "ok": false,
+            "error": "backup_bad_range",
+            "detail": "backup_chunk page range is out of bounds"
+        });
+        let error = ensure_backup_chunk_matches(&chunk, 1, 1, 1, 1, 4096)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            "backup_bad_range: backup_chunk page range is out of bounds"
+        );
+        assert!(!error.contains("{"));
+    }
 }
