@@ -4,10 +4,9 @@ use super::{
     session::Session,
     transport::Transport,
 };
-use crate::protocol::{
-    osr1::{decode_typed_result, TYPED_PREFIX},
-    tx::{canonical_tx, Tx},
-};
+use crate::protocol::osr1::{decode_typed_result, TYPED_PREFIX};
+#[cfg(feature = "http")]
+use crate::protocol::tx::{canonical_tx, Tx};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -147,6 +146,7 @@ pub(super) fn wait_for_receipt_with<T: Transport>(
     ))
 }
 
+#[cfg(feature = "http")]
 pub(super) fn wait_for_transaction_with<T: Transport>(
     transport: &T,
     session: &Session,
@@ -221,6 +221,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+#[cfg(feature = "http")]
 pub(super) fn sign_canonical_tx(session: &Session, tx: &mut Tx) -> Result<()> {
     let canonical = canonical_tx(tx);
     tx.signature = session.sign_text_b64(&canonical)?;

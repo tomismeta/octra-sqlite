@@ -1,28 +1,44 @@
 use super::{
     error::Result,
     results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx},
-    rpc::{
-        auth_info_with, next_nonce_with, program_info_with, query_typed_with, sign_canonical_tx,
-        view_with, wait_for_transaction_with,
-    },
-    safety::{operation_safety, DatabaseOperation},
+    rpc::{auth_info_with, program_info_with, query_typed_with},
+    safety::DatabaseOperation,
     session::{build_session, Session, SessionOptions},
-    transport::{HttpTransport, Transport},
+    transport::Transport,
     write::{
         ensure_submit_mode, prepare_write_with, sign_write, submit_signed_write_with,
         PreparedWrite, SignedWrite,
     },
 };
+#[cfg(feature = "http")]
+use super::{
+    rpc::{next_nonce_with, sign_canonical_tx, view_with, wait_for_transaction_with},
+    safety::operation_safety,
+    transport::HttpTransport,
+};
+#[cfg(feature = "http")]
 use crate::protocol::tx::Tx;
+#[cfg(feature = "http")]
 use serde_json::Value;
+#[cfg(feature = "http")]
+use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "http")]
 #[derive(Clone)]
 pub struct OctraSqlite<T = HttpTransport> {
     options: SessionOptions,
     transport: Arc<T>,
 }
 
+#[cfg(not(feature = "http"))]
+#[derive(Clone)]
+pub struct OctraSqlite<T> {
+    options: SessionOptions,
+    transport: Arc<T>,
+}
+
+#[cfg(feature = "http")]
 impl Default for OctraSqlite<HttpTransport> {
     fn default() -> Self {
         Self {
@@ -32,10 +48,16 @@ impl Default for OctraSqlite<HttpTransport> {
     }
 }
 
+#[cfg(feature = "http")]
 impl OctraSqlite<HttpTransport> {
     pub fn from_default_config() -> Result<Self> {
-        super::config::load_config()?;
-        Ok(Self::default())
+        let config = super::config::load_config()?;
+        let options = SessionOptions {
+            target: config.default_database.clone(),
+            wallet: config.wallet.as_ref().map(PathBuf::from),
+            ..SessionOptions::default()
+        };
+        Ok(Self::with_options(options))
     }
 
     pub fn with_options(options: SessionOptions) -> Self {
@@ -61,12 +83,21 @@ impl<T: Transport> OctraSqlite<T> {
     }
 }
 
+#[cfg(feature = "http")]
 #[derive(Clone)]
 pub struct Database<T = HttpTransport> {
     session: Session,
     transport: Arc<T>,
 }
 
+#[cfg(not(feature = "http"))]
+#[derive(Clone)]
+pub struct Database<T> {
+    session: Session,
+    transport: Arc<T>,
+}
+
+#[cfg(feature = "http")]
 impl Database<HttpTransport> {
     pub fn open(options: SessionOptions) -> Result<Self> {
         Self::open_with_transport(options, HttpTransport::default())
@@ -150,26 +181,31 @@ impl<T: Transport> Database<T> {
     }
 }
 
+#[cfg(feature = "http")]
 pub fn view(session: &Session, method: &str, params: Vec<Value>) -> Result<Value> {
     let transport = HttpTransport::default();
     view_with(&transport, session, method, params)
 }
 
+#[cfg(feature = "http")]
 pub fn query_typed(session: &Session, sql: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     query_typed_with(&transport, session, sql)
 }
 
+#[cfg(feature = "http")]
 pub fn auth_info(session: &Session) -> Result<AuthInfo> {
     let transport = HttpTransport::default();
     auth_info_with(&transport, session)
 }
 
+#[cfg(feature = "http")]
 pub fn program_info(session: &Session) -> Result<Value> {
     let transport = HttpTransport::default();
     program_info_with(&transport, session)
 }
 
+#[cfg(feature = "http")]
 pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
     let operation = if no_wait {
@@ -182,11 +218,13 @@ pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     submit_signed_write_with(&transport, session, signed, no_wait)
 }
 
+#[cfg(feature = "http")]
 pub fn next_nonce(session: &Session) -> Result<i64> {
     let transport = HttpTransport::default();
     next_nonce_with(&transport, session)
 }
 
+#[cfg(feature = "http")]
 pub fn submit_tx(session: &Session, mut tx: Tx, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
     sign_canonical_tx(session, &mut tx)?;
@@ -201,6 +239,7 @@ pub fn submit_tx(session: &Session, mut tx: Tx, no_wait: bool) -> Result<Value> 
     submit_signed_write_with(&transport, session, signed, no_wait)
 }
 
+#[cfg(feature = "http")]
 pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     wait_for_transaction_with(&transport, session, tx_hash)

@@ -24,6 +24,8 @@ jobs:
           sudo apt-get install -y wabt
       - name: Rust tests
         run: cargo test --locked
+      - name: Protocol/client core without HTTP
+        run: cargo build --locked --no-default-features --lib
       - name: Script syntax
         run: find scripts -name '*.sh' -exec bash -n {} \;
       - name: Check bundled WASM artifact
