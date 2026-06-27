@@ -2,6 +2,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use clap::{Args, Parser, Subcommand};
 mod output;
+mod portability;
+mod shell;
 use crate::{
     client::{
         config_path, load_config,
@@ -23,15 +25,16 @@ use output::{
     hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
     OutputMode,
 };
-use rustyline::error::ReadlineError;
+use portability::{backup_database, execute_sql_script, run_local_sqlite_integrity};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use shell::{run_dot_command, run_shell};
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
@@ -365,15 +368,6 @@ struct ConfigArgs {
     /// Print raw JSON.
     #[arg(long)]
     json: bool,
-}
-
-struct ShellState {
-    session: Session,
-    mode: OutputMode,
-    headers: bool,
-    timer: bool,
-    output: Option<PathBuf>,
-    once_output: Option<PathBuf>,
 }
 
 struct BackupSummary {
@@ -760,7 +754,7 @@ fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) ->
     }
 }
 
-fn print_field(label: &str, detail: impl AsRef<str>) {
+pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
     print!("{}", format_field(label, detail));
 }
 
@@ -1271,7 +1265,7 @@ fn with_explorer(mut result: Value, session: &Session) -> Value {
     result
 }
 
-fn linked_circle(network: &str, circle: &str) -> String {
+pub(super) fn linked_circle(network: &str, circle: &str) -> String {
     match explorer_circle_url(network, circle) {
         Some(url) => hyperlink(circle, url),
         None => circle.to_string(),
@@ -1676,7 +1670,7 @@ fn run_one_sql(session: &Session, sql: &str, mode: OutputMode, headers: bool) ->
     run_one_sql_to(session, sql, mode, headers, None)
 }
 
-fn run_one_sql_to(
+pub(super) fn run_one_sql_to(
     session: &Session,
     sql: &str,
     mode: OutputMode,
@@ -1685,15 +1679,7 @@ fn run_one_sql_to(
 ) -> Result<()> {
     let trimmed = sql.trim();
     if trimmed.starts_with('.') && !trimmed.contains('\n') {
-        let mut state = ShellState {
-            session: session.clone(),
-            mode,
-            headers,
-            timer: false,
-            output: output.map(Path::to_path_buf),
-            once_output: None,
-        };
-        handle_dot_command(&mut state, trimmed)?;
+        run_dot_command(session.clone(), mode, headers, output, trimmed)?;
         return Ok(());
     }
     if looks_like_sql_script(sql) {
@@ -1720,7 +1706,7 @@ fn run_exec_sql_to(
     }
 }
 
-fn format_schema_result(result: &Value) -> Result<String> {
+pub(super) fn format_schema_result(result: &Value) -> Result<String> {
     let columns = result
         .get("columns")
         .and_then(Value::as_array)
@@ -1749,1037 +1735,6 @@ fn format_schema_result(result: &Value) -> Result<String> {
         out.push('\n');
     }
     Ok(out)
-}
-
-fn backup_database(session: &Session, path: &Path) -> Result<BackupSummary> {
-    let storage = view(session, "storage_info", vec![])?;
-    let generation = json_u64(&storage, "generation")?;
-    let page_count = json_u64(&storage, "page_count")?;
-    let file_bytes = json_u64(&storage, "file_bytes")?;
-    if page_count == 0 || file_bytes == 0 {
-        bail!("database has no SQLite pages to back up");
-    }
-
-    let tmp_path = backup_temp_path(path);
-    if let Some(parent) = tmp_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut file =
-        fs::File::create(&tmp_path).with_context(|| format!("creating {}", tmp_path.display()))?;
-    let mut page = 1u64;
-    while page <= page_count {
-        let remaining = page_count - page + 1;
-        let chunk_pages = remaining.min(8);
-        let chunk = view(
-            session,
-            "backup_chunk",
-            vec![
-                Value::String(generation.to_string()),
-                Value::String(page.to_string()),
-                Value::String(chunk_pages.to_string()),
-            ],
-        )?;
-        ensure_backup_chunk_matches(
-            &chunk,
-            generation,
-            page,
-            chunk_pages,
-            page_count,
-            file_bytes,
-        )?;
-        let encoded = chunk
-            .get("data_b64")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow!("backup chunk missing data_b64"))?;
-        let bytes = general_purpose::STANDARD
-            .decode(encoded)
-            .context("decoding backup chunk")?;
-        let expected_len = (chunk_pages as usize) * 4096;
-        if bytes.len() != expected_len {
-            bail!(
-                "backup chunk returned {} bytes; expected {expected_len}",
-                bytes.len()
-            );
-        }
-        file.write_all(&bytes)?;
-        page += chunk_pages;
-    }
-    file.set_len(file_bytes)?;
-    file.flush()?;
-    drop(file);
-    fs::rename(&tmp_path, path)
-        .with_context(|| format!("moving {} to {}", tmp_path.display(), path.display()))?;
-    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let file_hash = hex::encode(hasher.finalize());
-    Ok(BackupSummary {
-        path: path.to_path_buf(),
-        bytes: file_bytes,
-        pages: page_count,
-        generation,
-        sha256: file_hash,
-    })
-}
-
-fn backup_temp_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "octra-sqlite-backup.sqlite".to_string());
-    path.with_file_name(format!(".{file_name}.tmp.{}", std::process::id()))
-}
-
-fn ensure_backup_chunk_matches(
-    chunk: &Value,
-    generation: u64,
-    start_page: u64,
-    chunk_pages: u64,
-    page_count: u64,
-    file_bytes: u64,
-) -> Result<()> {
-    if chunk.get("ok").and_then(Value::as_bool) != Some(true) {
-        bail!("backup chunk failed: {chunk}");
-    }
-    for (key, expected) in [
-        ("generation", generation),
-        ("start_page", start_page),
-        ("chunk_pages", chunk_pages),
-        ("page_count", page_count),
-        ("file_bytes", file_bytes),
-    ] {
-        let actual = json_u64(chunk, key)?;
-        if actual != expected {
-            bail!("backup chunk {key} changed from {expected} to {actual}");
-        }
-    }
-    Ok(())
-}
-
-fn json_u64(value: &Value, key: &str) -> Result<u64> {
-    value
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| anyhow!("missing numeric {key}"))
-}
-
-fn run_local_sqlite_integrity(path: &Path) -> Result<String> {
-    let output = ProcessCommand::new("sqlite3")
-        .arg(path)
-        .arg("pragma integrity_check;")
-        .output()
-        .with_context(|| "running sqlite3 integrity_check")?;
-    if !output.status.success() {
-        bail!(
-            "sqlite3 integrity_check failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if stdout != "ok" {
-        bail!("sqlite3 integrity_check returned {stdout}");
-    }
-    Ok(stdout)
-}
-
-fn dump_database(session: &Session, objects: &[String]) -> Result<String> {
-    run_sqlite_snapshot_dot_command(session, ".dump", objects)
-}
-
-fn fullschema_database(session: &Session) -> Result<String> {
-    run_sqlite_snapshot_dot_command(session, ".fullschema", &[])
-}
-
-fn run_sqlite_snapshot_dot_command(
-    session: &Session,
-    command: &str,
-    objects: &[String],
-) -> Result<String> {
-    let path = sqlite_snapshot_temp_path(command);
-    let _cleanup = TempPathCleanup(path.clone());
-    backup_database(session, &path)?;
-    let mut dot_command = command.to_string();
-    for object in objects {
-        dot_command.push(' ');
-        dot_command.push_str(&sqlite_dot_argument(object)?);
-    }
-    let output = ProcessCommand::new("sqlite3")
-        .arg(&path)
-        .arg(&dot_command)
-        .output()
-        .with_context(|| "running sqlite3 against exported backup")?;
-    if !output.status.success() {
-        bail!(
-            "sqlite3 {command} failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-fn sqlite_snapshot_temp_path(label: &str) -> PathBuf {
-    let clean_label = label
-        .trim_start_matches('.')
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
-        .collect::<String>();
-    std::env::temp_dir().join(format!(
-        "octra-sqlite-{clean_label}-{}-{}.sqlite",
-        std::process::id(),
-        now_millis()
-    ))
-}
-
-fn now_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-}
-
-struct TempPathCleanup(PathBuf);
-
-impl Drop for TempPathCleanup {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
-
-fn sqlite_dot_argument(value: &str) -> Result<String> {
-    if value.contains(['\0', '\n', '\r', '\'']) {
-        bail!("sqlite object names for .dump cannot contain quotes or control characters");
-    }
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
-    {
-        Ok(value.to_string())
-    } else {
-        Ok(format!("'{value}'"))
-    }
-}
-
-fn sql_string_literal(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
-}
-
-fn quote_identifier(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
-}
-
-fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
-    let statements = split_sql_statements(sql);
-    if statements.is_empty() {
-        return Ok(0);
-    }
-    if sql.trim().len() < 7_500 {
-        let script = sql_script_for_single_exec(&statements);
-        if script.trim().is_empty() {
-            return Ok(0);
-        }
-        exec_sql(session, &script, false)?;
-        return Ok(statements
-            .iter()
-            .filter(|statement| !should_skip_import_wrapper(statement))
-            .count());
-    }
-    let mut batch = String::new();
-    let mut executed = 0usize;
-    for statement in statements {
-        if should_skip_import_wrapper(&statement) {
-            continue;
-        }
-        let candidate_len = batch.len() + statement.len() + 1;
-        if !batch.is_empty() && candidate_len >= 7_500 {
-            exec_sql(session, &batch, false).context(
-                "executing SQL script batch; large .read files are applied in batches on Octra",
-            )?;
-            batch.clear();
-        }
-        if statement.len() >= 7_500 {
-            exec_sql(session, &statement, false).context(
-                "executing SQL script statement; large .read files are applied in batches on Octra",
-            )?;
-            executed += 1;
-            continue;
-        }
-        batch.push_str(&statement);
-        if !batch.ends_with(';') {
-            batch.push(';');
-        }
-        batch.push('\n');
-        executed += 1;
-    }
-    if !batch.trim().is_empty() {
-        exec_sql(session, &batch, false).context(
-            "executing SQL script batch; large .read files are applied in batches on Octra",
-        )?;
-    }
-    Ok(executed)
-}
-
-fn should_skip_import_wrapper(statement: &str) -> bool {
-    if should_skip_foreign_keys_pragma(statement) {
-        return true;
-    }
-    let trimmed = statement
-        .trim()
-        .trim_end_matches(';')
-        .trim()
-        .to_ascii_lowercase();
-    trimmed == "begin"
-        || trimmed == "begin transaction"
-        || trimmed == "commit"
-        || trimmed == "end"
-        || trimmed == "rollback"
-}
-
-fn should_skip_foreign_keys_pragma(statement: &str) -> bool {
-    let trimmed = statement
-        .trim()
-        .trim_end_matches(';')
-        .trim()
-        .to_ascii_lowercase();
-    trimmed.starts_with("pragma foreign_keys")
-}
-
-fn sql_script_for_single_exec(statements: &[String]) -> String {
-    let mut script = String::new();
-    for statement in statements {
-        if should_skip_import_wrapper(statement) {
-            continue;
-        }
-        script.push_str(statement.trim());
-        if !statement.trim_end().ends_with(';') {
-            script.push(';');
-        }
-        script.push('\n');
-    }
-    script
-}
-
-fn split_sql_statements(sql: &str) -> Vec<String> {
-    let mut statements = Vec::new();
-    let mut start = 0usize;
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backtick = false;
-    let mut in_bracket = false;
-    let mut in_line_comment = false;
-    let mut in_block_comment = false;
-    let mut chars = sql.char_indices().peekable();
-    while let Some((index, ch)) = chars.next() {
-        if in_line_comment {
-            if ch == '\n' || ch == '\r' {
-                in_line_comment = false;
-            }
-            continue;
-        }
-        if in_block_comment {
-            if ch == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
-                chars.next();
-                in_block_comment = false;
-            }
-            continue;
-        }
-        if in_bracket {
-            if ch == ']' {
-                if chars.peek().is_some_and(|(_, next)| *next == ']') {
-                    chars.next();
-                } else {
-                    in_bracket = false;
-                }
-            }
-            continue;
-        }
-        if in_backtick {
-            if ch == '`' {
-                if chars.peek().is_some_and(|(_, next)| *next == '`') {
-                    chars.next();
-                } else {
-                    in_backtick = false;
-                }
-            }
-            continue;
-        }
-        match ch {
-            '\'' if !in_double_quote => {
-                if in_single_quote && chars.peek().is_some_and(|(_, next)| *next == '\'') {
-                    chars.next();
-                } else {
-                    in_single_quote = !in_single_quote;
-                }
-            }
-            '"' if !in_single_quote => {
-                if in_double_quote && chars.peek().is_some_and(|(_, next)| *next == '"') {
-                    chars.next();
-                } else {
-                    in_double_quote = !in_double_quote;
-                }
-            }
-            '`' if !in_single_quote && !in_double_quote => in_backtick = true,
-            '[' if !in_single_quote && !in_double_quote => in_bracket = true,
-            '-' if !in_single_quote
-                && !in_double_quote
-                && chars.peek().is_some_and(|(_, next)| *next == '-') =>
-            {
-                chars.next();
-                in_line_comment = true;
-            }
-            '/' if !in_single_quote
-                && !in_double_quote
-                && chars.peek().is_some_and(|(_, next)| *next == '*') =>
-            {
-                chars.next();
-                in_block_comment = true;
-            }
-            ';' if !in_single_quote && !in_double_quote => {
-                let statement = sql[start..=index].trim();
-                if !statement.is_empty() {
-                    if create_trigger_statement(statement)
-                        && !trigger_statement_complete_at_semicolon(statement)
-                    {
-                        continue;
-                    }
-                    statements.push(statement.to_string());
-                }
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    let tail = sql[start..].trim();
-    if !tail.is_empty() {
-        statements.push(tail.to_string());
-    }
-    statements
-}
-
-fn create_trigger_statement(statement: &str) -> bool {
-    let tokens = sql_keyword_tokens(statement);
-    if tokens.first().map(String::as_str) != Some("create") {
-        return false;
-    }
-    let mut index = 1usize;
-    if tokens
-        .get(index)
-        .is_some_and(|token| token == "temp" || token == "temporary")
-    {
-        index += 1;
-    }
-    tokens.get(index).is_some_and(|token| token == "trigger")
-}
-
-fn trigger_statement_complete_at_semicolon(statement: &str) -> bool {
-    sql_tail_tokens_since_last_semicolon(statement) == ["end"]
-}
-
-fn sql_keyword_tokens(sql: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    scan_sql_tokens(sql, |token| tokens.push(token.to_ascii_lowercase()));
-    tokens
-}
-
-fn sql_tail_tokens_since_last_semicolon(sql: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut tail = Vec::new();
-    scan_sql_tokens(sql, |token| {
-        if token == ";" {
-            tail = std::mem::take(&mut tokens);
-        } else {
-            tokens.push(token.to_ascii_lowercase());
-        }
-    });
-    if !tokens.is_empty() {
-        tokens
-    } else {
-        tail
-    }
-}
-
-fn scan_sql_tokens(mut sql: &str, mut visit: impl FnMut(&str)) {
-    while !sql.is_empty() {
-        let Some((offset, ch)) = sql.char_indices().next() else {
-            break;
-        };
-        debug_assert_eq!(offset, 0);
-        if ch.is_whitespace() {
-            sql = &sql[ch.len_utf8()..];
-            continue;
-        }
-        if sql.starts_with("--") {
-            if let Some(end) = sql.find(['\n', '\r']) {
-                sql = &sql[end..];
-            } else {
-                break;
-            }
-            continue;
-        }
-        if sql.starts_with("/*") {
-            if let Some(end) = sql.find("*/") {
-                sql = &sql[end + 2..];
-            } else {
-                break;
-            }
-            continue;
-        }
-        if ch == '\'' || ch == '"' || ch == '`' {
-            sql = skip_quoted_sql(sql, ch);
-            continue;
-        }
-        if ch == '[' {
-            sql = skip_bracket_quoted_sql(sql);
-            continue;
-        }
-        if ch == ';' {
-            visit(";");
-            sql = &sql[1..];
-            continue;
-        }
-        if ch.is_ascii_alphabetic() || ch == '_' {
-            let end = sql
-                .char_indices()
-                .find(|(_, token_ch)| !(token_ch.is_ascii_alphanumeric() || *token_ch == '_'))
-                .map(|(idx, _)| idx)
-                .unwrap_or(sql.len());
-            visit(&sql[..end]);
-            sql = &sql[end..];
-            continue;
-        }
-        sql = &sql[ch.len_utf8()..];
-    }
-}
-
-fn skip_quoted_sql(sql: &str, quote: char) -> &str {
-    let mut chars = sql.char_indices();
-    chars.next();
-    while let Some((idx, ch)) = chars.next() {
-        if ch == quote {
-            if chars.clone().next().is_some_and(|(_, next)| next == quote) {
-                chars.next();
-            } else {
-                let end = idx + ch.len_utf8();
-                return &sql[end..];
-            }
-        }
-    }
-    ""
-}
-
-fn skip_bracket_quoted_sql(sql: &str) -> &str {
-    let mut chars = sql.char_indices();
-    chars.next();
-    while let Some((idx, ch)) = chars.next() {
-        if ch == ']' {
-            if chars.clone().next().is_some_and(|(_, next)| next == ']') {
-                chars.next();
-            } else {
-                return &sql[idx + 1..];
-            }
-        }
-    }
-    ""
-}
-
-fn import_csv(session: &Session, path: &Path, table: &str, skip: usize) -> Result<usize> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut inserted = 0usize;
-    let mut batch = String::new();
-    for (idx, row) in parse_csv_records(&text)?.into_iter().enumerate() {
-        if idx < skip {
-            continue;
-        }
-        let statement = format!(
-            "insert into {} values({});",
-            quote_identifier(table),
-            row.iter()
-                .map(|value| sql_string_literal(value))
-                .collect::<Vec<_>>()
-                .join(",")
-        );
-        if !batch.is_empty() && batch.len() + statement.len() + 1 >= 7_500 {
-            exec_sql(session, &batch, false)?;
-            batch.clear();
-        }
-        batch.push_str(&statement);
-        batch.push('\n');
-        inserted += 1;
-    }
-    if !batch.trim().is_empty() {
-        exec_sql(session, &batch, false)?;
-    }
-    Ok(inserted)
-}
-
-fn parse_csv_records(text: &str) -> Result<Vec<Vec<String>>> {
-    let mut rows = Vec::new();
-    let mut row = Vec::new();
-    let mut field = String::new();
-    let mut chars = text.chars().peekable();
-    let mut in_quotes = false;
-    while let Some(ch) = chars.next() {
-        if in_quotes {
-            if ch == '"' {
-                if chars.peek().is_some_and(|next| *next == '"') {
-                    chars.next();
-                    field.push('"');
-                } else {
-                    in_quotes = false;
-                }
-            } else {
-                field.push(ch);
-            }
-            continue;
-        }
-        match ch {
-            '"' if field.is_empty() => in_quotes = true,
-            ',' => {
-                row.push(std::mem::take(&mut field));
-            }
-            '\n' => {
-                row.push(std::mem::take(&mut field));
-                rows.push(std::mem::take(&mut row));
-            }
-            '\r' => {
-                if chars.peek().is_some_and(|next| *next == '\n') {
-                    chars.next();
-                }
-                row.push(std::mem::take(&mut field));
-                rows.push(std::mem::take(&mut row));
-            }
-            _ => field.push(ch),
-        }
-    }
-    if in_quotes {
-        bail!("unterminated CSV quote");
-    }
-    if !field.is_empty() || !row.is_empty() {
-        row.push(field);
-        rows.push(row);
-    }
-    Ok(rows)
-}
-
-fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
-    println!(
-        "{}",
-        strong(format!("SQLite on Octra ({})", session.target().network))
-    );
-    print_field(
-        "circle",
-        linked_circle(&session.target().network, &session.target().circle),
-    );
-    print_field("wallet", session.caller());
-    println!("{}", dim("type .help for usage"));
-    let mut state = ShellState {
-        session,
-        mode,
-        headers: true,
-        timer: false,
-        output: None,
-        once_output: None,
-    };
-    let mut editor = rustyline::DefaultEditor::new()?;
-    let history_path = shell_history_path()?;
-    let _ = editor.load_history(&history_path);
-    let mut buffer = String::new();
-    loop {
-        let prompt = if buffer.trim().is_empty() {
-            "sqlite> "
-        } else {
-            "   ...> "
-        };
-        let line = match editor.readline(prompt) {
-            Ok(line) => line,
-            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
-            Err(error) => return Err(error.into()),
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let _ = editor.add_history_entry(line.as_str());
-        if buffer.trim().is_empty() && trimmed.starts_with('.') {
-            if handle_dot_command(&mut state, trimmed)? {
-                break;
-            }
-            continue;
-        }
-        buffer.push_str(&line);
-        buffer.push('\n');
-        if trimmed.ends_with(';') {
-            let sql = buffer.trim().to_string();
-            buffer.clear();
-            let started = Instant::now();
-            let output = take_command_output(&mut state);
-            if let Err(error) = run_one_sql_to(
-                &state.session,
-                &sql,
-                state.mode,
-                state.headers,
-                output.as_deref(),
-            ) {
-                eprintln!("error: {error:#}");
-            }
-            if state.timer {
-                println!("Run Time: real {:.3}", started.elapsed().as_secs_f64());
-            }
-        }
-    }
-    let _ = editor.save_history(&history_path);
-    Ok(())
-}
-
-fn shell_history_path() -> Result<PathBuf> {
-    let path = config_path()?.with_file_name("sqlite_history");
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    Ok(path)
-}
-
-fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
-    let parts = parse_dot_parts(line)?;
-    let cmd = parts.first().map(String::as_str).unwrap_or("");
-    let args = &parts[1..];
-    match cmd {
-        ".quit" | ".exit" => return Ok(true),
-        ".help" => print_help(),
-        ".mode" => {
-            let mode = args
-                .first()
-                .map(String::as_str)
-                .ok_or_else(|| anyhow!("usage: .mode box|table|list|json|line|csv"))?;
-            state.mode = match mode {
-                "box" | "table" => OutputMode::Table,
-                "list" => OutputMode::List,
-                "json" => OutputMode::Json,
-                "line" => OutputMode::Line,
-                "csv" => OutputMode::Csv,
-                _ => bail!("unknown mode {mode}"),
-            };
-        }
-        ".headers" => {
-            let value = args
-                .first()
-                .map(String::as_str)
-                .ok_or_else(|| anyhow!("usage: .headers on|off"))?;
-            state.headers = match value {
-                "on" => true,
-                "off" => false,
-                _ => bail!("usage: .headers on|off"),
-            };
-        }
-        ".tables" => {
-            let result = query_typed(
-                &state.session,
-                "select name from sqlite_master where type='table' order by name;",
-            )?;
-            let output = take_command_output(state);
-            write_text(
-                output.as_deref(),
-                &format_result(&result, state.mode, state.headers)?,
-            )?;
-        }
-        ".schema" => {
-            let sql = if let Some(name) = args.first() {
-                format!(
-                    "select type, name, sql from sqlite_master where sql is not null and (name = {} or tbl_name = {}) order by type, name;",
-                    sql_string_literal(name),
-                    sql_string_literal(name)
-                )
-            } else {
-                "select type, name, sql from sqlite_master where sql is not null and type in ('table','view','index','trigger') order by type, name;".to_string()
-            };
-            let result = query_typed(&state.session, &sql)?;
-            let output = take_command_output(state);
-            write_text(output.as_deref(), &format_schema_result(&result)?)?;
-        }
-        ".show" => print_shell_show(state),
-        ".databases" => print_current_database(&state.session),
-        ".storage" => write_text(
-            take_command_output(state).as_deref(),
-            &format_json(&view(&state.session, "storage_info", vec![])?)?,
-        )?,
-        ".circle" => write_text(
-            take_command_output(state).as_deref(),
-            &format_json(&program_info(&state.session)?)?,
-        )?,
-        ".wallet" => {
-            println!("{}", state.session.caller());
-            if let Some(path) = state.session.wallet_path() {
-                print_field("wallet", path.display().to_string());
-            }
-        }
-        ".verify" => verify(&state.session, None, false, false)?,
-        ".backup" => {
-            let path = backup_path_from_args(args)?;
-            let summary = backup_database(&state.session, &path)?;
-            print_backup_summary(&summary);
-        }
-        ".save" => {
-            let path = save_path_from_args(args)?;
-            let summary = backup_database(&state.session, &path)?;
-            print_backup_summary(&summary);
-        }
-        ".dump" => {
-            let output = take_command_output(state);
-            write_text(output.as_deref(), &dump_database(&state.session, args)?)?;
-        }
-        ".read" => {
-            let path = args.first().ok_or_else(|| anyhow!("usage: .read FILE"))?;
-            reject_shell_pipe_arg(path, ".read")?;
-            let sql = fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
-            execute_sql_script(&state.session, &sql)?;
-        }
-        ".import" => {
-            let (path, table, skip) = import_args(args)?;
-            let inserted = import_csv(&state.session, &path, &table, skip)?;
-            print_field("imported", format!("{inserted} rows"));
-        }
-        ".indexes" => {
-            let sql = if let Some(table) = args.first() {
-                format!(
-                    "select name from sqlite_master where type='index' and tbl_name = {} order by name;",
-                    sql_string_literal(table)
-                )
-            } else {
-                "select name from sqlite_master where type='index' order by name;".to_string()
-            };
-            let result = query_typed(&state.session, &sql)?;
-            let output = take_command_output(state);
-            write_text(
-                output.as_deref(),
-                &format_result(&result, state.mode, state.headers)?,
-            )?;
-        }
-        ".fullschema" => {
-            let output = take_command_output(state);
-            write_text(output.as_deref(), &fullschema_database(&state.session)?)?;
-        }
-        ".timer" => {
-            let value = args
-                .first()
-                .map(String::as_str)
-                .ok_or_else(|| anyhow!("usage: .timer on|off"))?;
-            state.timer = match value {
-                "on" => true,
-                "off" => false,
-                _ => bail!("usage: .timer on|off"),
-            };
-        }
-        ".output" => {
-            let Some(value) = args.first() else {
-                state.output = None;
-                return Ok(false);
-            };
-            reject_shell_pipe_arg(value, ".output")?;
-            if value == "stdout" || value == "off" {
-                state.output = None;
-            } else {
-                fs::write(value, "").with_context(|| format!("opening output {value}"))?;
-                state.output = Some(PathBuf::from(value));
-            }
-        }
-        ".once" => {
-            let value = args.first().ok_or_else(|| anyhow!("usage: .once FILE"))?;
-            if value.starts_with('-') {
-                bail!(".once options are not supported");
-            }
-            reject_shell_pipe_arg(value, ".once")?;
-            fs::write(value, "").with_context(|| format!("opening output {value}"))?;
-            state.once_output = Some(PathBuf::from(value));
-        }
-        ".open" => {
-            let target = args
-                .first()
-                .map(String::as_str)
-                .ok_or_else(|| anyhow!("usage: .open DATABASE"))?;
-            state.session = state.session.open_database(target)?;
-            print_field(
-                "circle",
-                linked_circle(
-                    &state.session.target().network,
-                    &state.session.target().circle,
-                ),
-            );
-        }
-        _ => bail!("unknown command {cmd}; try .help"),
-    }
-    Ok(false)
-}
-
-fn print_help() {
-    println!("SQLite commands:");
-    println!("  .backup ?DB? FILE    back up main database to a SQLite file");
-    println!("  .save FILE           save main database to a SQLite file");
-    println!("  .dump ?OBJECTS?      render SQL text for the database or table");
-    println!("  .import --csv FILE TABLE");
-    println!("                      import CSV rows into TABLE");
-    println!("  .indexes ?TABLE?     list indexes");
-    println!("  .fullschema          show SQLite .fullschema output");
-    println!("  .tables              list tables");
-    println!("  .schema ?TABLE?      show schema");
-    println!("  .databases           show the current main database URI");
-    println!("  .open DATABASE       switch database name, Circle ID, or oct:// URI");
-    println!("  .read FILE           execute SQL from a file");
-    println!("  .mode MODE           MODE is box, table, list, json, line, or csv");
-    println!("  .headers on|off      show or hide column headers");
-    println!("  .timer on|off        show query timing");
-    println!("  .output ?FILE?       redirect output; no FILE restores stdout");
-    println!("  .once FILE           redirect the next command only");
-    println!("  .show                show shell settings");
-    println!("  .quit                exit");
-    println!();
-    println!("Octra commands:");
-    println!("  .storage             show SQLite page storage info");
-    println!("  .circle              show Circle program metadata");
-    println!("  .wallet              show active wallet address");
-    println!("  .verify              verify live Circle SQLite status");
-}
-
-fn parse_dot_parts(line: &str) -> Result<Vec<String>> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut chars = line.trim().chars().peekable();
-    let mut quote: Option<char> = None;
-    while let Some(ch) = chars.next() {
-        if let Some(active) = quote {
-            if ch == active {
-                if chars.peek().is_some_and(|next| *next == active) {
-                    chars.next();
-                    current.push(active);
-                } else {
-                    quote = None;
-                }
-            } else {
-                current.push(ch);
-            }
-            continue;
-        }
-        match ch {
-            '\'' | '"' => quote = Some(ch),
-            ch if ch.is_whitespace() => {
-                if !current.is_empty() {
-                    parts.push(std::mem::take(&mut current));
-                }
-            }
-            _ => current.push(ch),
-        }
-    }
-    if quote.is_some() {
-        bail!("unterminated quoted dot-command argument");
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    Ok(parts)
-}
-
-fn take_command_output(state: &mut ShellState) -> Option<PathBuf> {
-    state.once_output.take().or_else(|| state.output.clone())
-}
-
-fn backup_path_from_args(args: &[String]) -> Result<PathBuf> {
-    match args {
-        [file] => Ok(PathBuf::from(file)),
-        [db, file] if db == "main" => Ok(PathBuf::from(file)),
-        [db, _] => bail!("only .backup main FILE is supported; got database {db}"),
-        _ => bail!("usage: .backup ?main? FILE"),
-    }
-}
-
-fn save_path_from_args(args: &[String]) -> Result<PathBuf> {
-    match args {
-        [file] => Ok(PathBuf::from(file)),
-        [option, _] if option.starts_with('-') => bail!(".save options are not supported"),
-        _ => bail!("usage: .save FILE"),
-    }
-}
-
-fn reject_shell_pipe_arg(value: &str, command: &str) -> Result<()> {
-    if value.starts_with('|') {
-        bail!("{command} shell pipes are intentionally unsupported");
-    }
-    Ok(())
-}
-
-fn import_args(args: &[String]) -> Result<(PathBuf, String, usize)> {
-    let mut csv = false;
-    let mut skip = 0usize;
-    let mut positional = Vec::new();
-    let mut index = 0usize;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--csv" => {
-                csv = true;
-                index += 1;
-            }
-            "--skip" => {
-                let value = args
-                    .get(index + 1)
-                    .ok_or_else(|| anyhow!("usage: .import --csv --skip N FILE TABLE"))?;
-                skip = value.parse::<usize>().context("parsing .import --skip")?;
-                index += 2;
-            }
-            value if value.starts_with('-') => bail!("unsupported .import option {value}"),
-            value => {
-                positional.push(value.to_string());
-                index += 1;
-            }
-        }
-    }
-    if !csv {
-        bail!("only .import --csv FILE TABLE is supported");
-    }
-    if positional.len() != 2 {
-        bail!("usage: .import --csv [--skip N] FILE TABLE");
-    }
-    reject_shell_pipe_arg(&positional[0], ".import")?;
-    Ok((PathBuf::from(&positional[0]), positional[1].clone(), skip))
-}
-
-fn print_backup_summary(summary: &BackupSummary) {
-    print_field("backup", summary.path.display().to_string());
-    print_field(
-        "database",
-        format!(
-            "{} bytes, {} pages, generation {}",
-            summary.bytes, summary.pages, summary.generation
-        ),
-    );
-    print_field("sha256", &summary.sha256);
-}
-
-fn print_current_database(session: &Session) {
-    println!("seq  name  file");
-    println!("{}", dim("---  ----  ----"));
-    println!("0    main  {}", session.target().raw);
-}
-
-fn print_shell_show(state: &ShellState) {
-    print_field("database", &state.session.target().raw);
-    print_field(
-        "circle",
-        linked_circle(
-            &state.session.target().network,
-            &state.session.target().circle,
-        ),
-    );
-    print_field("network", &state.session.target().network);
-    print_field("rpc", state.session.rpc());
-    print_field("wallet", state.session.caller());
-    print_field("mode", state.mode.name());
-    print_field("headers", if state.headers { "on" } else { "off" });
-    print_field("timer", if state.timer { "on" } else { "off" });
-    print_field(
-        "output",
-        state
-            .output
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "stdout".to_string()),
-    );
 }
 
 fn session_options(args: &TargetArgs) -> SessionOptions {
@@ -3008,7 +1963,7 @@ fn sql_tail_has_statement(mut tail: &str) -> bool {
     }
 }
 
-fn verify(
+pub(super) fn verify(
     session: &Session,
     expected_hash: Option<&str>,
     write_smoke: bool,
@@ -3390,7 +2345,7 @@ mod tests {
 
     #[test]
     fn sql_script_splitter_respects_quotes_and_comments() {
-        let statements = split_sql_statements(
+        let statements = portability::split_sql_statements(
             "insert into t values ('semi;colon'); -- ; comment\ninsert into t values (\"two;semi\");",
         );
         assert_eq!(statements.len(), 2);
@@ -3400,7 +2355,7 @@ mod tests {
 
     #[test]
     fn sql_script_splitter_keeps_triggers_whole() {
-        let statements = split_sql_statements(
+        let statements = portability::split_sql_statements(
             "create table trigger_log(id integer);
 create trigger log_person after insert on person begin
   insert into trigger_log values (new.id);
@@ -3418,23 +2373,27 @@ insert into person values (1);",
 
     #[test]
     fn sqlite_dump_wrappers_are_skipped_for_octra_restore() {
-        assert!(should_skip_import_wrapper("PRAGMA foreign_keys=OFF;"));
-        assert!(should_skip_import_wrapper("BEGIN TRANSACTION;"));
-        assert!(should_skip_import_wrapper("COMMIT;"));
-        assert!(!should_skip_import_wrapper(
+        assert!(portability::should_skip_import_wrapper(
+            "PRAGMA foreign_keys=OFF;"
+        ));
+        assert!(portability::should_skip_import_wrapper(
+            "BEGIN TRANSACTION;"
+        ));
+        assert!(portability::should_skip_import_wrapper("COMMIT;"));
+        assert!(!portability::should_skip_import_wrapper(
             "create table person(id integer);"
         ));
     }
 
     #[test]
     fn small_sqlite_dump_restore_skips_shell_wrappers() {
-        let statements = split_sql_statements(
+        let statements = portability::split_sql_statements(
             "PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE person(id integer);
 COMMIT;",
         );
-        let script = sql_script_for_single_exec(&statements);
+        let script = portability::sql_script_for_single_exec(&statements);
         assert!(!script.contains("foreign_keys"));
         assert!(!script.contains("BEGIN TRANSACTION"));
         assert!(script.contains("CREATE TABLE person"));
@@ -3444,11 +2403,11 @@ COMMIT;",
     #[test]
     fn dot_parser_handles_quotes_and_rejects_shell_pipe_forms() {
         assert_eq!(
-            parse_dot_parts(".backup main \"organization copy.sqlite\"").unwrap(),
+            shell::parse_dot_parts(".backup main \"organization copy.sqlite\"").unwrap(),
             vec![".backup", "main", "organization copy.sqlite"]
         );
-        assert!(reject_shell_pipe_arg("|cat", ".read").is_err());
-        assert!(import_args(&[
+        assert!(shell::reject_shell_pipe_arg("|cat", ".read").is_err());
+        assert!(shell::import_args(&[
             "--csv".to_string(),
             "--skip".to_string(),
             "1".to_string(),
@@ -3456,18 +2415,24 @@ COMMIT;",
             "person".to_string(),
         ])
         .is_ok());
-        assert!(import_args(&["person.csv".to_string(), "person".to_string()]).is_err());
+        assert!(shell::import_args(&["person.csv".to_string(), "person".to_string()]).is_err());
     }
 
     #[test]
     fn sqlite_dot_arguments_are_quoted_without_shell_escape() {
-        assert_eq!(sqlite_dot_argument("person").unwrap(), "person");
         assert_eq!(
-            sqlite_dot_argument("person table").unwrap(),
+            portability::sqlite_dot_argument("person").unwrap(),
+            "person"
+        );
+        assert_eq!(
+            portability::sqlite_dot_argument("person table").unwrap(),
             "'person table'"
         );
-        assert_eq!(sqlite_dot_argument("person-table").unwrap(), "person-table");
-        assert!(sqlite_dot_argument("person'table").is_err());
+        assert_eq!(
+            portability::sqlite_dot_argument("person-table").unwrap(),
+            "person-table"
+        );
+        assert!(portability::sqlite_dot_argument("person'table").is_err());
     }
 
     #[test]
@@ -3574,14 +2539,9 @@ COMMIT;",
     fn quickstart_requires_explicit_sample() {
         assert!(Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).is_err());
 
-        let cli = Cli::try_parse_from([
-            "octra-sqlite",
-            "quickstart",
-            "my-db",
-            "--sample",
-            "remilia",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db", "--sample", "remilia"])
+                .unwrap();
         match cli.command {
             Commands::Quickstart(args) => {
                 assert_eq!(args.name, "my-db");

@@ -70,7 +70,6 @@
     "db_id": "2b2ce4c282bba87be3a113a571a334129bd49d329a247ca170dbd8bf502c8682",
     "owner_pubkey_offset": 603211,
     "db_id_offset": 603243,
-    "program_update_tx": null,
     "non_owner_denied_tx": "d1e2a0007f1d7ffdf3906b4d703915ab1447a6c7d8456ebbbe5185c552c743fa"
   },
   "explorer_urls": {

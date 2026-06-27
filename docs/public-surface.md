@@ -60,8 +60,10 @@ They should stay expressive enough that users do not need to inspect
 ## Public
 
 - `src/main.rs`: tiny binary entrypoint.
-- `src/cli/mod.rs`: Rust CLI orchestration.
+- `src/cli/mod.rs`: top-level Rust CLI command orchestration.
 - `src/cli/output.rs`: CLI table/json/csv rendering.
+- `src/cli/shell.rs`: interactive SQLite-style shell and dot commands.
+- `src/cli/portability.rs`: backup, dump, SQL restore, and CSV import helpers.
 - `src/client/`: reusable Rust client.
 - `src/client/mod.rs`: intentional client exports. The intended path is
   `OctraSqlite -> Database -> query/execute` with typed results and operation
