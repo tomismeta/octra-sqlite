@@ -19,8 +19,8 @@ use crate::{
     },
 };
 use output::{
-    format_exec_result, format_json, format_result, print_exec_result, print_json, print_result,
-    value_to_string, write_text, OutputMode,
+    dim, format_exec_result, format_json, format_result, hyperlink, print_exec_result, print_json,
+    print_result, strong, terminal_style_enabled, value_to_string, write_text, OutputMode,
 };
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -648,9 +648,11 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     );
     println!("auth: owner-only writes");
     if let Some(hash) = &created.tx_hash {
-        println!("create_tx: {hash}");
-        if let Some(url) = explorer_tx_url(&network, hash) {
-            println!("create_tx_url: {url}");
+        println!("create_tx: {}", linked_tx(&network, hash));
+        if !terminal_style_enabled() {
+            if let Some(url) = explorer_tx_url(&network, hash) {
+                println!("create_tx_url: {url}");
+            }
         }
         if let Some(confirmation) = &created.confirmation {
             println!(
@@ -876,21 +878,36 @@ struct StatusReport {
 
 impl StatusReport {
     fn ok(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!("ok   {label}: {}", detail.as_ref());
+        println!(
+            "{} {} {}",
+            strong("ok"),
+            dim(format!("{label}:")),
+            detail.as_ref()
+        );
     }
 
     fn warn(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!("warn {label}: {}", detail.as_ref());
+        println!(
+            "{} {} {}",
+            strong("warn"),
+            dim(format!("{label}:")),
+            detail.as_ref()
+        );
     }
 
     fn fail(&mut self, label: &str, detail: impl AsRef<str>) {
         self.failures += 1;
-        println!("fail {label}: {}", detail.as_ref());
+        println!(
+            "{} {} {}",
+            strong("fail"),
+            dim(format!("{label}:")),
+            detail.as_ref()
+        );
     }
 
     fn finish(self, label: &str) -> Result<()> {
         if self.failures == 0 {
-            println!("{label}: ready");
+            println!("{} ready", dim(format!("{label}:")));
             Ok(())
         } else {
             bail!("{label} found {} issue(s)", self.failures)
@@ -991,12 +1008,18 @@ fn check_release_manifest(report: &mut StatusReport) {
 
 fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
-    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
-        report.ok("explorer", url);
+    if !terminal_style_enabled() {
+        if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle)
+        {
+            report.ok("explorer", url);
+        }
     }
     match program_info(session) {
         Ok(info) => {
-            report.ok("circle", &session.target().circle);
+            report.ok(
+                "circle",
+                linked_circle(&session.target().network, &session.target().circle),
+            );
             let version = info
                 .get("version")
                 .and_then(Value::as_str)
@@ -1222,6 +1245,20 @@ fn with_explorer(mut result: Value, session: &Session) -> Value {
         }
     }
     result
+}
+
+fn linked_circle(network: &str, circle: &str) -> String {
+    match explorer_circle_url(network, circle) {
+        Some(url) => hyperlink(circle, url),
+        None => circle.to_string(),
+    }
+}
+
+fn linked_tx(network: &str, hash: &str) -> String {
+    match explorer_tx_url(network, hash) {
+        Some(url) => hyperlink(hash, url),
+        None => hash.to_string(),
+    }
 }
 
 fn explorer_base_url(network: &str) -> Option<String> {
@@ -1665,11 +1702,49 @@ fn run_exec_sql_to(
     }
 }
 
+fn format_schema_result(result: &Value) -> Result<String> {
+    let columns = result
+        .get("columns")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("schema result missing columns"))?;
+    let sql_idx = columns
+        .iter()
+        .position(|column| column.as_str() == Some("sql"))
+        .ok_or_else(|| anyhow!("schema result missing sql column"))?;
+    let rows = result
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("schema result missing rows"))?;
+    let mut out = String::new();
+    for row in rows.iter().filter_map(Value::as_array) {
+        let Some(sql) = row.get(sql_idx).map(value_to_string) else {
+            continue;
+        };
+        let sql = sql.trim();
+        if sql.is_empty() {
+            continue;
+        }
+        out.push_str(sql);
+        if !sql.ends_with(';') {
+            out.push(';');
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
-    println!("SQLite on Octra ({})", session.target().network);
-    println!("circle: {}", session.target().circle);
-    println!("wallet: {}", session.caller());
-    println!("type .help for usage");
+    println!(
+        "{}",
+        strong(format!("SQLite on Octra ({})", session.target().network))
+    );
+    println!(
+        "{} {}",
+        dim("circle:"),
+        linked_circle(&session.target().network, &session.target().circle)
+    );
+    println!("{} {}", dim("wallet:"), session.caller());
+    println!("{}", dim("type .help for usage"));
     let mut state = ShellState {
         session,
         mode,
@@ -1763,10 +1838,7 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
         }
         ".schema" => {
             let result = view(&state.session, "schema_typed", vec![])?;
-            write_text(
-                state.output.as_deref(),
-                &format_result(&result, state.mode, state.headers)?,
-            )?;
+            write_text(state.output.as_deref(), &format_schema_result(&result)?)?;
         }
         ".show" => print_shell_show(state),
         ".databases" => print_current_database(&state.session),
@@ -2445,6 +2517,24 @@ mod tests {
             "create table person(first_name text); insert into person values ('Ada');"
         ));
         assert!(looks_like_sql_script("select 1; /* comment */ select 2;"));
+    }
+
+    #[test]
+    fn schema_dot_command_formats_sql_not_metadata_table() {
+        let result = json!({
+            "columns": ["type", "name", "sql"],
+            "rows": [
+                ["index", "sqlite_autoindex_collection_1", ""],
+                ["table", "collection", "CREATE TABLE collection(\n  name text primary key\n)"]
+            ]
+        });
+        let rendered = format_schema_result(&result).unwrap();
+        assert_eq!(
+            rendered,
+            "CREATE TABLE collection(\n  name text primary key\n);\n"
+        );
+        assert!(!rendered.contains("sqlite_autoindex"));
+        assert!(!rendered.contains("+---"));
     }
 
     #[test]

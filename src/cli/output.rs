@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
+use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::io::{self, IsTerminal};
 use std::path::Path;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -30,6 +32,39 @@ pub(crate) fn print_exec_result(result: &Value) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn dim(text: impl AsRef<str>) -> String {
+    style("2", text.as_ref())
+}
+
+pub(crate) fn strong(text: impl AsRef<str>) -> String {
+    style("1", text.as_ref())
+}
+
+pub(crate) fn hyperlink(label: impl AsRef<str>, url: impl AsRef<str>) -> String {
+    let label = label.as_ref();
+    let url = url.as_ref();
+    if terminal_style_enabled() {
+        format!("\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\")
+    } else {
+        label.to_string()
+    }
+}
+
+pub(crate) fn terminal_style_enabled() -> bool {
+    io::stdout().is_terminal()
+        && env::var_os("NO_COLOR").is_none()
+        && env::var_os("OCTRA_SQLITE_PLAIN").is_none()
+        && env::var("TERM").map(|term| term != "dumb").unwrap_or(true)
+}
+
+fn style(code: &str, text: &str) -> String {
+    if terminal_style_enabled() {
+        format!("\x1b[{code}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
 pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
     let mut out = String::new();
     let receipt = result.get("receipt");
@@ -46,29 +81,42 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         Some(false) => "rejected",
         None => submitted_status,
     };
-    out.push_str(&format!("write: {write_status}\n"));
+    out.push_str(&format!("{} {write_status}\n", dim("write:")));
     if let Some(circle) = result.get("circle").and_then(Value::as_str).or_else(|| {
         receipt
             .and_then(|receipt| receipt.get("contract"))
             .and_then(Value::as_str)
     }) {
-        out.push_str(&format!("circle: {circle}\n"));
+        let circle = match result.get("circle_url").and_then(Value::as_str) {
+            Some(url) => hyperlink(circle, url),
+            None => circle.to_string(),
+        };
+        out.push_str(&format!("{} {circle}\n", dim("circle:")));
     }
-    if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
-        out.push_str(&format!("circle_url: {url}\n"));
+    if !terminal_style_enabled() {
+        if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
+            out.push_str(&format!("circle_url: {url}\n"));
+        }
     }
     if let Some(wallet) = result.get("wallet").and_then(Value::as_str) {
-        out.push_str(&format!("wallet: {wallet}\n"));
+        out.push_str(&format!("{} {wallet}\n", dim("wallet:")));
     }
     if let Some(hash) = result.get("tx_hash").and_then(Value::as_str) {
-        out.push_str(&format!("tx: {hash}\n"));
+        let hash = match result.get("tx_url").and_then(Value::as_str) {
+            Some(url) => hyperlink(hash, url),
+            None => hash.to_string(),
+        };
+        out.push_str(&format!("{} {hash}\n", dim("tx:")));
     }
-    if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
-        out.push_str(&format!("tx_url: {url}\n"));
+    if !terminal_style_enabled() {
+        if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
+            out.push_str(&format!("tx_url: {url}\n"));
+        }
     }
     if let Some(receipt) = receipt {
         out.push_str(&format!(
-            "receipt: {}",
+            "{} {}",
+            dim("receipt:"),
             receipt
                 .get("success")
                 .map(value_to_string)
@@ -76,16 +124,16 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         ));
         out.push('\n');
         if let Some(error) = receipt.get("error").filter(|v| !v.is_null()) {
-            out.push_str(&format!("error: {}\n", value_to_string(error)));
+            out.push_str(&format!("{} {}\n", dim("error:"), value_to_string(error)));
         }
         if let Some(auth) = auth_event(receipt) {
-            out.push_str(&format!("auth: {auth}\n"));
+            out.push_str(&format!("{} {auth}\n", dim("auth:")));
         }
         if let Some(sql_error) = event_values(receipt, "octra.sqlite.error") {
-            out.push_str(&format!("sql_error: {sql_error}\n"));
+            out.push_str(&format!("{} {sql_error}\n", dim("sql_error:")));
         }
         if let Some(sql) = event_values(receipt, "octra.sqlite.exec") {
-            out.push_str(&format!("sql: {sql}\n"));
+            out.push_str(&format!("{} {sql}\n", dim("sql:")));
         }
     }
     Ok(out)
