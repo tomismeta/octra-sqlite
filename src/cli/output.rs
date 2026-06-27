@@ -210,11 +210,11 @@ fn chunks_by_visible_width(text: &str, width: usize) -> Vec<String> {
 }
 
 fn is_strong_wrap_break(ch: char) -> bool {
-    matches!(ch, '/' | '?' | '&' | '=')
+    matches!(ch, '/' | '?' | '&')
 }
 
 fn is_soft_wrap_break(ch: char) -> bool {
-    matches!(ch, '-' | '_' | ':' | '.')
+    matches!(ch, '=' | '-' | '_' | ':' | '.')
 }
 
 fn visible_len(text: &str) -> usize {

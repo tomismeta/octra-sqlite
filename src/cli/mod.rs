@@ -1103,9 +1103,22 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
         Err(error) => report.fail("auth info", error.to_string()),
     }
     match query_typed(session, "select sqlite_version() as sqlite_version;") {
-        Ok(result) => report.ok("typed query", value_to_string(&result)),
-        Err(error) => report.fail("typed query", error.to_string()),
+        Ok(result) => report.ok(
+            "sqlite version",
+            first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
+        ),
+        Err(error) => report.fail("sqlite version", error.to_string()),
     }
+}
+
+fn first_result_cell(result: &Value) -> Option<String> {
+    result
+        .get("rows")?
+        .as_array()?
+        .first()?
+        .as_array()?
+        .first()
+        .map(value_to_string)
 }
 
 fn program_owner(info: &Value) -> Option<&str> {
