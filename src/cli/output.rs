@@ -264,19 +264,24 @@ fn format_table(columns: &[String], rows: &[Vec<String>], headers: bool) -> Stri
 }
 
 fn push_border(out: &mut String, widths: &[usize]) {
-    out.push('+');
+    let mut border = String::new();
+    border.push('+');
     for width in widths {
-        out.push_str(&"-".repeat(*width + 2));
-        out.push('+');
+        border.push_str(&"-".repeat(*width + 2));
+        border.push('+');
     }
+    out.push_str(&dim(border));
     out.push('\n');
 }
 
 fn push_row(out: &mut String, values: &[String], widths: &[usize]) {
-    out.push('|');
+    out.push_str(&dim("|"));
     for (idx, width) in widths.iter().enumerate() {
         let value = values.get(idx).map(String::as_str).unwrap_or("");
-        out.push_str(&format!(" {value:<width$} |", width = *width));
+        out.push(' ');
+        out.push_str(&format!("{value:<width$}", width = *width));
+        out.push(' ');
+        out.push_str(&dim("|"));
     }
     out.push('\n');
 }
