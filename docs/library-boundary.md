@@ -18,7 +18,7 @@
 3. `cli`: the SQLite-shaped user experience.
    - `octra-sqlite remilia`
    - `.tables`, `.schema`, `.read`, `.open`
-   - Octra-aware inspection through `.circle`, `.storage`, `.wallet`, `.proof`
+   - Octra-aware inspection through `.circle`, `.storage`, `.wallet`, `.verify`
 
 The default public Rust path should stay small:
 

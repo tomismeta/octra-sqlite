@@ -162,11 +162,10 @@ Inside the shell, SQL statements are SQLite. Dot commands are client commands:
 | `.storage` | Octra | Show SQLite page storage info. |
 | `.circle` | Octra | Show Circle program metadata. |
 | `.wallet` | Octra | Show the active caller wallet. |
-| `.proof` / `.verify` | Octra | Verify live Circle SQLite status. |
+| `.verify` | Octra | Verify live Circle SQLite status. |
 
-Low-level compatibility commands also exist (`query`, `exec`, `tables`,
-`schema`, `storage`, `circle`, `proof`), but the reference path is the
-SQLite-shaped `octra-sqlite DATABASE "SQL"` form above.
+The reference path is the SQLite-shaped `octra-sqlite DATABASE "SQL"` form
+above, plus SQLite-style dot commands inside the shell.
 
 ## Architecture
 

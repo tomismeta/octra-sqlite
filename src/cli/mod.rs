@@ -76,42 +76,12 @@ enum Commands {
         #[command(subcommand)]
         command: DatabaseCommand,
     },
-    /// Legacy spelling for database.
-    #[command(hide = true)]
-    Alias {
-        #[command(subcommand)]
-        command: DatabaseCommand,
-    },
     /// Open a SQLite shell or run SQL against a database.
     Open(OpenArgs),
-    /// Run read-only SQL.
-    #[command(hide = true)]
-    Query(SqlArgs),
-    /// Run state-changing SQL and wait for a receipt.
-    #[command(hide = true)]
-    Exec(SqlArgs),
-    /// Show tables from sqlite_master.
-    #[command(hide = true)]
-    Tables(TargetArgs),
-    /// Show SQLite schema.
-    #[command(hide = true)]
-    Schema(TargetArgs),
-    /// Show SQLite page storage info.
-    #[command(hide = true)]
-    Storage(TargetArgs),
-    /// Show Octra Circle program metadata.
-    #[command(hide = true)]
-    Circle(TargetArgs),
-    /// Verify live database metadata, storage, SQLite version, and tables.
-    #[command(hide = true)]
-    Proof(TargetArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
-    Status(DoctorArgs),
-    /// Legacy spelling for status.
-    #[command(hide = true)]
-    Doctor(DoctorArgs),
+    Status(StatusArgs),
     /// Show local wallet, RPC, network, and database configuration.
     Config(ConfigArgs),
     /// Deploy/update a Circle program through native signed RPC.
@@ -374,7 +344,7 @@ struct VerifyArgs {
 }
 
 #[derive(Args)]
-struct DoctorArgs {
+struct StatusArgs {
     #[command(flatten)]
     target: TargetArgs,
     /// Expected deployed code hash. Defaults to the bundled release artifact hash.
@@ -421,53 +391,13 @@ pub fn run() -> Result<()> {
         }
         Commands::Quickstart(args) => cmd_quickstart(args),
         Commands::New(args) => cmd_new(args),
-        Commands::Database { command } | Commands::Alias { command } => cmd_database(command),
+        Commands::Database { command } => cmd_database(command),
         Commands::Open(args) => cmd_open(args),
-        Commands::Query(args) => {
-            let sql = required_sql(args.sql)?;
-            let session = build_session(&args.target)?;
-            let result = query_typed(&session, &sql)?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Exec(args) => {
-            let sql = required_sql(args.sql)?;
-            let session = build_session(&args.target)?;
-            let result = exec_sql(&session, &sql, args.no_wait)?;
-            print_exec_result(&result)
-        }
-        Commands::Tables(args) => {
-            let session = build_session(&args)?;
-            let result = query_typed(
-                &session,
-                "select name from sqlite_master where type='table' order by name;",
-            )?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Schema(args) => {
-            let session = build_session(&args)?;
-            let result = view(&session, "schema_typed", vec![])?;
-            print_result(&result, OutputMode::Table, true)
-        }
-        Commands::Storage(args) => {
-            let session = build_session(&args)?;
-            let result = view(&session, "storage_info", vec![])?;
-            print_json(&result)
-        }
-        Commands::Circle(args) => {
-            let session = build_session(&args)?;
-            let result = program_info(&session)?;
-            print_json(&result)
-        }
-        Commands::Proof(args) => {
-            let session = build_session(&args)?;
-            verify(&session, None, false)
-        }
         Commands::Verify(args) => {
             let session = build_session(&args.target)?;
             verify(&session, args.expected_hash.as_deref(), args.write_smoke)
         }
         Commands::Status(args) => cmd_status(args, "status"),
-        Commands::Doctor(args) => cmd_status(args, "doctor"),
         Commands::Config(args) => cmd_config(args),
         Commands::Deploy(args) => cmd_deploy(args),
         Commands::Install => {
@@ -490,18 +420,9 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "new",
         "database",
         "db",
-        "alias",
         "open",
-        "query",
-        "exec",
-        "tables",
-        "schema",
-        "storage",
-        "circle",
-        "proof",
         "verify",
         "status",
-        "doctor",
         "config",
         "deploy",
         "install",
@@ -515,10 +436,6 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         args.insert(1, "open".to_string());
     }
     args
-}
-
-fn required_sql(value: Option<String>) -> Result<String> {
-    value.ok_or_else(|| anyhow!("--sql is required"))
 }
 
 fn cmd_init(args: InitArgs) -> Result<()> {
@@ -804,8 +721,8 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     Ok(())
 }
 
-fn cmd_status(args: DoctorArgs, label: &str) -> Result<()> {
-    let mut report = DoctorReport::default();
+fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
+    let mut report = StatusReport::default();
     let config_path = config_path()?;
     match load_config() {
         Ok(config) => {
@@ -941,11 +858,11 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
 }
 
 #[derive(Default)]
-struct DoctorReport {
+struct StatusReport {
     failures: usize,
 }
 
-impl DoctorReport {
+impl StatusReport {
     fn ok(&mut self, label: &str, detail: impl AsRef<str>) {
         println!("ok   {label}: {}", detail.as_ref());
     }
@@ -969,7 +886,7 @@ impl DoctorReport {
     }
 }
 
-fn check_bundled_wasm(report: &mut DoctorReport) {
+fn check_bundled_wasm(report: &mut StatusReport) {
     match resolve_wasm_path(false, None) {
         Ok(path) => match fs::read(&path) {
             Ok(bytes) => {
@@ -1005,7 +922,7 @@ fn check_bundled_wasm(report: &mut DoctorReport) {
     }
 }
 
-fn check_release_manifest(report: &mut DoctorReport) {
+fn check_release_manifest(report: &mut StatusReport) {
     let Some(path) = find_project_file(RELEASE_MANIFEST_REL) else {
         report.fail(
             "release manifest",
@@ -1060,7 +977,7 @@ fn check_release_manifest(report: &mut DoctorReport) {
     }
 }
 
-fn check_live_target(report: &mut DoctorReport, session: &Session, expected_hash: &str) {
+fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
     match program_info(session) {
         Ok(info) => {
@@ -1812,7 +1729,7 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
                 println!("wallet: {}", path.display());
             }
         }
-        ".proof" | ".verify" => verify(&state.session, None, false)?,
+        ".verify" => verify(&state.session, None, false)?,
         ".read" => {
             let path = parts.next().ok_or_else(|| anyhow!("usage: .read FILE"))?;
             let sql = fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
@@ -1875,8 +1792,7 @@ fn print_help() {
     println!("  .storage             show SQLite page storage info");
     println!("  .circle              show Circle program metadata");
     println!("  .wallet              show active wallet address");
-    println!("  .proof               verify live Circle SQLite status");
-    println!("  .verify              same as .proof");
+    println!("  .verify              verify live Circle SQLite status");
 }
 
 fn print_current_database(session: &Session) {
@@ -2512,11 +2428,11 @@ mod tests {
     }
 
     #[test]
-    fn doctor_accepts_local_only_mode() {
-        let cli = Cli::try_parse_from(["octra-sqlite", "doctor", "--skip-network"]).unwrap();
+    fn status_accepts_local_only_mode() {
+        let cli = Cli::try_parse_from(["octra-sqlite", "status", "--skip-network"]).unwrap();
         match cli.command {
-            Commands::Doctor(args) => assert!(args.skip_network),
-            _ => panic!("expected doctor command"),
+            Commands::Status(args) => assert!(args.skip_network),
+            _ => panic!("expected status command"),
         }
     }
 
