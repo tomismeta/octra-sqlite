@@ -93,10 +93,8 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         };
         out.push_str(&format!("{} {circle}\n", dim("circle:")));
     }
-    if !terminal_style_enabled() {
-        if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
-            out.push_str(&format!("circle_url: {url}\n"));
-        }
+    if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
+        out.push_str(&format!("{} {url}\n", dim("circle_url:")));
     }
     if let Some(wallet) = result.get("wallet").and_then(Value::as_str) {
         out.push_str(&format!("{} {wallet}\n", dim("wallet:")));
@@ -108,10 +106,8 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         };
         out.push_str(&format!("{} {hash}\n", dim("tx:")));
     }
-    if !terminal_style_enabled() {
-        if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
-            out.push_str(&format!("tx_url: {url}\n"));
-        }
+    if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
+        out.push_str(&format!("{} {url}\n", dim("tx_url:")));
     }
     if let Some(receipt) = receipt {
         out.push_str(&format!(

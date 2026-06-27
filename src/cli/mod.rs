@@ -20,7 +20,7 @@ use crate::{
 };
 use output::{
     dim, format_exec_result, format_json, format_result, hyperlink, print_exec_result, print_json,
-    print_result, strong, terminal_style_enabled, value_to_string, write_text, OutputMode,
+    print_result, strong, value_to_string, write_text, OutputMode,
 };
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -650,10 +650,8 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     print_field("auth", "owner-only writes");
     if let Some(hash) = &created.tx_hash {
         print_field("create_tx", linked_tx(&network, hash));
-        if !terminal_style_enabled() {
-            if let Some(url) = explorer_tx_url(&network, hash) {
-                print_field("create_tx_url", url);
-            }
+        if let Some(url) = explorer_tx_url(&network, hash) {
+            print_field("create_tx_url", url);
         }
         if let Some(confirmation) = &created.confirmation {
             print_field(
@@ -1010,11 +1008,8 @@ fn check_release_manifest(report: &mut StatusReport) {
 
 fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
-    if !terminal_style_enabled() {
-        if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle)
-        {
-            report.ok("explorer", url);
-        }
+    if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
+        report.ok("explorer", url);
     }
     match program_info(session) {
         Ok(info) => {
@@ -1618,10 +1613,8 @@ fn print_database_info(config: &Config, database: Option<&str>) -> Result<()> {
             target.rpc.as_str()
         },
     );
-    if !terminal_style_enabled() {
-        if let Some(explorer) = config.explorer_for_network(&target.network) {
-            print_field("explorer", explorer);
-        }
+    if let Some(explorer) = config.explorer_for_network(&target.network) {
+        print_field("explorer", explorer);
     }
     print_field("open", format!("octra-sqlite {}", requested));
     print_field("status", format!("octra-sqlite status {}", requested));
