@@ -40,6 +40,14 @@ pub(crate) fn strong(text: impl AsRef<str>) -> String {
     style("1", text.as_ref())
 }
 
+pub(crate) fn format_field(label: &str, detail: impl AsRef<str>) -> String {
+    format_field_with_width(label, detail.as_ref(), terminal_width())
+}
+
+pub(crate) fn format_status_line(status: &str, label: &str, detail: impl AsRef<str>) -> String {
+    format_status_line_with_width(status, label, detail.as_ref(), terminal_width())
+}
+
 pub(crate) fn hyperlink(label: impl AsRef<str>, url: impl AsRef<str>) -> String {
     let label = label.as_ref();
     let url = url.as_ref();
@@ -65,6 +73,90 @@ fn style(code: &str, text: &str) -> String {
     }
 }
 
+fn terminal_width() -> usize {
+    env::var("COLUMNS")
+        .ok()
+        .and_then(|columns| columns.parse::<usize>().ok())
+        .filter(|columns| *columns >= 40)
+        .unwrap_or(100)
+}
+
+fn format_field_with_width(label: &str, detail: &str, width: usize) -> String {
+    format_labeled_line(None, label, detail, width)
+}
+
+fn format_status_line_with_width(status: &str, label: &str, detail: &str, width: usize) -> String {
+    format_labeled_line(Some(status), label, detail, width)
+}
+
+fn format_labeled_line(status: Option<&str>, label: &str, detail: &str, width: usize) -> String {
+    let styled_label = dim(format!("{label}:"));
+    let first = match status {
+        Some(status) => format!("{} {styled_label}", strong(status)),
+        None => styled_label,
+    };
+    let first_visible = status.map_or(0, |status| status.len() + 1) + label.len() + 2;
+    let detail_visible = visible_len(detail);
+
+    if !detail.contains('\n') && first_visible + 1 + detail_visible <= width {
+        return format!("{first} {detail}\n");
+    }
+
+    let mut out = format!("{first}\n");
+    for line in detail.lines() {
+        out.push_str("  ");
+        out.push_str(line);
+        out.push('\n');
+    }
+    if detail.is_empty() {
+        out.push_str("  \n");
+    }
+    out
+}
+
+fn visible_len(text: &str) -> usize {
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut len = 0;
+    while index < bytes.len() {
+        if bytes[index] == 0x1b {
+            if index + 1 < bytes.len() && bytes[index + 1] == b'[' {
+                index += 2;
+                while index < bytes.len() {
+                    let byte = bytes[index];
+                    index += 1;
+                    if (b'@'..=b'~').contains(&byte) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            if index + 1 < bytes.len() && bytes[index + 1] == b']' {
+                index += 2;
+                while index < bytes.len() {
+                    if bytes[index] == 0x07 {
+                        index += 1;
+                        break;
+                    }
+                    if bytes[index] == 0x1b && index + 1 < bytes.len() && bytes[index + 1] == b'\\'
+                    {
+                        index += 2;
+                        break;
+                    }
+                    index += 1;
+                }
+                continue;
+            }
+        }
+        let Some(ch) = text[index..].chars().next() else {
+            break;
+        };
+        len += 1;
+        index += ch.len_utf8();
+    }
+    len
+}
+
 pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
     let mut out = String::new();
     let receipt = result.get("receipt");
@@ -81,7 +173,7 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         Some(false) => "rejected",
         None => submitted_status,
     };
-    out.push_str(&format!("{} {write_status}\n", dim("write:")));
+    out.push_str(&format_field("write", write_status));
     if let Some(circle) = result.get("circle").and_then(Value::as_str).or_else(|| {
         receipt
             .and_then(|receipt| receipt.get("contract"))
@@ -91,45 +183,43 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
             Some(url) => hyperlink(circle, url),
             None => circle.to_string(),
         };
-        out.push_str(&format!("{} {circle}\n", dim("circle:")));
+        out.push_str(&format_field("circle", circle));
     }
     if let Some(url) = result.get("circle_url").and_then(Value::as_str) {
-        out.push_str(&format!("{} {url}\n", dim("circle_url:")));
+        out.push_str(&format_field("circle_url", url));
     }
     if let Some(wallet) = result.get("wallet").and_then(Value::as_str) {
-        out.push_str(&format!("{} {wallet}\n", dim("wallet:")));
+        out.push_str(&format_field("wallet", wallet));
     }
     if let Some(hash) = result.get("tx_hash").and_then(Value::as_str) {
         let hash = match result.get("tx_url").and_then(Value::as_str) {
             Some(url) => hyperlink(hash, url),
             None => hash.to_string(),
         };
-        out.push_str(&format!("{} {hash}\n", dim("tx:")));
+        out.push_str(&format_field("tx", hash));
     }
     if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
-        out.push_str(&format!("{} {url}\n", dim("tx_url:")));
+        out.push_str(&format_field("tx_url", url));
     }
     if let Some(receipt) = receipt {
-        out.push_str(&format!(
-            "{} {}",
-            dim("receipt:"),
+        out.push_str(&format_field(
+            "receipt",
             receipt
                 .get("success")
                 .map(value_to_string)
-                .unwrap_or_else(|| "unknown".to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
         ));
-        out.push('\n');
         if let Some(error) = receipt.get("error").filter(|v| !v.is_null()) {
-            out.push_str(&format!("{} {}\n", dim("error:"), value_to_string(error)));
+            out.push_str(&format_field("error", value_to_string(error)));
         }
         if let Some(auth) = auth_event(receipt) {
-            out.push_str(&format!("{} {auth}\n", dim("auth:")));
+            out.push_str(&format_field("auth", auth));
         }
         if let Some(sql_error) = event_values(receipt, "octra.sqlite.error") {
-            out.push_str(&format!("{} {sql_error}\n", dim("sql_error:")));
+            out.push_str(&format_field("sql_error", sql_error));
         }
         if let Some(sql) = event_values(receipt, "octra.sqlite.exec") {
-            out.push_str(&format!("{} {sql}\n", dim("sql:")));
+            out.push_str(&format_field("sql", sql));
         }
     }
     Ok(out)
@@ -404,5 +494,31 @@ mod tests {
         assert!(rendered.contains("write: confirmed"));
         assert!(rendered.contains("sql_error: sqlite_exec_failed:no such table: correction"));
         assert!(!rendered.contains("\"events\""));
+    }
+
+    #[test]
+    fn field_formatter_wraps_long_values_without_truncating() {
+        let value = "https://devnet.octrascan.io/address.html?addr=octLongCircleId";
+        let rendered = format_field_with_width("explorer", value, 40);
+        assert_eq!(
+            rendered,
+            "explorer:\n  https://devnet.octrascan.io/address.html?addr=octLongCircleId\n"
+        );
+    }
+
+    #[test]
+    fn field_formatter_keeps_short_values_on_one_line() {
+        let rendered = format_field_with_width("circle", "octCircle", 40);
+        assert_eq!(rendered, "circle: octCircle\n");
+    }
+
+    #[test]
+    fn status_formatter_wraps_long_values_without_truncating() {
+        let value = "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c";
+        let rendered = format_status_line_with_width("ok", "wasm sha256", value, 48);
+        assert_eq!(
+            rendered,
+            "ok wasm sha256:\n  29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c\n"
+        );
     }
 }

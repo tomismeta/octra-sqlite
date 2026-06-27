@@ -19,9 +19,11 @@ use crate::{
     },
 };
 use output::{
-    dim, format_exec_result, format_json, format_result, hyperlink, print_exec_result, print_json,
-    print_result, strong, value_to_string, write_text, OutputMode,
+    dim, format_exec_result, format_field, format_json, format_result, format_status_line,
+    hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
+    OutputMode,
 };
+use rustyline::error::ReadlineError;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::env;
@@ -735,7 +737,7 @@ fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) ->
 }
 
 fn print_field(label: &str, detail: impl AsRef<str>) {
-    println!("{} {}", dim(format!("{label}:")), detail.as_ref());
+    print!("{}", format_field(label, detail));
 }
 
 fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
@@ -878,31 +880,16 @@ struct StatusReport {
 
 impl StatusReport {
     fn ok(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!(
-            "{} {} {}",
-            strong("ok"),
-            dim(format!("{label}:")),
-            detail.as_ref()
-        );
+        print!("{}", format_status_line("ok", label, detail));
     }
 
     fn warn(&mut self, label: &str, detail: impl AsRef<str>) {
-        println!(
-            "{} {} {}",
-            strong("warn"),
-            dim(format!("{label}:")),
-            detail.as_ref()
-        );
+        print!("{}", format_status_line("warn", label, detail));
     }
 
     fn fail(&mut self, label: &str, detail: impl AsRef<str>) {
         self.failures += 1;
-        println!(
-            "{} {} {}",
-            strong("fail"),
-            dim(format!("{label}:")),
-            detail.as_ref()
-        );
+        print!("{}", format_status_line("fail", label, detail));
     }
 
     fn finish(self, label: &str) -> Result<()> {
@@ -1735,12 +1722,11 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         "{}",
         strong(format!("SQLite on Octra ({})", session.target().network))
     );
-    println!(
-        "{} {}",
-        dim("circle:"),
-        linked_circle(&session.target().network, &session.target().circle)
+    print_field(
+        "circle",
+        linked_circle(&session.target().network, &session.target().circle),
     );
-    println!("{} {}", dim("wallet:"), session.caller());
+    print_field("wallet", session.caller());
     println!("{}", dim("type .help for usage"));
     let mut state = ShellState {
         session,
@@ -1749,6 +1735,9 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         timer: false,
         output: None,
     };
+    let mut editor = rustyline::DefaultEditor::new()?;
+    let history_path = shell_history_path()?;
+    let _ = editor.load_history(&history_path);
     let mut buffer = String::new();
     loop {
         let prompt = if buffer.trim().is_empty() {
@@ -1756,16 +1745,16 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         } else {
             "   ...> "
         };
-        print!("{prompt}");
-        io::stdout().flush()?;
-        let mut line = String::new();
-        if io::stdin().read_line(&mut line)? == 0 {
-            break;
-        }
+        let line = match editor.readline(prompt) {
+            Ok(line) => line,
+            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
+            Err(error) => return Err(error.into()),
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
+        let _ = editor.add_history_entry(line.as_str());
         if buffer.trim().is_empty() && trimmed.starts_with('.') {
             if handle_dot_command(&mut state, trimmed)? {
                 break;
@@ -1773,6 +1762,7 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
             continue;
         }
         buffer.push_str(&line);
+        buffer.push('\n');
         if trimmed.ends_with(';') {
             let sql = buffer.trim().to_string();
             buffer.clear();
@@ -1791,7 +1781,16 @@ fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
             }
         }
     }
+    let _ = editor.save_history(&history_path);
     Ok(())
+}
+
+fn shell_history_path() -> Result<PathBuf> {
+    let path = config_path()?.with_file_name("sqlite_history");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    Ok(path)
 }
 
 fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {

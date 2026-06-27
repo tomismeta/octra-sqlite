@@ -142,6 +142,7 @@ sqlite> .quit
 `...>` means the shell is waiting for the rest of a multiline SQL statement.
 SQL runs when the statement ends with `;`. Dot commands run immediately and must
 start at a fresh `sqlite>` prompt.
+Up/down arrows recall local command history.
 
 Inside the shell, SQL statements are SQLite. Dot commands are client commands:
 
