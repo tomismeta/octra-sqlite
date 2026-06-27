@@ -1,7 +1,7 @@
 {
   "name": "octra-sqlite",
   "release": "0.2.1",
-  "circle_program_version": "3",
+  "circle_program_version": "4",
   "network": "devnet",
   "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
   "public_example": "remilia",
@@ -64,13 +64,13 @@
     "spec": "docs/spec/osw1.md"
   },
   "public_deployment": {
-    "status": "pending_owner_program_update",
-    "personalized_sha256": null,
-    "owner_pubkey": null,
-    "db_id": null,
-    "owner_pubkey_offset": null,
-    "db_id_offset": null,
-    "program_update_tx": null,
+    "status": "deployed",
+    "personalized_sha256": "37e377095b33437ad3ebbda0cd67766e005cfe0b82967d6abdcfabb5427f2f46",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "d1b9fcaa9616b15bb59c1b20d4d84889f73938051fa517f97365df391db3427d",
+    "owner_pubkey_offset": 601536,
+    "db_id_offset": 601568,
+    "program_update_tx": "98ce68ef74d9c4ef50bdf0654201d67cd74822da0231f6ce4cd5c30e1f0311f1",
     "non_owner_denied_tx": null
   },
   "client_release": {

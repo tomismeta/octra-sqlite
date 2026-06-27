@@ -95,11 +95,11 @@ devnet.
 
 ```text
 circle: oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA
-version: 3
-personalized_code_hash: 179ef57692011f0ea5cbb7bfbf706d05f1445d0421b2f2689755e1fbb46c2e15
+version: 4
+personalized_code_hash: 37e377095b33437ad3ebbda0cd67766e005cfe0b82967d6abdcfabb5427f2f46
 bundled_wasm_hash: 29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c
 code_bytes: 607800
-live_program_update: pending owner deployment
+program_update_tx: 98ce68ef74d9c4ef50bdf0654201d67cd74822da0231f6ce4cd5c30e1f0311f1
 sample: remilia collection
 manifest: release/octra-sqlite-0.2.1.json
 proof: docs/proofs/devnet.md
