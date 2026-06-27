@@ -6,8 +6,8 @@
   "public_circle": "oct9hZsGed3hihJMv3jBJhPVaKCmyEj2YEnArJVD3WhKTyA",
   "public_example": "remilia",
   "public_example_sql": "examples/remilia-collections.sql",
-  "circle_create_tx": null,
-  "initializer_tx": null,
+  "circle_create_tx": "1a1817d310278a3814d5446b1869a098ce4055be2421aa31694d3bb4a51312cb",
+  "initializer_tx": "da10d2af72c3b4be2053fe47cc65b9e4073bd31f52fcdc85451a0cefbbbdbf43",
   "wasm": {
     "path": "circle/wasm/octra_sqlite_circle.wasm",
     "bytes": 607800,
@@ -71,7 +71,7 @@
     "owner_pubkey_offset": 601536,
     "db_id_offset": 601568,
     "program_update_tx": "98ce68ef74d9c4ef50bdf0654201d67cd74822da0231f6ce4cd5c30e1f0311f1",
-    "non_owner_denied_tx": null
+    "non_owner_denied_tx": "08ea0b734025ed87d5694af6f2800bcec55411815e6b7724a325159ac6b6d3b3"
   },
   "client_release": {
     "notes": "Hardening release: core library can build without HTTP/CLI, wallet signing state avoids cloned private-key strings, CLI routing defers to SQLite, undocumented legacy aliases were removed, write output includes explorer links when configured, and the Circle query path accepts SQLite trailing comments.",
