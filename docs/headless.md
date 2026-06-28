@@ -52,3 +52,13 @@ If Circle creation succeeds but initializer SQL fails, the CLI prints the saved
 database URI and recovery commands so the Circle can still be opened and
 inspected. Initializer scripts can be partially applied, so inspect before
 retrying.
+
+For large imports and mirrors, avoid shell argument-sized SQL blobs:
+
+```sh
+octra-sqlite check DATABASE --sql-file dump.sql
+octra-sqlite restore DATABASE --file dump.sql
+```
+
+Use `--json` for machine-readable output, and prefer full
+`oct://NETWORK/<circle>` URIs in automation.

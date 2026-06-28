@@ -44,7 +44,7 @@ code_hash 8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.3.0.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.3.1.json` and checked by
 `octra-sqlite status`.
 
 ## Optional Rebuild

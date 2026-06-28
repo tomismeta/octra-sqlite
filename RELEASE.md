@@ -1,5 +1,40 @@
 # Release Notes
 
+## 0.3.1
+
+This is a DevEx hardening release for automation, large SQL restore, and
+headless use. The bundled Circle WASM artifact is unchanged from `0.3.0`.
+
+## Added
+
+- `restore DATABASE --file dump.sql` for large SQL restores with internal
+  batching, progress output, and stable JSON output.
+- `DATABASE --sql-file FILE` and stdin execution for one-shot SQL without shell
+  argument-size pressure.
+- `check DATABASE --sql-file dump.sql` for local restore planning: statement
+  count, executable batches, skipped SQLite dump wrappers, and size warnings.
+- `limits [DATABASE]` for the current SQL frame limit, restore behavior,
+  transaction boundary, owner-write model, and read-only guard.
+- `--json` output for `status`, `verify`, `database list`, `database info`,
+  `restore`, `check`, and `limits`.
+- Structured JSON error envelopes for automation.
+- `--read-only` for one-shot SQL execution.
+- `docs/operations.md` for large restore, idempotent imports, migration,
+  concurrency, and operational limits.
+
+## Notes
+
+- `check` is a planner, not a chain-state dry-run. SQLite syntax and semantics
+  are still ultimately enforced by SQLite inside the Circle.
+- One accepted write is atomic. A multi-batch restore can partially apply; make
+  restore scripts idempotent or restore into a fresh database.
+- `restore` and `.read` strip common SQLite dump wrappers such as
+  `BEGIN TRANSACTION`, `COMMIT`, and `PRAGMA foreign_keys`. Other
+  transaction-control statements such as `ROLLBACK` and savepoints are rejected
+  because user-managed transactions are not supported across Octra writes.
+- Each SQL statement must fit inside the Circle SQL frame limit. The CLI checks
+  this before submitting restore batches.
+
 ## 0.3.0
 
 This is a portability release for moving SQLite data into and out of an Octra
@@ -141,6 +176,6 @@ initializer_tx: 971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
 non_owner_denied_tx: d1e2a0007f1d7ffdf3906b4d703915ab1447a6c7d8456ebbbe5185c552c743fa
 backup_sha256: 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
 backup_integrity: ok
-manifest: release/octra-sqlite-0.3.0.json
+manifest: release/octra-sqlite-0.3.1.json
 proof: docs/proofs/devnet.md
 ```

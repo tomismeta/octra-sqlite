@@ -103,6 +103,7 @@ pub(super) fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
                 state.mode,
                 state.headers,
                 output.as_deref(),
+                false,
             ) {
                 eprintln!("error: {error:#}");
             }
@@ -196,7 +197,7 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
                 print_field("wallet", path.display().to_string());
             }
         }
-        ".verify" => verify(&state.session, None, false, false)?,
+        ".verify" => verify(&state.session, None, false, false, false)?,
         ".backup" => {
             let path = backup_path_from_args(args)?;
             let summary = backup_database(&state.session, &path)?;

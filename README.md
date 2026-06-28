@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.3.0-111827)](./release/octra-sqlite-0.3.0.json)
+[![version](https://img.shields.io/badge/version-v0.3.1-111827)](./release/octra-sqlite-0.3.1.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -68,8 +68,12 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |
 | `octra-sqlite quickstart DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
+| `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
 | `octra-sqlite DATABASE ".COMMAND"` | Run a SQLite-style dot command. |
 | `octra-sqlite open DATABASE` | Open the interactive shell. |
+| `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution. |
+| `octra-sqlite check DATABASE --sql-file dump.sql` | Check script size and batching without writing. |
+| `octra-sqlite limits [DATABASE]` | Show SQL, restore, transaction, and auth limits. |
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, Circle ID, network, and RPC. |
 | `octra-sqlite database set NAME URI` | Save an `oct://` database URI locally. |
@@ -126,7 +130,8 @@ octra-sqlite art ".backup main art.sqlite"
 sqlite3 art.sqlite "pragma integrity_check;"
 
 octra-sqlite art ".dump" > art.sql
-octra-sqlite new art_copy < art.sql
+octra-sqlite new art_copy
+octra-sqlite restore art_copy --file art.sql
 ```
 
 Local `sqlite3` is optional. It is used only for exported-file integrity checks
@@ -154,6 +159,7 @@ backup, restore, and local developer experience.
 - [Release manifests](./release/)
 - [Public surface](./docs/public-surface.md)
 - [Headless setup](./docs/headless.md)
+- [Operations](./docs/operations.md)
 - [Storage model](./docs/storage-model.md)
 - [Toolchain and builds](./docs/toolchain.md)
 - [OSR1 typed results](./docs/spec/osr1.md)
