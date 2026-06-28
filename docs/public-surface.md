@@ -19,9 +19,10 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite new organization "create table person(first_name text not null, last_name text not null);"
-octra-sqlite organization ".tables"
-octra-sqlite organization "select * from person;"
+octra-sqlite check examples/artists.sql
+octra-sqlite new art < examples/artists.sql
+octra-sqlite art ".tables"
+octra-sqlite art "select * from artist;"
 ```
 
 The reference configurable database creation path is:
@@ -39,6 +40,11 @@ new database the default database. `new` submits a native signed `deploy_circle`
 transaction whose payload includes the bundled audited SQLite WASM, saves an
 `oct://` database URI, and then runs optional initializer SQL through the same
 signed `exec` path as later writes.
+
+When initializer SQL is supplied, `new` first runs a local SQLite preflight using
+the stock `sqlite3` CLI. `octra-sqlite check FILE` exposes the same check
+directly so schema files can be validated before spending funds or creating a
+Circle.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite

@@ -25,7 +25,9 @@ use output::{
     hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
     OutputMode,
 };
-use portability::{backup_database, execute_sql_script, run_local_sqlite_integrity};
+use portability::{
+    backup_database, execute_sql_script, preflight_sql_script, run_local_sqlite_integrity,
+};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
@@ -53,12 +55,13 @@ Examples:
   octra-sqlite setup
   octra-sqlite status
   octra-sqlite config
-  octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"
-  octra-sqlite organization \".tables\"
-  octra-sqlite organization \".backup main organization.sqlite\"
-  octra-sqlite organization \".dump\" > organization.sql
+  octra-sqlite check examples/artists.sql
+  octra-sqlite new art < examples/artists.sql
+  octra-sqlite art \".tables\"
+  octra-sqlite art \".backup main art.sqlite\"
+  octra-sqlite art \".dump\" > art.sql
   octra-sqlite database list
-  octra-sqlite database info organization
+  octra-sqlite database info art
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -73,6 +76,8 @@ enum Commands {
     Init(InitArgs),
     /// Create a sample SQLite database in one command.
     Quickstart(QuickstartArgs),
+    /// Check SQL locally before deploying or writing to a Circle.
+    Check(CheckArgs),
     /// Create a new SQLite database on Octra and optionally initialize it with SQL.
     New(NewArgs),
     /// Manage saved database names.
@@ -99,9 +104,9 @@ enum Commands {
 #[command(after_long_help = "\
 Examples:
   octra-sqlite database list
-  octra-sqlite database info organization
-  octra-sqlite database use organization
-  octra-sqlite database set organization oct://devnet/oct...
+  octra-sqlite database info art
+  octra-sqlite database use art
+  octra-sqlite database set art oct://devnet/oct...
 ")]
 enum DatabaseCommand {
     /// List saved database names.
@@ -204,6 +209,16 @@ struct SqlArgs {
 }
 
 #[derive(Args)]
+struct CheckArgs {
+    /// SQL file to check. Reads stdin when omitted.
+    #[arg(value_name = "FILE")]
+    file: Option<PathBuf>,
+    /// SQL text to check.
+    #[arg(long)]
+    sql: Option<String>,
+}
+
+#[derive(Args)]
 struct NewArgs {
     /// Local database name for the new database.
     name: String,
@@ -225,6 +240,12 @@ struct NewArgs {
     /// Do not wait for Circle creation confirmation or initializer SQL receipts.
     #[arg(long)]
     no_wait: bool,
+    /// Explicitly run local SQLite preflight before Circle creation. This is the default when initializer SQL is supplied.
+    #[arg(long)]
+    preflight: bool,
+    /// Skip local SQLite preflight before Circle creation.
+    #[arg(long)]
+    no_preflight: bool,
     /// Do not save a local database name.
     #[arg(long = "no-name", alias = "no-alias")]
     no_name: bool,
@@ -398,6 +419,7 @@ pub fn run() -> Result<()> {
             }
         }
         Commands::Quickstart(args) => cmd_quickstart(args),
+        Commands::Check(args) => cmd_check(args),
         Commands::New(args) => cmd_new(args),
         Commands::Database { command } => cmd_database(command),
         Commands::Open(args) => cmd_open(args),
@@ -416,9 +438,10 @@ pub fn run() -> Result<()> {
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
-            println!("octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"");
-            println!("octra-sqlite organization \".tables\"");
-            println!("octra-sqlite status organization");
+            println!("octra-sqlite check examples/artists.sql");
+            println!("octra-sqlite new art < examples/artists.sql");
+            println!("octra-sqlite art \".tables\"");
+            println!("octra-sqlite status art");
             Ok(())
         }
     }
@@ -429,6 +452,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "setup",
         "init",
         "quickstart",
+        "check",
         "new",
         "database",
         "db",
@@ -585,10 +609,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
+        print_field("create", "octra-sqlite new art < examples/artists.sql");
         print_field(
             "example",
             "octra-sqlite quickstart my_collections --sample remilia",
@@ -616,6 +637,8 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
         rpc,
         network,
         no_wait: args.no_wait,
+        preflight: false,
+        no_preflight: false,
         no_name: false,
         default: !args.no_default,
         sql: None,
@@ -634,7 +657,34 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_check(args: CheckArgs) -> Result<()> {
+    let sql = if let Some(sql) = args.sql {
+        sql
+    } else if let Some(path) = args.file {
+        fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?
+    } else {
+        read_stdin_sql()?.ok_or_else(|| anyhow!("check requires FILE, --sql, or SQL on stdin"))?
+    };
+    let summary = preflight_sql_script(&sql)?;
+    print_field("check", "ok");
+    print_field("statements", summary.statements.to_string());
+    print_field("bytes", summary.bytes.to_string());
+    Ok(())
+}
+
 fn cmd_new(args: NewArgs) -> Result<()> {
+    if args.preflight && args.no_preflight {
+        bail!("pass either --preflight or --no-preflight, not both");
+    }
+    let init_sql = collect_initializer_sql(&args)?;
+    if !args.no_preflight && !init_sql.is_empty() {
+        preflight_initializer_sql(&init_sql)?;
+    } else if args.no_preflight && !init_sql.is_empty() {
+        print_field("preflight", "skipped by --no-preflight");
+    } else if args.preflight {
+        print_field("preflight", "nothing to check");
+    }
+
     let config = load_config().unwrap_or_default();
     let network = args
         .network
@@ -651,6 +701,18 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     };
     let control_session = build_control_session(&control_args, &network)?;
 
+    let funding_detail = if init_sql.is_empty() {
+        format!(
+            "requires funded wallet; create budget {} OU",
+            args.create_ou
+        )
+    } else {
+        format!(
+            "requires funded wallet; create budget {} OU plus initializer writes",
+            args.create_ou
+        )
+    };
+    print_field("funding", funding_detail);
     let created = create_circle(&control_session, &args, &network)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
     if args.no_name {
@@ -682,6 +744,40 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         }
     }
 
+    if !args.no_name {
+        save_new_database_alias(&args, &target_uri)?;
+        print_field("saved", "yes");
+    } else {
+        print_field("saved", "no");
+    }
+
+    if !init_sql.is_empty() {
+        let session_args = TargetArgs {
+            target: Some(target_uri.clone()),
+            wallet: args.wallet.clone(),
+            rpc: Some(control_session.rpc().to_string()),
+            caller: args.caller.clone(),
+            private_key_b64: args.private_key_b64.clone(),
+            public_key_b64: args.public_key_b64.clone(),
+        };
+        let session = build_session(&session_args)?;
+        if let Err(error) = run_initializer_sql(&session, &args, &init_sql) {
+            print_initializer_recovery(&args, &target_uri);
+            return Err(error.context("initializer failed after Circle creation"));
+        }
+    }
+
+    let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
+    if args.no_name {
+        print_field("open", format!("octra-sqlite open {target_uri}"));
+    } else {
+        print_field("open", format!("octra-sqlite open {}", args.name));
+    }
+    print_field("status", format!("octra-sqlite status {followup_target}"));
+    Ok(())
+}
+
+fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
     let mut init_sql = Vec::new();
     if let Some(path) = &args.read {
         init_sql
@@ -701,49 +797,74 @@ fn cmd_new(args: NewArgs) -> Result<()> {
             init_sql.push(sql);
         }
     }
-    if !init_sql.is_empty() {
-        let session_args = TargetArgs {
-            target: Some(target_uri.clone()),
-            wallet: args.wallet.clone(),
-            rpc: Some(control_session.rpc().to_string()),
-            caller: args.caller.clone(),
-            private_key_b64: args.private_key_b64.clone(),
-            public_key_b64: args.public_key_b64.clone(),
-        };
-        let session = build_session(&session_args)?;
-        for sql in init_sql {
-            if args.no_wait {
-                let result = with_explorer(exec_sql(&session, &sql, true)?, &session);
-                print_exec_result(&result)?;
-            } else {
-                let statements = execute_sql_script(&session, &sql)?;
-                print_field("initializer", format!("{statements} statements"));
-            }
-        }
-    }
+    Ok(init_sql)
+}
 
-    if !args.no_name {
-        let mut config = load_config().unwrap_or_default();
-        config
-            .databases
-            .insert(args.name.clone(), target_uri.clone());
-        if args.default || config.default_database.is_none() {
-            config.default_database = Some(args.name.clone());
-        }
-        write_config(&config)?;
-        print_field("saved", "yes");
-    } else {
-        print_field("saved", "no");
+fn preflight_initializer_sql(init_sql: &[String]) -> Result<()> {
+    let mut total_statements = 0usize;
+    let mut total_bytes = 0usize;
+    for sql in init_sql {
+        let summary = preflight_sql_script(sql)?;
+        total_statements += summary.statements;
+        total_bytes += summary.bytes;
     }
-
-    let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
-    if args.no_name {
-        print_field("open", format!("octra-sqlite open {target_uri}"));
-    } else {
-        print_field("open", format!("octra-sqlite open {}", args.name));
-    }
-    print_field("status", format!("octra-sqlite status {followup_target}"));
+    print_field(
+        "preflight",
+        format!("ok, {total_statements} statements, {total_bytes} bytes"),
+    );
     Ok(())
+}
+
+fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -> Result<()> {
+    for sql in init_sql {
+        if args.no_wait {
+            let result = with_explorer(exec_sql(session, sql, true)?, session);
+            print_exec_result(&result)?;
+        } else {
+            let statements = execute_sql_script(session, sql)?;
+            print_field("initializer", format!("{statements} statements"));
+        }
+    }
+    Ok(())
+}
+
+fn save_new_database_alias(args: &NewArgs, target_uri: &str) -> Result<()> {
+    let mut config = load_config().unwrap_or_default();
+    config
+        .databases
+        .insert(args.name.clone(), target_uri.to_string());
+    if args.default || config.default_database.is_none() {
+        config.default_database = Some(args.name.clone());
+    }
+    write_config(&config)?;
+    Ok(())
+}
+
+fn print_initializer_recovery(args: &NewArgs, target_uri: &str) {
+    print_field("initializer", "failed after Circle creation");
+    print_field("uri", target_uri);
+    if args.no_name {
+        print_field("saved", "no");
+        print_field(
+            "recover",
+            format!("octra-sqlite database set {} {target_uri}", args.name),
+        );
+    } else {
+        print_field("saved", "yes");
+    }
+    let followup_target = new_followup_target(&args.name, target_uri, args.no_name);
+    print_field("open", format!("octra-sqlite open {followup_target}"));
+    if let Some(path) = &args.read {
+        print_field(
+            "retry",
+            format!(
+                "octra-sqlite {followup_target} \".read {}\"",
+                path.display()
+            ),
+        );
+    } else {
+        print_field("retry", format!("octra-sqlite {followup_target} \"SQL\""));
+    }
 }
 
 fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) -> &'a str {
@@ -886,10 +1007,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         print_field("next", "octra-sqlite database list");
     } else {
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
+        print_field("create", "octra-sqlite new art < examples/artists.sql");
     }
     Ok(())
 }
@@ -1579,10 +1697,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
         println!("{}", dim("no databases"));
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
+        print_field("create", "octra-sqlite new art < examples/artists.sql");
         return;
     }
     println!("{}  name  uri", dim("default"));
@@ -2308,6 +2423,15 @@ mod tests {
     }
 
     #[test]
+    fn check_command_is_public() {
+        let cli = Cli::try_parse_from(["octra-sqlite", "check", "schema.sql"]).unwrap();
+        match cli.command {
+            Commands::Check(args) => assert_eq!(args.file, Some(PathBuf::from("schema.sql"))),
+            _ => panic!("expected check command"),
+        }
+    }
+
+    #[test]
     fn sqlite_readonly_required_routes_to_signed_exec() {
         let error = ClientError::with_kind(
             ClientErrorKind::Rpc,
@@ -2505,6 +2629,38 @@ COMMIT;",
                 assert_eq!(args.name, "my-db");
                 assert_eq!(args.sql_args, vec!["create table people(first_name text);"]);
                 assert!(args.wasm.is_none());
+                assert!(!args.preflight);
+                assert!(!args.no_preflight);
+            }
+            _ => panic!("expected new command"),
+        }
+    }
+
+    #[test]
+    fn new_accepts_preflight_controls() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "new",
+            "my-db",
+            "--preflight",
+            "--read",
+            "schema.sql",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::New(args) => {
+                assert!(args.preflight);
+                assert!(!args.no_preflight);
+                assert_eq!(args.read, Some(PathBuf::from("schema.sql")));
+            }
+            _ => panic!("expected new command"),
+        }
+
+        let cli = Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--no-preflight"]).unwrap();
+        match cli.command {
+            Commands::New(args) => {
+                assert!(!args.preflight);
+                assert!(args.no_preflight);
             }
             _ => panic!("expected new command"),
         }

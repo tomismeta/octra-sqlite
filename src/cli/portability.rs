@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
+use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::client::low_level::{exec_sql, view, Session};
@@ -15,6 +15,56 @@ use super::BackupSummary;
 const MAX_SQL_TEXT_BYTES: usize = 8_191;
 const SQL_BATCH_TARGET_BYTES: usize = 7_500;
 const BACKUP_RETRIES: usize = 2;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct SqlPreflightSummary {
+    pub statements: usize,
+    pub bytes: usize,
+}
+
+pub(super) fn preflight_sql_script(sql: &str) -> Result<SqlPreflightSummary> {
+    let statements = split_sql_statements(sql);
+    for statement in &statements {
+        ensure_sql_statement_size(statement)?;
+    }
+    if statements.is_empty() {
+        return Ok(SqlPreflightSummary {
+            statements: 0,
+            bytes: sql.len(),
+        });
+    }
+
+    let mut child = ProcessCommand::new("sqlite3")
+        .arg("-batch")
+        .arg(":memory:")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("running sqlite3 preflight; install sqlite3 or pass --no-preflight")?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow!("sqlite3 preflight stdin unavailable"))?;
+        stdin
+            .write_all(sql.as_bytes())
+            .context("writing SQL to sqlite3 preflight")?;
+    }
+    let output = child
+        .wait_with_output()
+        .context("waiting for sqlite3 preflight")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if stderr.is_empty() { stdout } else { stderr };
+        bail!("SQLite preflight failed: {detail}");
+    }
+    Ok(SqlPreflightSummary {
+        statements: statements.len(),
+        bytes: sql.len(),
+    })
+}
 
 pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSummary> {
     let mut last_error = None;
@@ -710,13 +760,31 @@ mod tests {
     }
 
     #[test]
+    fn preflight_accepts_valid_sql_script() {
+        let summary = preflight_sql_script(
+            "create table artist(id integer primary key, name text not null);
+insert into artist(name) values ('Monet');",
+        )
+        .unwrap();
+        assert_eq!(summary.statements, 2);
+        assert!(summary.bytes > 0);
+    }
+
+    #[test]
+    fn preflight_rejects_invalid_sql_script() {
+        let error = preflight_sql_script("insert into missing_table values (1);")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("SQLite preflight failed"));
+        assert!(error.contains("missing_table"));
+    }
+
+    #[test]
     fn rewritten_sql_script_payload_is_checked() {
         let statements = vec!["x;".to_string(); 3_749];
         let script = sql_script_for_single_exec(&statements);
         assert!(script.len() > MAX_SQL_TEXT_BYTES);
-        let error = ensure_exec_payload_size(&script)
-            .unwrap_err()
-            .to_string();
+        let error = ensure_exec_payload_size(&script).unwrap_err().to_string();
         assert!(error.contains("SQL payload"));
     }
 

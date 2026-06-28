@@ -6,9 +6,10 @@ and `octra-sqlite deploy` use that artifact by default.
 
 ## User Requirements
 
-- Rust stable with Cargo for the CLI.
-- The stock `sqlite3` CLI for `.dump`, `.fullschema`, and
-  `verify --integrity`.
+- Rust stable with Cargo for the CLI. `rustup stable` is recommended; distro
+  packages can lag behind the lockfile.
+- The stock `sqlite3` CLI for `check`, initializer preflight, `.dump`,
+  `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured
   network.
 - Network access to the configured Octra RPC.
