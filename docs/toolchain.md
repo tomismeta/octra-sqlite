@@ -8,13 +8,14 @@ and `octra-sqlite deploy` use that artifact by default.
 
 - Rust stable with Cargo for the CLI. `rustup stable` is recommended; distro
   packages can lag behind the lockfile.
-- The stock `sqlite3` CLI for `check`, initializer preflight, `.dump`,
+- The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured
   network.
 - Network access to the configured Octra RPC.
 
-Users do not need Docker, Python, WABT, WASI, or a C compiler.
+Users do not need Docker, Python, WABT, WASI, a C compiler, or local `sqlite3`
+for the cold start path.
 
 ## Builder Requirements
 

@@ -12,9 +12,8 @@ wallet, and gives you a SQLite-shaped interface over live Circle state.
 
 ## Cold Start
 
-You need Rust/Cargo, local `sqlite3`, and an Octra wallet. Writes and new
-databases need a funded wallet. The Circle WASM is bundled; you do not need to
-compile it to start.
+You need Rust/Cargo and an Octra wallet. Writes and new databases need a funded
+wallet. The Circle WASM is bundled; you do not need to compile it to start.
 
 ```sh
 git clone https://github.com/tomismeta/octra-sqlite.git
@@ -66,7 +65,6 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite init [OPTIONS]` | Scriptable setup. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
-| `octra-sqlite check FILE` | Check SQL locally before deploying or writing to a Circle. |
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |
 | `octra-sqlite quickstart DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
@@ -131,8 +129,8 @@ octra-sqlite art ".dump" > art.sql
 octra-sqlite new art_copy < art.sql
 ```
 
-The `sqlite3` commands run locally against exported files. The `octra-sqlite`
-commands talk to the Octra Circle.
+The `sqlite3` command is optional and runs locally against exported files. The
+`octra-sqlite` commands talk to the Octra Circle.
 
 ## Architecture
 

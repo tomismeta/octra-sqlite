@@ -42,13 +42,12 @@ octra-sqlite database info DATABASE
 octra-sqlite verify DATABASE
 ```
 
-For schema deploys, check SQL before creating a Circle:
+For schema deploys:
 
 ```sh
-octra-sqlite check schema.sql
 octra-sqlite new DATABASE < schema.sql
 ```
 
-`new` also runs local preflight automatically when initializer SQL is supplied.
-Use `--no-preflight` only when local `sqlite3` is unavailable and you accept the
-risk of initializer failure after Circle creation.
+If Circle creation succeeds but initializer SQL fails, the CLI prints the saved
+database URI and recovery commands so the Circle can still be opened, inspected,
+and retried.
