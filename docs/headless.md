@@ -49,5 +49,6 @@ octra-sqlite new DATABASE < schema.sql
 ```
 
 If Circle creation succeeds but initializer SQL fails, the CLI prints the saved
-database URI and recovery commands so the Circle can still be opened, inspected,
-and retried.
+database URI and recovery commands so the Circle can still be opened and
+inspected. Initializer scripts can be partially applied, so inspect before
+retrying.

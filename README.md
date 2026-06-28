@@ -129,7 +129,8 @@ octra-sqlite art ".dump" > art.sql
 octra-sqlite new art_copy < art.sql
 ```
 
-The `sqlite3` command is optional and runs locally against exported files. The
+Local `sqlite3` is optional. It is used only for exported-file integrity checks
+and snapshot rendering commands such as `.dump` and `.fullschema`. The
 `octra-sqlite` commands talk to the Octra Circle.
 
 ## Architecture

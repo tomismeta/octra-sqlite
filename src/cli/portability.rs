@@ -16,6 +16,11 @@ const MAX_SQL_TEXT_BYTES: usize = 8_191;
 const SQL_BATCH_TARGET_BYTES: usize = 7_500;
 const BACKUP_RETRIES: usize = 2;
 
+pub(super) struct SqlScriptExecution {
+    pub statements: usize,
+    pub results: Vec<Value>,
+}
+
 pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSummary> {
     let mut last_error = None;
     for _ in 0..=BACKUP_RETRIES {
@@ -270,24 +275,49 @@ fn quote_identifier(name: &str) -> String {
 }
 
 pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
+    Ok(execute_sql_script_inner(session, sql, false)?.statements)
+}
+
+pub(super) fn submit_sql_script_no_wait(
+    session: &Session,
+    sql: &str,
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_inner(session, sql, true)
+}
+
+fn execute_sql_script_inner(
+    session: &Session,
+    sql: &str,
+    no_wait: bool,
+) -> Result<SqlScriptExecution> {
     let statements = split_sql_statements(sql);
     for statement in &statements {
         ensure_sql_statement_size(statement)?;
     }
     if statements.is_empty() {
-        return Ok(0);
+        return Ok(SqlScriptExecution {
+            statements: 0,
+            results: Vec::new(),
+        });
     }
+    let mut results = Vec::new();
     if sql.trim().len() < SQL_BATCH_TARGET_BYTES {
         let script = sql_script_for_single_exec(&statements);
         if script.trim().is_empty() {
-            return Ok(0);
+            return Ok(SqlScriptExecution {
+                statements: 0,
+                results,
+            });
         }
         ensure_exec_payload_size(&script)?;
-        exec_sql(session, &script, false)?;
-        return Ok(statements
-            .iter()
-            .filter(|statement| !should_skip_import_wrapper(statement))
-            .count());
+        results.push(exec_sql(session, &script, no_wait)?);
+        return Ok(SqlScriptExecution {
+            statements: statements
+                .iter()
+                .filter(|statement| !should_skip_import_wrapper(statement))
+                .count(),
+            results,
+        });
     }
     let mut batch = String::new();
     let mut executed = 0usize;
@@ -298,16 +328,16 @@ pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> 
         let candidate_len = batch.len() + statement.len() + 1;
         if !batch.is_empty() && candidate_len >= SQL_BATCH_TARGET_BYTES {
             ensure_exec_payload_size(&batch)?;
-            exec_sql(session, &batch, false).context(
+            results.push(exec_sql(session, &batch, no_wait).context(
                 "executing SQL script batch; large .read files are applied in batches on Octra",
-            )?;
+            )?);
             batch.clear();
         }
         if statement.len() >= SQL_BATCH_TARGET_BYTES {
             ensure_exec_payload_size(&statement)?;
-            exec_sql(session, &statement, false).context(
+            results.push(exec_sql(session, &statement, no_wait).context(
                 "executing SQL script statement; large .read files are applied in batches on Octra",
-            )?;
+            )?);
             executed += 1;
             continue;
         }
@@ -320,11 +350,14 @@ pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> 
     }
     if !batch.trim().is_empty() {
         ensure_exec_payload_size(&batch)?;
-        exec_sql(session, &batch, false).context(
+        results.push(exec_sql(session, &batch, no_wait).context(
             "executing SQL script batch; large .read files are applied in batches on Octra",
-        )?;
+        )?);
     }
-    Ok(executed)
+    Ok(SqlScriptExecution {
+        statements: executed,
+        results,
+    })
 }
 
 fn ensure_sql_statement_size(statement: &str) -> Result<()> {

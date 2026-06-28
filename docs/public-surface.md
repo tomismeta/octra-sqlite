@@ -19,7 +19,7 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite new art < examples/artists.sql
+octra-sqlite new art "create table artist(id integer primary key, name text not null);"
 octra-sqlite art ".tables"
 octra-sqlite art "select * from artist;"
 ```

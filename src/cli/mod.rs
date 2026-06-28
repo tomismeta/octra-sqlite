@@ -25,7 +25,9 @@ use output::{
     hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
     OutputMode,
 };
-use portability::{backup_database, execute_sql_script, run_local_sqlite_integrity};
+use portability::{
+    backup_database, execute_sql_script, run_local_sqlite_integrity, submit_sql_script_no_wait,
+};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
@@ -44,6 +46,8 @@ const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
     "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea";
 const EXPECTED_WASM_BYTES: usize = 609_475;
+const CREATE_ART_EXAMPLE: &str =
+    "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -53,7 +57,7 @@ Examples:
   octra-sqlite setup
   octra-sqlite status
   octra-sqlite config
-  octra-sqlite new art < examples/artists.sql
+  octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"
   octra-sqlite art \".tables\"
   octra-sqlite art \".backup main art.sqlite\"
   octra-sqlite art \".dump\" > art.sql
@@ -416,7 +420,7 @@ pub fn run() -> Result<()> {
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
-            println!("octra-sqlite new art < examples/artists.sql");
+            println!("{CREATE_ART_EXAMPLE}");
             println!("octra-sqlite art \".tables\"");
             println!("octra-sqlite status art");
             Ok(())
@@ -585,7 +589,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        print_field("create", "octra-sqlite new art < examples/artists.sql");
+        print_field("create", CREATE_ART_EXAMPLE);
         print_field(
             "example",
             "octra-sqlite quickstart my_collections --sample remilia",
@@ -634,7 +638,7 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
 fn cmd_new(args: NewArgs) -> Result<()> {
     let init_sql = collect_initializer_sql(&args)?;
 
-    let config = load_config().unwrap_or_default();
+    let mut config = load_config().unwrap_or_default();
     let network = args
         .network
         .clone()
@@ -694,7 +698,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
 
     if !args.no_name {
-        if let Err(error) = save_new_database_alias(&args, &target_uri) {
+        if let Err(error) = save_new_database_alias(&args, &target_uri, &mut config) {
             print_circle_recovery(
                 &args,
                 &target_uri,
@@ -776,8 +780,15 @@ fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
 fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -> Result<()> {
     for sql in init_sql {
         if args.no_wait {
-            let result = with_explorer(exec_sql(session, sql, true)?, session);
-            print_exec_result(&result)?;
+            let execution = submit_sql_script_no_wait(session, sql)?;
+            for result in execution.results {
+                let result = with_explorer(result, session);
+                print_exec_result(&result)?;
+            }
+            print_field(
+                "initializer",
+                format!("{} statements submitted", execution.statements),
+            );
         } else {
             let statements = execute_sql_script(session, sql)?;
             print_field("initializer", format!("{statements} statements"));
@@ -786,20 +797,23 @@ fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -
     Ok(())
 }
 
-fn save_new_database_alias(args: &NewArgs, target_uri: &str) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+fn save_new_database_alias(args: &NewArgs, target_uri: &str, config: &mut Config) -> Result<()> {
     config
         .databases
         .insert(args.name.clone(), target_uri.to_string());
     if args.default || config.default_database.is_none() {
         config.default_database = Some(args.name.clone());
     }
-    write_config(&config)?;
+    write_config(config)?;
     Ok(())
 }
 
 fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved: bool) {
     print_field("recovery", problem);
+    print_field(
+        "warning",
+        "initializer scripts may be partially applied; inspect before retrying",
+    );
     print_field("uri", target_uri);
     if saved {
         print_field("saved", "yes");
@@ -807,7 +821,11 @@ fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved:
         print_field("saved", "no");
         print_field(
             "recover",
-            format!("octra-sqlite database set {} {target_uri}", args.name),
+            format!(
+                "octra-sqlite database set {} {}",
+                shell_quote(&args.name),
+                shell_quote(target_uri)
+            ),
         );
     }
     let followup_target = if saved {
@@ -815,17 +833,54 @@ fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved:
     } else {
         target_uri
     };
-    print_field("open", format!("octra-sqlite open {followup_target}"));
+    print_field(
+        "inspect",
+        format!("octra-sqlite {} \".tables\"", shell_quote(followup_target)),
+    );
+    print_field(
+        "open",
+        format!("octra-sqlite open {}", shell_quote(followup_target)),
+    );
     if let Some(path) = &args.read {
+        let dot_command = format!(".read {}", dot_arg_quote(&path.to_string_lossy()));
         print_field(
             "retry",
             format!(
-                "octra-sqlite {followup_target} \".read {}\"",
-                path.display()
+                "octra-sqlite {} {}",
+                shell_quote(followup_target),
+                shell_quote(&dot_command)
             ),
         );
     } else {
-        print_field("retry", format!("octra-sqlite {followup_target} \"SQL\""));
+        print_field(
+            "retry",
+            "inspect first, then rerun the initializer SQL against the saved database",
+        );
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value.chars().all(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(ch, '_' | '-' | '.' | '/' | ':' | '@' | '=' | ',')
+        })
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
+fn dot_arg_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':'))
+    {
+        value.to_string()
+    } else {
+        format!("\"{}\"", value.replace('"', "\"\""))
     }
 }
 
@@ -969,7 +1024,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         print_field("next", "octra-sqlite database list");
     } else {
-        print_field("create", "octra-sqlite new art < examples/artists.sql");
+        print_field("create", CREATE_ART_EXAMPLE);
     }
     Ok(())
 }
@@ -1659,7 +1714,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
 fn print_database_list(config: &Config) {
     if config.databases.is_empty() {
         println!("{}", dim("no databases"));
-        print_field("create", "octra-sqlite new art < examples/artists.sql");
+        print_field("create", CREATE_ART_EXAMPLE);
         return;
     }
     println!("{}  name  uri", dim("default"));
@@ -2610,6 +2665,19 @@ COMMIT;",
             new_followup_target("organization", "oct://devnet/octABC", false),
             "organization"
         );
+    }
+
+    #[test]
+    fn recovery_command_arguments_are_shell_safe() {
+        assert_eq!(shell_quote("art"), "art");
+        assert_eq!(shell_quote("my art"), "'my art'");
+        assert_eq!(shell_quote("weird'name"), "'weird'\"'\"'name'");
+        assert_eq!(dot_arg_quote("schema.sql"), "schema.sql");
+        assert_eq!(
+            dot_arg_quote("schema files/init.sql"),
+            "\"schema files/init.sql\""
+        );
+        assert_eq!(dot_arg_quote("schema\"file.sql"), "\"schema\"\"file.sql\"");
     }
 
     #[test]
