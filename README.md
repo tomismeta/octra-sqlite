@@ -33,7 +33,7 @@ create table artist(
   name text not null
 );
 
-insert into artist(name) values ('Yayoi Kusama'), ('Jean-Michel Basquiat');
+insert into artist(name) values ('Monet'), ('Picasso'), ('Rembrandt'), ('Basquiat');
 "
 ```
 
@@ -82,9 +82,9 @@ octra-sqlite init --wallet ./wallet.json
 Run `octra-sqlite DATABASE` to enter the shell.
 
 ```sql
-sqlite> select id, name from artist;
-sqlite> insert into artist(name)
-   ...> values ('Agnes Martin');
+sqlite> select id, name
+   ...> from artist
+   ...> order by name;
 sqlite> .tables
 sqlite> .quit
 ```
