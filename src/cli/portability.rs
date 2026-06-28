@@ -873,6 +873,8 @@ fn parse_csv_records(text: &str) -> Result<Vec<Vec<String>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::process::Command as ProcessCommand;
 
     #[test]
     fn sql_statement_size_limit_is_explicit() {
@@ -946,6 +948,62 @@ RELEASE load;";
         );
         assert!(error.contains("transactions_not_supported"));
         assert!(error.contains("statement 3"));
+    }
+
+    #[test]
+    fn splitter_round_trips_real_sqlite_dump_when_available() -> Result<()> {
+        if ProcessCommand::new("sqlite3")
+            .arg("-version")
+            .output()
+            .is_err()
+        {
+            eprintln!("sqlite3 not installed; skipping splitter conformance smoke");
+            return Ok(());
+        }
+
+        let dir =
+            std::env::temp_dir().join(format!("octra-sqlite-splitter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)?;
+        let source = dir.join("source.sqlite");
+        let restored = dir.join("restored.sqlite");
+        let seed = "create table person(id integer primary key, name text not null);
+create table audit(person_id integer not null, note text not null);
+create trigger person_audit after insert on person begin
+  insert into audit(person_id, note) values (new.id, 'created; ok');
+end;
+insert into person(name) values ('Ada; Lovelace'),('Grace Hopper');";
+
+        assert!(ProcessCommand::new("sqlite3")
+            .arg(&source)
+            .arg(seed)
+            .status()?
+            .success());
+        let dump = ProcessCommand::new("sqlite3")
+            .arg(&source)
+            .arg(".dump")
+            .output()?;
+        assert!(dump.status.success());
+        let dump = String::from_utf8(dump.stdout)?;
+        let statements = split_sql_statements(&dump);
+        assert!(statements.iter().any(|sql| sql.contains("CREATE TRIGGER")));
+        assert!(statements.iter().any(|sql| sql.contains("created; ok")));
+
+        let split_dump = dir.join("split.sql");
+        fs::write(&split_dump, statements.join("\n"))?;
+        assert!(ProcessCommand::new("sqlite3")
+            .arg(&restored)
+            .arg(format!(".read {}", split_dump.display()))
+            .status()?
+            .success());
+        let integrity = ProcessCommand::new("sqlite3")
+            .arg(&restored)
+            .arg("pragma integrity_check;")
+            .output()?;
+        assert!(integrity.status.success());
+        assert_eq!(String::from_utf8(integrity.stdout)?.trim(), "ok");
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
 
     #[test]

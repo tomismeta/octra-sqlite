@@ -8,5 +8,5 @@ network-specific artifacts.
 
 `octra-sqlite-0.1.0.json`, `octra-sqlite-0.2.0.json`,
 `octra-sqlite-0.2.1.json`, and `octra-sqlite-0.3.0.json` record earlier
-blessed Circle WASM artifacts. The `0.3.1` release keeps the `0.3.0` Circle
-WASM and hardens CLI automation around it.
+blessed Circle WASM artifacts. The `0.3.1` release rebuilds the Circle WASM for
+SQLite-native query tail validation and hardens CLI automation around it.

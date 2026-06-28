@@ -46,8 +46,8 @@ const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.1.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea";
-const EXPECTED_WASM_BYTES: usize = 609_475;
+    "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b";
+const EXPECTED_WASM_BYTES: usize = 609_404;
 const CREATE_ART_EXAMPLE: &str =
     "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
 
@@ -836,7 +836,7 @@ fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
         init_sql.push(sql.clone());
     }
     if !args.sql_args.is_empty() {
-        init_sql.push(args.sql_args.join(" "));
+        init_sql.extend(args.sql_args.iter().cloned());
     }
     if init_sql.is_empty() {
         if let Some(sql) = read_stdin_sql()? {
@@ -3216,6 +3216,37 @@ insert into person values (1);",
     }
 
     #[test]
+    fn sql_script_splitter_handles_sqlite_dump_style_trigger_fixture() {
+        let dump = "PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE artist(
+  id integer primary key,
+  name text not null
+);
+CREATE TABLE audit(
+  artist_id integer not null,
+  note text not null
+);
+CREATE TRIGGER artist_ai after insert on artist BEGIN
+  INSERT INTO audit VALUES(new.id, 'created; yes');
+  SELECT CASE WHEN new.name LIKE 'P%' THEN 'modern;ok' ELSE 'classic;ok' END;
+END;
+INSERT INTO artist VALUES(1,'Monet');
+COMMIT;";
+        let statements = portability::split_sql_statements(dump);
+        assert_eq!(statements.len(), 7);
+        assert!(portability::should_skip_import_wrapper(&statements[0]));
+        assert!(portability::should_skip_import_wrapper(&statements[1]));
+        assert!(statements[5].starts_with("INSERT INTO artist"));
+        assert!(portability::should_skip_import_wrapper(&statements[6]));
+        let trigger = &statements[4];
+        assert!(trigger.starts_with("CREATE TRIGGER artist_ai"));
+        assert!(trigger.contains("'created; yes'"));
+        assert!(trigger.contains("'modern;ok'"));
+        assert!(trigger.trim_end().ends_with("END;"));
+    }
+
+    #[test]
     fn sqlite_dump_wrappers_are_skipped_for_octra_restore() {
         assert!(portability::should_skip_import_wrapper(
             "PRAGMA foreign_keys=OFF;"
@@ -3342,12 +3373,20 @@ COMMIT;",
             "new",
             "my-db",
             "create table people(first_name text);",
+            "insert into people values ('Ada');",
         ])
         .unwrap();
         match cli.command {
             Commands::New(args) => {
                 assert_eq!(args.name, "my-db");
-                assert_eq!(args.sql_args, vec!["create table people(first_name text);"]);
+                assert_eq!(
+                    args.sql_args,
+                    vec![
+                        "create table people(first_name text);",
+                        "insert into people values ('Ada');"
+                    ]
+                );
+                assert_eq!(collect_initializer_sql(&args).unwrap(), args.sql_args);
                 assert!(args.wasm.is_none());
             }
             _ => panic!("expected new command"),

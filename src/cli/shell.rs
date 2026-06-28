@@ -366,7 +366,7 @@ fn take_command_output(state: &mut ShellState) -> Option<PathBuf> {
     state.once_output.take().or_else(|| state.output.clone())
 }
 
-fn backup_path_from_args(args: &[String]) -> Result<PathBuf> {
+pub(super) fn backup_path_from_args(args: &[String]) -> Result<PathBuf> {
     match args {
         [file] => Ok(PathBuf::from(file)),
         [db, file] if db == "main" => Ok(PathBuf::from(file)),
@@ -375,7 +375,7 @@ fn backup_path_from_args(args: &[String]) -> Result<PathBuf> {
     }
 }
 
-fn save_path_from_args(args: &[String]) -> Result<PathBuf> {
+pub(super) fn save_path_from_args(args: &[String]) -> Result<PathBuf> {
     match args {
         [file] => Ok(PathBuf::from(file)),
         [option, _] if option.starts_with('-') => bail!(".save options are not supported"),
@@ -466,4 +466,66 @@ fn print_shell_show(state: &ShellState) {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "stdout".to_string()),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_and_save_args_are_sqlite_shaped() {
+        assert_eq!(
+            backup_path_from_args(&["backup.sqlite".to_string()]).unwrap(),
+            PathBuf::from("backup.sqlite")
+        );
+        assert_eq!(
+            backup_path_from_args(&["main".to_string(), "backup.sqlite".to_string()]).unwrap(),
+            PathBuf::from("backup.sqlite")
+        );
+        assert!(backup_path_from_args(&["temp".to_string(), "backup.sqlite".to_string()]).is_err());
+        assert!(backup_path_from_args(&[]).is_err());
+
+        assert_eq!(
+            save_path_from_args(&["copy.sqlite".to_string()]).unwrap(),
+            PathBuf::from("copy.sqlite")
+        );
+        assert!(save_path_from_args(&["--append".to_string(), "copy.sqlite".to_string()]).is_err());
+    }
+
+    #[test]
+    fn dot_parser_and_pipe_rejection_cover_redirection_shapes() {
+        assert_eq!(
+            parse_dot_parts(".once \"one shot.csv\"").unwrap(),
+            vec![".once", "one shot.csv"]
+        );
+        assert_eq!(
+            parse_dot_parts(".mode 'json'").unwrap(),
+            vec![".mode", "json"]
+        );
+        assert!(parse_dot_parts(".output \"unterminated").is_err());
+        assert!(reject_shell_pipe_arg("|cat", ".output").is_err());
+        assert!(reject_shell_pipe_arg("file.sqlite", ".output").is_ok());
+    }
+
+    #[test]
+    fn import_args_require_csv_and_reject_shell_pipes() {
+        assert_eq!(
+            import_args(&[
+                "--csv".to_string(),
+                "--skip".to_string(),
+                "2".to_string(),
+                "rows.csv".to_string(),
+                "artist".to_string(),
+            ])
+            .unwrap(),
+            (PathBuf::from("rows.csv"), "artist".to_string(), 2)
+        );
+        assert!(import_args(&["rows.csv".to_string(), "artist".to_string()]).is_err());
+        assert!(import_args(&[
+            "--csv".to_string(),
+            "|cat".to_string(),
+            "artist".to_string(),
+        ])
+        .is_err());
+    }
 }

@@ -3,7 +3,8 @@
 ## 0.3.1
 
 This is a DevEx hardening release for automation, large SQL restore, and
-headless use. The bundled Circle WASM artifact is unchanged from `0.3.0`.
+headless use. The bundled Circle WASM artifact is rebuilt so query tail
+validation delegates to SQLite instead of a contract-owned SQL comment parser.
 
 ## Added
 
@@ -21,6 +22,7 @@ headless use. The bundled Circle WASM artifact is unchanged from `0.3.0`.
 - `--read-only` for one-shot SQL execution.
 - `docs/operations.md` for large restore, idempotent imports, migration,
   concurrency, and operational limits.
+- SQLite-native query tail validation in the Circle WASM.
 
 ## Notes
 
@@ -167,13 +169,14 @@ devnet.
 
 ```text
 circle: octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
-version: 1
-personalized_code_hash: cbcfe49b0139356a428669d9d1f531f01d48ddbaa82b9feba97566dfcc25b5fe
-bundled_wasm_hash: 8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea
-code_bytes: 609475
+version: 2
+personalized_code_hash: 2e8fae91e2372293f4554fed164ff31c07df3e423bd36eba31e1b8e40a760e9f
+bundled_wasm_hash: 39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b
+code_bytes: 609404
 circle_create_tx: 318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed
 initializer_tx: 971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
-non_owner_denied_tx: d1e2a0007f1d7ffdf3906b4d703915ab1447a6c7d8456ebbbe5185c552c743fa
+program_update_tx: 3d1a3e308f2a29b4c7748745b269841b4025ebb777fe51629e066139c6446fd7
+non_owner_denied_tx: 567559d31f4c8fa3a0f5eff42f8ea8b417ee2269ab1a0b5c404241de5ff6b6a1
 backup_sha256: 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
 backup_integrity: ok
 manifest: release/octra-sqlite-0.3.1.json

@@ -18,7 +18,8 @@
 - Added `--read-only` for one-shot SQL execution.
 - Documented headless/server use, large restore, idempotent imports, concurrency,
   and migration guidance.
-- Kept the bundled Circle WASM unchanged from 0.3.0.
+- Rebuilt the bundled Circle WASM so query tail validation delegates to SQLite
+  instead of a contract-owned SQL comment parser.
 
 ## 0.3.0
 
