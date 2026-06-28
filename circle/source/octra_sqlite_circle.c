@@ -168,25 +168,6 @@ static int is_space(char ch) {
   return ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t' || ch == '\f';
 }
 
-static const char *skip_sql_tail(const char *tail) {
-  if (!tail) return tail;
-  for (;;) {
-    while (is_space(*tail)) ++tail;
-    if (tail[0] == '-' && tail[1] == '-') {
-      tail += 2;
-      while (*tail && *tail != '\n' && *tail != '\r') ++tail;
-      continue;
-    }
-    if (tail[0] == '/' && tail[1] == '*') {
-      tail += 2;
-      while (tail[0] && !(tail[0] == '*' && tail[1] == '/')) ++tail;
-      if (tail[0]) tail += 2;
-      continue;
-    }
-    return tail;
-  }
-}
-
 usize strspn(const char *s, const char *accept) {
   usize n = 0;
   for (; s[n]; ++n) {
@@ -1526,6 +1507,28 @@ static int append_typed_sql_value(sqlite3_stmt *stmt, int col) {
   return out_overflow ? 2 : 0;
 }
 
+static int reject_sql_tail_statement(sqlite3 *db, const char *tail, const char *detail) {
+  sqlite3_stmt *tail_stmt = 0;
+  int rc;
+  if (!tail) return 0;
+  rc = sqlite3_prepare_v2(db, tail, -1, &tail_stmt, 0);
+  if (rc != SQLITE_OK) {
+    if (tail_stmt) sqlite3_finalize(tail_stmt);
+    if (rc == SQLITE_AUTH) {
+      append_json_error("sqlite_single_query_required", detail);
+    } else {
+      append_json_error("sqlite_tail_prepare_failed", sqlite3_errmsg(db));
+    }
+    return 1;
+  }
+  if (tail_stmt) {
+    sqlite3_finalize(tail_stmt);
+    append_json_error("sqlite_single_query_required", detail);
+    return 1;
+  }
+  return 0;
+}
+
 static int run_sqlite_query(const char *sql) {
   sqlite3 *db = 0;
   sqlite3_stmt *stmt = 0;
@@ -1544,9 +1547,7 @@ static int run_sqlite_query(const char *sql) {
     sqlite3_close(db);
     return 1;
   }
-  tail = skip_sql_tail(tail);
-  if (tail && *tail) {
-    append_json_error("sqlite_single_query_required", "query accepts one read-only SQLite statement");
+  if (reject_sql_tail_statement(db, tail, "query accepts one read-only SQLite statement")) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return 1;
@@ -1625,9 +1626,7 @@ static int run_sqlite_query_typed(const char *sql) {
     sqlite3_close(db);
     return 1;
   }
-  tail = skip_sql_tail(tail);
-  if (tail && *tail) {
-    append_json_error("sqlite_single_query_required", "query accepts one read-only SQLite statement");
+  if (reject_sql_tail_statement(db, tail, "query accepts one read-only SQLite statement")) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
     return 1;

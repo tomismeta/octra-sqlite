@@ -60,6 +60,19 @@ fn dirty_page_buffer_remains_as_sqlite_write_stage() {
     assert!(CONTRACT.contains("make_manifest_key"));
 }
 
+#[test]
+fn query_tail_detection_uses_sqlite_prepare_not_a_comment_parser() {
+    assert!(!CONTRACT.contains("skip_sql_tail"));
+    assert!(CONTRACT.contains("reject_sql_tail_statement"));
+    assert!(CONTRACT.contains("sqlite_tail_prepare_failed"));
+    assert!(
+        CONTRACT
+            .matches("sqlite3_prepare_v2(db, tail, -1, &tail_stmt")
+            .count()
+            >= 1
+    );
+}
+
 fn define_value(name: &str) -> &'static str {
     CONTRACT
         .lines()

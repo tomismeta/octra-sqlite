@@ -6,14 +6,16 @@ and `octra-sqlite deploy` use that artifact by default.
 
 ## User Requirements
 
-- Rust stable with Cargo for the CLI.
-- The stock `sqlite3` CLI for `.dump`, `.fullschema`, and
-  `verify --integrity`.
+- Rust stable with Cargo for the CLI. `rustup stable` is recommended; distro
+  packages can lag behind the lockfile.
+- The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
+  `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured
   network.
 - Network access to the configured Octra RPC.
 
-Users do not need Docker, Python, WABT, WASI, or a C compiler.
+Users do not need Docker, Python, WABT, WASI, a C compiler, or local `sqlite3`
+for the cold start path.
 
 ## Builder Requirements
 
@@ -35,14 +37,14 @@ bash scripts/build-wasm.sh
 The current bundled Circle WASM artifact is:
 
 ```text
-compiler Homebrew clang version 22.1.8
+compiler clang version 22.1.0-wasi-sdk (https://github.com/llvm/llvm-project 4434dabb69916856b824f68a64b029c67175e532)
 sqlite_sha256 d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21
-code_bytes 609475
-code_hash 8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea
+code_bytes 609404
+code_hash 39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.3.0.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.3.1.json` and checked by
 `octra-sqlite status`.
 
 ## Optional Rebuild

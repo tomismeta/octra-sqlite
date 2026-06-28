@@ -25,7 +25,11 @@ use output::{
     hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
     OutputMode,
 };
-use portability::{backup_database, execute_sql_script, run_local_sqlite_integrity};
+use portability::{
+    backup_database, ensure_sql_text_fits, execute_sql_script, execute_sql_script_with_progress,
+    plan_sql_script, run_local_sqlite_integrity, submit_sql_script_no_wait, SqlBatchProgress,
+    SqlScriptExecution, SqlScriptPlan, MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
+};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
@@ -38,12 +42,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.0.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.1.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea";
-const EXPECTED_WASM_BYTES: usize = 609_475;
+    "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b";
+const EXPECTED_WASM_BYTES: usize = 609_404;
+const CREATE_ART_EXAMPLE: &str =
+    "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -53,12 +59,12 @@ Examples:
   octra-sqlite setup
   octra-sqlite status
   octra-sqlite config
-  octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"
-  octra-sqlite organization \".tables\"
-  octra-sqlite organization \".backup main organization.sqlite\"
-  octra-sqlite organization \".dump\" > organization.sql
+  octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"
+  octra-sqlite art \".tables\"
+  octra-sqlite art \".backup main art.sqlite\"
+  octra-sqlite art \".dump\" > art.sql
   octra-sqlite database list
-  octra-sqlite database info organization
+  octra-sqlite database info art
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -83,6 +89,12 @@ enum Commands {
     },
     /// Open a SQLite shell or run SQL against a database.
     Open(OpenArgs),
+    /// Restore SQL text into an existing database with chunked execution.
+    Restore(RestoreArgs),
+    /// Check SQL text for Octra SQLite script limits without writing.
+    Check(CheckArgs),
+    /// Show Octra SQLite limits and operational capabilities.
+    Limits(LimitsArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
@@ -99,18 +111,25 @@ enum Commands {
 #[command(after_long_help = "\
 Examples:
   octra-sqlite database list
-  octra-sqlite database info organization
-  octra-sqlite database use organization
-  octra-sqlite database set organization oct://devnet/oct...
+  octra-sqlite database info art
+  octra-sqlite database use art
+  octra-sqlite database set art oct://devnet/oct...
 ")]
 enum DatabaseCommand {
     /// List saved database names.
-    List,
+    List {
+        /// Print a stable JSON summary.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show the URI, network, Circle ID, and RPC for a database.
     Info {
         /// Database name, Circle ID, or oct:// database URI. Defaults to the current database.
         #[arg(value_name = "DATABASE")]
         database: Option<String>,
+        /// Print a stable JSON summary.
+        #[arg(long)]
+        json: bool,
     },
     /// Save a database name for an Octra database URI.
     Set {
@@ -189,6 +208,12 @@ struct OpenArgs {
     /// Print raw JSON instead of table or compact receipt output.
     #[arg(long)]
     json: bool,
+    /// Execute SQL from a file. Use - to read stdin.
+    #[arg(long = "sql-file", value_name = "FILE")]
+    sql_file: Option<PathBuf>,
+    /// Refuse to submit state-changing SQL.
+    #[arg(long)]
+    read_only: bool,
     /// SQL to run directly instead of opening the shell.
     sql: Vec<String>,
 }
@@ -235,7 +260,7 @@ struct NewArgs {
     #[arg(long)]
     sql: Option<String>,
     /// SQL file to run after creating the database.
-    #[arg(long)]
+    #[arg(long, alias = "sql-file")]
     read: Option<PathBuf>,
     /// Initialize with a built-in sample schema and rows.
     #[arg(long, value_name = "NAME")]
@@ -349,6 +374,9 @@ struct VerifyArgs {
     /// Back up to a temporary SQLite file and run local sqlite3 integrity_check.
     #[arg(long)]
     integrity: bool,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args)]
@@ -361,11 +389,50 @@ struct StatusArgs {
     /// Do not call Octra RPC; only inspect local checkout/config/wallet.
     #[arg(long)]
     skip_network: bool,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args)]
 struct ConfigArgs {
     /// Print raw JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct RestoreArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+    /// SQL dump/script to restore. Use - or omit to read stdin.
+    #[arg(long = "file", alias = "sql-file", value_name = "FILE")]
+    file: Option<PathBuf>,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct CheckArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+    /// SQL to check.
+    #[arg(long)]
+    sql: Option<String>,
+    /// SQL file to check. Use - to read stdin.
+    #[arg(long = "sql-file", alias = "file", value_name = "FILE")]
+    sql_file: Option<PathBuf>,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct LimitsArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+    /// Print a stable JSON summary.
     #[arg(long)]
     json: bool,
 }
@@ -401,6 +468,9 @@ pub fn run() -> Result<()> {
         Commands::New(args) => cmd_new(args),
         Commands::Database { command } => cmd_database(command),
         Commands::Open(args) => cmd_open(args),
+        Commands::Restore(args) => cmd_restore(args),
+        Commands::Check(args) => cmd_check(args),
+        Commands::Limits(args) => cmd_limits(args),
         Commands::Verify(args) => {
             let session = build_session(&args.target)?;
             verify(
@@ -408,6 +478,7 @@ pub fn run() -> Result<()> {
                 args.expected_hash.as_deref(),
                 args.write_smoke,
                 args.integrity,
+                args.json,
             )
         }
         Commands::Status(args) => cmd_status(args, "status"),
@@ -416,9 +487,9 @@ pub fn run() -> Result<()> {
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
-            println!("octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"");
-            println!("octra-sqlite organization \".tables\"");
-            println!("octra-sqlite status organization");
+            println!("{CREATE_ART_EXAMPLE}");
+            println!("octra-sqlite art \".tables\"");
+            println!("octra-sqlite status art");
             Ok(())
         }
     }
@@ -433,6 +504,9 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "database",
         "db",
         "open",
+        "restore",
+        "check",
+        "limits",
         "verify",
         "status",
         "config",
@@ -585,10 +659,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
+        print_field("create", CREATE_ART_EXAMPLE);
         print_field(
             "example",
             "octra-sqlite quickstart my_collections --sample remilia",
@@ -635,7 +706,9 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
 }
 
 fn cmd_new(args: NewArgs) -> Result<()> {
-    let config = load_config().unwrap_or_default();
+    let init_sql = collect_initializer_sql(&args)?;
+
+    let mut config = load_config().unwrap_or_default();
     let network = args
         .network
         .clone()
@@ -651,6 +724,18 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     };
     let control_session = build_control_session(&control_args, &network)?;
 
+    let funding_detail = if init_sql.is_empty() {
+        format!(
+            "requires funded wallet; create budget {} OU",
+            args.create_ou
+        )
+    } else {
+        format!(
+            "requires funded wallet; create budget {} OU plus initializer writes",
+            args.create_ou
+        )
+    };
+    print_field("funding", funding_detail);
     let created = create_circle(&control_session, &args, &network)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
     if args.no_name {
@@ -682,25 +767,21 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         }
     }
 
-    let mut init_sql = Vec::new();
-    if let Some(path) = &args.read {
-        init_sql
-            .push(fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?);
-    }
-    if let Some(sample) = &args.sample {
-        init_sql.push(sample_sql(sample)?);
-    }
-    if let Some(sql) = &args.sql {
-        init_sql.push(sql.clone());
-    }
-    if !args.sql_args.is_empty() {
-        init_sql.push(args.sql_args.join(" "));
-    }
-    if init_sql.is_empty() {
-        if let Some(sql) = read_stdin_sql()? {
-            init_sql.push(sql);
+    if !args.no_name {
+        if let Err(error) = save_new_database_alias(&args, &target_uri, &mut config) {
+            print_circle_recovery(
+                &args,
+                &target_uri,
+                "database alias was not saved after Circle creation",
+                false,
+            );
+            return Err(error.context("database alias save failed after Circle creation"));
         }
+        print_field("saved", "yes");
+    } else {
+        print_field("saved", "no");
     }
+
     if !init_sql.is_empty() {
         let session_args = TargetArgs {
             target: Some(target_uri.clone()),
@@ -710,30 +791,27 @@ fn cmd_new(args: NewArgs) -> Result<()> {
             private_key_b64: args.private_key_b64.clone(),
             public_key_b64: args.public_key_b64.clone(),
         };
-        let session = build_session(&session_args)?;
-        for sql in init_sql {
-            if args.no_wait {
-                let result = with_explorer(exec_sql(&session, &sql, true)?, &session);
-                print_exec_result(&result)?;
-            } else {
-                let statements = execute_sql_script(&session, &sql)?;
-                print_field("initializer", format!("{statements} statements"));
+        let session = match build_session(&session_args) {
+            Ok(session) => session,
+            Err(error) => {
+                print_circle_recovery(
+                    &args,
+                    &target_uri,
+                    "initializer session failed after Circle creation",
+                    !args.no_name,
+                );
+                return Err(error.context("initializer session failed after Circle creation"));
             }
+        };
+        if let Err(error) = run_initializer_sql(&session, &args, &init_sql) {
+            print_circle_recovery(
+                &args,
+                &target_uri,
+                "initializer failed after Circle creation",
+                !args.no_name,
+            );
+            return Err(error.context("initializer failed after Circle creation"));
         }
-    }
-
-    if !args.no_name {
-        let mut config = load_config().unwrap_or_default();
-        config
-            .databases
-            .insert(args.name.clone(), target_uri.clone());
-        if args.default || config.default_database.is_none() {
-            config.default_database = Some(args.name.clone());
-        }
-        write_config(&config)?;
-        print_field("saved", "yes");
-    } else {
-        print_field("saved", "no");
     }
 
     let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
@@ -744,6 +822,135 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
     print_field("status", format!("octra-sqlite status {followup_target}"));
     Ok(())
+}
+
+fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
+    let mut init_sql = Vec::new();
+    if let Some(path) = &args.read {
+        init_sql.push(read_sql_file_arg(path)?);
+    }
+    if let Some(sample) = &args.sample {
+        init_sql.push(sample_sql(sample)?);
+    }
+    if let Some(sql) = &args.sql {
+        init_sql.push(sql.clone());
+    }
+    if !args.sql_args.is_empty() {
+        init_sql.extend(args.sql_args.iter().cloned());
+    }
+    if init_sql.is_empty() {
+        if let Some(sql) = read_stdin_sql()? {
+            init_sql.push(sql);
+        }
+    }
+    Ok(init_sql)
+}
+
+fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -> Result<()> {
+    for sql in init_sql {
+        if args.no_wait {
+            let execution = submit_sql_script_no_wait(session, sql)?;
+            for result in execution.results {
+                let result = with_explorer(result, session);
+                print_exec_result(&result)?;
+            }
+            print_field(
+                "initializer",
+                format!("{} statements submitted", execution.statements),
+            );
+        } else {
+            let statements = execute_sql_script(session, sql)?;
+            print_field("initializer", format!("{statements} statements"));
+        }
+    }
+    Ok(())
+}
+
+fn save_new_database_alias(args: &NewArgs, target_uri: &str, config: &mut Config) -> Result<()> {
+    config
+        .databases
+        .insert(args.name.clone(), target_uri.to_string());
+    if args.default || config.default_database.is_none() {
+        config.default_database = Some(args.name.clone());
+    }
+    write_config(config)?;
+    Ok(())
+}
+
+fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved: bool) {
+    print_field("recovery", problem);
+    print_field(
+        "warning",
+        "initializer scripts may be partially applied; inspect before retrying",
+    );
+    print_field("uri", target_uri);
+    if saved {
+        print_field("saved", "yes");
+    } else {
+        print_field("saved", "no");
+        print_field(
+            "recover",
+            format!(
+                "octra-sqlite database set {} {}",
+                shell_quote(&args.name),
+                shell_quote(target_uri)
+            ),
+        );
+    }
+    let followup_target = if saved {
+        args.name.as_str()
+    } else {
+        target_uri
+    };
+    print_field(
+        "inspect",
+        format!("octra-sqlite {} \".tables\"", shell_quote(followup_target)),
+    );
+    print_field(
+        "open",
+        format!("octra-sqlite open {}", shell_quote(followup_target)),
+    );
+    if let Some(path) = &args.read {
+        let dot_command = format!(".read {}", dot_arg_quote(&path.to_string_lossy()));
+        print_field(
+            "retry",
+            format!(
+                "octra-sqlite {} {}",
+                shell_quote(followup_target),
+                shell_quote(&dot_command)
+            ),
+        );
+    } else {
+        print_field(
+            "retry",
+            "inspect first, then rerun the initializer SQL against the saved database",
+        );
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value.chars().all(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(ch, '_' | '-' | '.' | '/' | ':' | '@' | '=' | ',')
+        })
+    {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
+fn dot_arg_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':'))
+    {
+        value.to_string()
+    } else {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    }
 }
 
 fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) -> &'a str {
@@ -759,7 +966,7 @@ pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
 }
 
 fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
-    let mut report = StatusReport::default();
+    let mut report = StatusReport::new(label, args.json);
     let config_path = config_path()?;
     match load_config() {
         Ok(config) => {
@@ -886,34 +1093,67 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         print_field("next", "octra-sqlite database list");
     } else {
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
+        print_field("create", CREATE_ART_EXAMPLE);
     }
     Ok(())
 }
 
-#[derive(Default)]
 struct StatusReport {
+    label: String,
+    json: bool,
     failures: usize,
+    warnings: usize,
+    items: Vec<Value>,
 }
 
 impl StatusReport {
+    fn new(label: &str, json: bool) -> Self {
+        Self {
+            label: label.to_string(),
+            json,
+            failures: 0,
+            warnings: 0,
+            items: Vec::new(),
+        }
+    }
+
     fn ok(&mut self, label: &str, detail: impl AsRef<str>) {
-        print!("{}", format_status_line("ok", label, detail));
+        self.record("ok", label, detail);
     }
 
     fn warn(&mut self, label: &str, detail: impl AsRef<str>) {
-        print!("{}", format_status_line("warn", label, detail));
+        self.warnings += 1;
+        self.record("warn", label, detail);
     }
 
     fn fail(&mut self, label: &str, detail: impl AsRef<str>) {
         self.failures += 1;
-        print!("{}", format_status_line("fail", label, detail));
+        self.record("fail", label, detail);
+    }
+
+    fn record(&mut self, status: &str, label: &str, detail: impl AsRef<str>) {
+        let detail = detail.as_ref().to_string();
+        self.items.push(json!({
+            "status": status,
+            "label": label,
+            "detail": detail,
+        }));
+        if !self.json {
+            print!("{}", format_status_line(status, label, &detail));
+        }
     }
 
     fn finish(self, label: &str) -> Result<()> {
+        if self.json {
+            return print_json(&json!({
+                "ok": self.failures == 0,
+                "type": self.label,
+                "schema": "octra-sqlite.cli.v1",
+                "failures": self.failures,
+                "warnings": self.warnings,
+                "items": self.items,
+            }));
+        }
         if self.failures == 0 {
             println!("{} ready", dim(format!("{label}:")));
             Ok(())
@@ -1543,8 +1783,10 @@ fn base58_encode(bytes: &[u8]) -> String {
 fn cmd_database(command: DatabaseCommand) -> Result<()> {
     let mut config = load_config().unwrap_or_default();
     match command {
-        DatabaseCommand::List => print_database_list(&config),
-        DatabaseCommand::Info { database } => print_database_info(&config, database.as_deref())?,
+        DatabaseCommand::List { json } => print_database_list(&config, json)?,
+        DatabaseCommand::Info { database, json } => {
+            print_database_info(&config, database.as_deref(), json)?
+        }
         DatabaseCommand::Set { name, database } => {
             parse_target_uri(&database, &config)?;
             config.databases.insert(name.clone(), database.clone());
@@ -1576,14 +1818,31 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
     Ok(())
 }
 
-fn print_database_list(config: &Config) {
+fn print_database_list(config: &Config, json_mode: bool) -> Result<()> {
+    if json_mode {
+        let databases = config
+            .databases
+            .iter()
+            .map(|(name, uri)| {
+                json!({
+                    "name": name,
+                    "uri": uri,
+                    "default": config.default_database.as_deref() == Some(name),
+                })
+            })
+            .collect::<Vec<_>>();
+        return print_json(&json!({
+            "ok": true,
+            "type": "database_list",
+            "schema": "octra-sqlite.cli.v1",
+            "default_database": config.default_database,
+            "databases": databases,
+        }));
+    }
     if config.databases.is_empty() {
         println!("{}", dim("no databases"));
-        print_field(
-            "create",
-            "octra-sqlite new organization \"create table person(first_name text not null, last_name text not null);\"",
-        );
-        return;
+        print_field("create", CREATE_ART_EXAMPLE);
+        return Ok(());
     }
     println!("{}  name  uri", dim("default"));
     println!("{}", dim("-------  ----  ---"));
@@ -1595,15 +1854,32 @@ fn print_database_list(config: &Config) {
         };
         println!("{default_mark:<7}  {name}  {database}");
     }
+    Ok(())
 }
 
-fn print_database_info(config: &Config, database: Option<&str>) -> Result<()> {
+fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool) -> Result<()> {
     let requested = database
         .map(str::to_string)
         .or_else(|| config.default_database.clone())
         .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
     let saved_uri = config.databases.get(&requested);
     let target = resolve_target(&requested, config)?;
+    if json_mode {
+        return print_json(&json!({
+            "ok": true,
+            "type": "database_info",
+            "schema": "octra-sqlite.cli.v1",
+            "name": if saved_uri.is_some() { Some(requested.as_str()) } else { None },
+            "default": config.default_database.as_deref() == Some(requested.as_str()),
+            "database": {
+                "uri": canonical_database_uri(&target),
+                "raw": target.raw,
+                "network": target.network,
+                "circle": target.circle,
+                "rpc": target.rpc,
+            }
+        }));
+    }
     print_field(
         "name",
         if saved_uri.is_some() {
@@ -1642,15 +1918,145 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
     } else {
         OutputMode::Table
     };
+    if let Some(path) = &args.sql_file {
+        let sql = read_sql_file_arg(path)?;
+        return run_sql_input(&session, &sql, mode, true, args.read_only);
+    }
     if args.sql.is_empty() {
         if let Some(sql) = read_stdin_sql()? {
-            return run_one_sql(&session, &sql, mode, true);
+            return run_sql_input(&session, &sql, mode, true, args.read_only);
         }
         run_shell(session, mode)
     } else {
         let sql = args.sql.join(" ");
-        run_one_sql(&session, &sql, mode, true)
+        run_sql_input(&session, &sql, mode, true, args.read_only)
     }
+}
+
+fn cmd_restore(args: RestoreArgs) -> Result<()> {
+    let session = build_session(&args.target)?;
+    let sql = match args.file.as_deref() {
+        Some(path) => read_sql_file_arg(path)?,
+        None => read_stdin_sql()?.ok_or_else(|| anyhow!("restore requires --file or piped SQL"))?,
+    };
+    let plan = plan_sql_script(&sql)?;
+    if !args.json {
+        print_field("database", canonical_database_uri(session.target()));
+        print_field("statements", plan.executable_statements.to_string());
+        print_field("batches", plan.batches.to_string());
+        if plan.skipped_statements > 0 {
+            print_field(
+                "skipped",
+                format!("{} SQLite dump wrapper statements", plan.skipped_statements),
+            );
+        }
+        if plan.batches > 1 {
+            print_field(
+                "atomicity",
+                "each batch is atomic; the full restore can partially apply",
+            );
+        }
+    }
+    let mut progress_events = Vec::new();
+    let mut execution = execute_sql_script_with_progress(&session, &sql, false, |progress| {
+        if !args.json {
+            print_field("restore", format_progress(&progress));
+        }
+        progress_events.push(progress);
+    })?;
+    for result in &mut execution.results {
+        let raw = std::mem::take(result);
+        *result = with_explorer(raw, &session);
+    }
+    if args.json {
+        print_json(&restore_envelope(
+            &session,
+            &plan,
+            &execution,
+            &progress_events,
+        ))
+    } else {
+        print_field(
+            "complete",
+            format!(
+                "{} statements in {} batches",
+                execution.statements, execution.batches
+            ),
+        );
+        Ok(())
+    }
+}
+
+fn cmd_check(args: CheckArgs) -> Result<()> {
+    let sql = collect_check_sql(&args)?;
+    let plan = plan_sql_script(&sql)?;
+    let target = resolve_optional_target(&args.target)?;
+    let warnings = script_plan_warnings(&plan);
+    if args.json {
+        return print_json(&json!({
+            "ok": true,
+            "type": "check",
+            "schema": "octra-sqlite.cli.v1",
+            "syntax_checked": false,
+            "target": target,
+            "plan": script_plan_json(&plan),
+            "warnings": warnings,
+        }));
+    }
+    print_field("check", "ok");
+    print_field("syntax", "not checked; SQLite validates SQL when run");
+    if let Some(target) = target {
+        print_field("database", target["uri"].as_str().unwrap_or(""));
+    }
+    print_field("statements", plan.executable_statements.to_string());
+    print_field("batches", plan.batches.to_string());
+    print_field("max statement bytes", plan.max_statement_bytes.to_string());
+    for warning in warnings {
+        print_field("warning", warning);
+    }
+    Ok(())
+}
+
+fn cmd_limits(args: LimitsArgs) -> Result<()> {
+    let target = resolve_optional_target(&args.target)?;
+    let limits = limits_json(target.clone());
+    if args.json {
+        return print_json(&limits);
+    }
+    print_field("max SQL bytes", MAX_SQL_TEXT_BYTES.to_string());
+    print_field("batch target bytes", SQL_BATCH_TARGET_BYTES.to_string());
+    print_field("transactions", "one accepted exec is atomic");
+    print_field("user BEGIN/COMMIT", "unsupported across Octra writes");
+    print_field(
+        "restore",
+        "chunked; multi-batch restore can partially apply",
+    );
+    print_field("writes", "OSW1 owner write intent");
+    print_field("read-only", "client guard via --read-only");
+    if let Some(target) = target {
+        print_field("database", target["uri"].as_str().unwrap_or(""));
+        print_field("network", target["network"].as_str().unwrap_or(""));
+        print_field("circle", target["circle"].as_str().unwrap_or(""));
+    }
+    Ok(())
+}
+
+fn read_sql_file_arg(path: &Path) -> Result<String> {
+    if path == Path::new("-") {
+        let sql = read_stdin_sql()?.ok_or_else(|| anyhow!("stdin did not contain SQL"))?;
+        return Ok(sql);
+    }
+    fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))
+}
+
+fn collect_check_sql(args: &CheckArgs) -> Result<String> {
+    if let Some(path) = &args.sql_file {
+        return read_sql_file_arg(path);
+    }
+    if let Some(sql) = &args.sql {
+        return Ok(sql.clone());
+    }
+    read_stdin_sql()?.ok_or_else(|| anyhow!("check requires --sql, --sql-file, or piped SQL"))
 }
 
 fn read_stdin_sql() -> Result<Option<String>> {
@@ -1666,8 +2072,14 @@ fn read_stdin_sql() -> Result<Option<String>> {
     }
 }
 
-fn run_one_sql(session: &Session, sql: &str, mode: OutputMode, headers: bool) -> Result<()> {
-    run_one_sql_to(session, sql, mode, headers, None)
+fn run_sql_input(
+    session: &Session,
+    sql: &str,
+    mode: OutputMode,
+    headers: bool,
+    read_only: bool,
+) -> Result<()> {
+    run_one_sql_to(session, sql, mode, headers, None, read_only)
 }
 
 pub(super) fn run_one_sql_to(
@@ -1676,18 +2088,37 @@ pub(super) fn run_one_sql_to(
     mode: OutputMode,
     headers: bool,
     output: Option<&Path>,
+    read_only: bool,
 ) -> Result<()> {
     let trimmed = sql.trim();
     if trimmed.starts_with('.') && !trimmed.contains('\n') {
+        if read_only && write_dot_command(trimmed) {
+            bail!("read_only: dot command may write to the database");
+        }
         run_dot_command(session.clone(), mode, headers, output, trimmed)?;
         return Ok(());
     }
     if looks_like_sql_script(sql) {
-        return run_exec_sql_to(session, sql, mode, output);
+        if read_only {
+            bail!("read_only: multi-statement SQL scripts are not submitted in read-only mode");
+        }
+        return run_exec_script_to(session, sql, mode, output);
     }
+    ensure_sql_text_fits(sql)?;
     match query_typed(session, sql) {
-        Ok(result) => write_text(output, &format_result(&result, mode, headers)?),
-        Err(error) if sqlite_requires_exec(&error) => run_exec_sql_to(session, sql, mode, output),
+        Ok(result) => {
+            if mode == OutputMode::Json {
+                write_text(output, &format_json(&query_envelope(session, result))?)
+            } else {
+                write_text(output, &format_result(&result, mode, headers)?)
+            }
+        }
+        Err(error) if sqlite_requires_exec(&error) => {
+            if read_only {
+                bail!("read_only: SQL would write; remove --read-only to sign and submit it");
+            }
+            run_exec_sql_to(session, sql, mode, output)
+        }
         Err(error) => Err(error.into()),
     }
 }
@@ -1700,10 +2131,285 @@ fn run_exec_sql_to(
 ) -> Result<()> {
     let result = with_explorer(exec_sql(session, sql, false)?, session);
     if mode == OutputMode::Json {
-        write_text(output, &format_json(&result)?)
+        write_text(
+            output,
+            &format_json(&write_envelope(session, result, None))?,
+        )
     } else {
         write_text(output, &format_exec_result(&result)?)
     }
+}
+
+fn run_exec_script_to(
+    session: &Session,
+    sql: &str,
+    mode: OutputMode,
+    output: Option<&Path>,
+) -> Result<()> {
+    let plan = plan_sql_script(sql)?;
+    let mut progress_events = Vec::new();
+    let mut execution = execute_sql_script_with_progress(session, sql, false, |progress| {
+        progress_events.push(progress);
+    })?;
+    for result in &mut execution.results {
+        let raw = std::mem::take(result);
+        *result = with_explorer(raw, session);
+    }
+    if mode == OutputMode::Json {
+        write_text(
+            output,
+            &format_json(&script_envelope(
+                "write_script",
+                session,
+                &plan,
+                &execution,
+                &progress_events,
+            ))?,
+        )
+    } else {
+        let mut rendered = String::new();
+        for result in &execution.results {
+            rendered.push_str(&format_exec_result(result)?);
+        }
+        rendered.push_str(&format!(
+            "{} {} statements in {} batches\n",
+            dim("script:"),
+            execution.statements,
+            execution.batches
+        ));
+        write_text(output, &rendered)
+    }
+}
+
+fn write_dot_command(command: &str) -> bool {
+    let name = command
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(name.as_str(), ".read" | ".import")
+}
+
+fn format_progress(progress: &SqlBatchProgress) -> String {
+    format!(
+        "batch {}/{} statements {}..{} ({} statements, {} bytes)",
+        progress.batch_index,
+        progress.total_batches,
+        progress.start_statement,
+        progress.end_statement,
+        progress.statements,
+        progress.bytes
+    )
+}
+
+fn query_envelope(session: &Session, result: Value) -> Value {
+    json!({
+        "ok": true,
+        "type": "query",
+        "schema": "octra-sqlite.cli.v1",
+        "database": database_identity(session),
+        "columns": result.get("columns").cloned().unwrap_or_else(|| json!([])),
+        "rows": result.get("rows").cloned().unwrap_or_else(|| json!([])),
+        "row_count": result.get("row_count").cloned().unwrap_or_else(|| {
+            result
+                .get("rows")
+                .and_then(Value::as_array)
+                .map(|rows| json!(rows.len()))
+                .unwrap_or_else(|| json!(0))
+        }),
+        "result": result,
+    })
+}
+
+fn write_envelope(session: &Session, result: Value, statements: Option<usize>) -> Value {
+    let summary = write_result_summary(&result);
+    json!({
+        "ok": true,
+        "type": "write",
+        "schema": "octra-sqlite.cli.v1",
+        "database": database_identity(session),
+        "status": summary["status"].clone(),
+        "tx_hash": summary["tx_hash"].clone(),
+        "statements": statements,
+        "cost": summary["cost"].clone(),
+        "receipt": result.get("receipt").cloned().unwrap_or(Value::Null),
+        "result": result,
+    })
+}
+
+fn restore_envelope(
+    session: &Session,
+    plan: &SqlScriptPlan,
+    execution: &SqlScriptExecution,
+    progress: &[SqlBatchProgress],
+) -> Value {
+    script_envelope("restore", session, plan, execution, progress)
+}
+
+fn script_envelope(
+    envelope_type: &str,
+    session: &Session,
+    plan: &SqlScriptPlan,
+    execution: &SqlScriptExecution,
+    progress: &[SqlBatchProgress],
+) -> Value {
+    json!({
+        "ok": true,
+        "type": envelope_type,
+        "schema": "octra-sqlite.cli.v1",
+        "database": database_identity(session),
+        "plan": script_plan_json(plan),
+        "statements": execution.statements,
+        "batches": execution.batches,
+        "progress": progress.iter().map(progress_json).collect::<Vec<_>>(),
+        "writes": execution
+            .results
+            .iter()
+            .map(write_result_summary)
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn progress_json(progress: &SqlBatchProgress) -> Value {
+    json!({
+        "batch_index": progress.batch_index,
+        "total_batches": progress.total_batches,
+        "start_statement": progress.start_statement,
+        "end_statement": progress.end_statement,
+        "statements": progress.statements,
+        "bytes": progress.bytes,
+    })
+}
+
+fn write_result_summary(result: &Value) -> Value {
+    let receipt = result.get("receipt");
+    let success = receipt
+        .and_then(|receipt| receipt.get("success"))
+        .and_then(Value::as_bool);
+    let status = match success {
+        Some(true) => "confirmed",
+        Some(false) => "rejected",
+        None => result
+            .pointer("/result/status")
+            .and_then(Value::as_str)
+            .unwrap_or("submitted"),
+    };
+    json!({
+        "status": status,
+        "tx_hash": result.get("tx_hash").cloned().unwrap_or(Value::Null),
+        "tx_url": result.get("tx_url").cloned().unwrap_or(Value::Null),
+        "circle_url": result.get("circle_url").cloned().unwrap_or(Value::Null),
+        "cost": {
+            "ou": result.pointer("/result/ou_cost").cloned().unwrap_or(Value::Null),
+            "effort": receipt
+                .and_then(|receipt| receipt.get("effort"))
+                .cloned()
+                .unwrap_or(Value::Null),
+        }
+    })
+}
+
+fn script_plan_json(plan: &SqlScriptPlan) -> Value {
+    json!({
+        "source_bytes": plan.source_bytes,
+        "total_statements": plan.total_statements,
+        "executable_statements": plan.executable_statements,
+        "skipped_statements": plan.skipped_statements,
+        "batches": plan.batches,
+        "max_statement_bytes": plan.max_statement_bytes,
+        "max_payload_bytes": plan.max_payload_bytes,
+        "max_sql_bytes": MAX_SQL_TEXT_BYTES,
+        "batch_target_bytes": SQL_BATCH_TARGET_BYTES,
+    })
+}
+
+fn script_plan_warnings(plan: &SqlScriptPlan) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if plan.skipped_statements > 0 {
+        warnings.push(format!(
+            "{} SQLite dump wrapper statements will be skipped",
+            plan.skipped_statements
+        ));
+    }
+    if plan.batches > 1 {
+        warnings.push("multi-batch restore can partially apply; make SQL idempotent".to_string());
+    }
+    if plan.skipped_statements > 0 {
+        warnings.push("SQLite dump transaction wrappers are stripped before restore".to_string());
+    }
+    warnings
+}
+
+fn database_identity(session: &Session) -> Value {
+    let target = session.target();
+    json!({
+        "uri": canonical_database_uri(target),
+        "raw": &target.raw,
+        "network": &target.network,
+        "circle": &target.circle,
+        "rpc": &target.rpc,
+        "wallet": session.caller(),
+    })
+}
+
+fn canonical_database_uri(target: &Target) -> String {
+    format!("oct://{}/{}", target.network, target.circle)
+}
+
+fn resolve_optional_target(args: &TargetArgs) -> Result<Option<Value>> {
+    let explicit = args.target.is_some();
+    let config = match load_config() {
+        Ok(config) => config,
+        Err(error) if explicit => return Err(error).context("loading config to resolve database"),
+        Err(_) => return Ok(None),
+    };
+    let requested = args
+        .target
+        .clone()
+        .or_else(|| config.default_database.clone())
+        .or_else(|| env::var("OCTRA_SQLITE_DATABASE").ok())
+        .or_else(|| env::var("OCTRA_SQLITE_TARGET").ok())
+        .or_else(|| env::var("OCTRA_CIRCLE_ID").ok());
+    let Some(requested) = requested else {
+        return Ok(None);
+    };
+    let target = match resolve_target(&requested, &config) {
+        Ok(target) => target,
+        Err(error) if explicit => return Err(error).context("resolving database"),
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(json!({
+        "requested": requested,
+        "uri": canonical_database_uri(&target),
+        "raw": target.raw,
+        "network": target.network,
+        "circle": target.circle,
+        "rpc": target.rpc,
+    })))
+}
+
+fn limits_json(target: Option<Value>) -> Value {
+    json!({
+        "ok": true,
+        "type": "limits",
+        "schema": "octra-sqlite.cli.v1",
+        "target": target,
+        "sql": {
+            "max_sql_bytes": MAX_SQL_TEXT_BYTES,
+            "batch_target_bytes": SQL_BATCH_TARGET_BYTES,
+            "input": ["argument", "stdin", "--sql-file", ".read", "restore"],
+        },
+        "transactions": {
+            "exec_atomicity": "one accepted exec is atomic",
+            "user_begin_commit": false,
+            "multi_batch_atomic": false,
+            "restore_partial_apply": true,
+        },
+        "auth": {
+            "write_model": "OSW1 owner write intent",
+            "read_only_guard": "client-side --read-only",
+        }
+    })
 }
 
 pub(super) fn format_schema_result(result: &Value) -> Result<String> {
@@ -1968,7 +2674,11 @@ pub(super) fn verify(
     expected_hash: Option<&str>,
     write_smoke: bool,
     integrity: bool,
+    json_mode: bool,
 ) -> Result<()> {
+    if json_mode {
+        return verify_json(session, expected_hash, write_smoke, integrity);
+    }
     print_field("database", &session.target().raw);
     print_field(
         "circle",
@@ -2096,6 +2806,94 @@ insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('C
         );
     }
     Ok(())
+}
+
+fn verify_json(
+    session: &Session,
+    expected_hash: Option<&str>,
+    write_smoke: bool,
+    integrity: bool,
+) -> Result<()> {
+    let info = program_info(session)?;
+    let hash = info
+        .get("code_hash")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
+    let expected = expected_hash.unwrap_or(EXPECTED_WASM_SHA256);
+    let mut program_ok = hash == expected;
+    let mut personalized_hash = None;
+    if !program_ok && expected == EXPECTED_WASM_SHA256 {
+        personalized_hash = personalized_wasm_hash(session)?;
+        program_ok = personalized_hash.as_deref() == Some(hash);
+    }
+    if !program_ok {
+        bail!("deployed code hash {hash} does not match expected {expected}");
+    }
+
+    let storage = view(session, "storage_info", vec![])?;
+    let auth = auth_info(session).ok().map(|auth| {
+        json!({
+            "configured": auth.configured,
+            "owner_pubkey": auth.owner_pubkey,
+            "db_id": auth.db_id,
+            "owner_sequence": auth.owner_sequence,
+        })
+    });
+    let sqlite_version = query_typed(session, "select sqlite_version() as sqlite_version;")?;
+    let schema = view(session, "schema_typed", vec![])?;
+    let tables = query_typed(
+        session,
+        "select name from sqlite_master where type='table' order by name;",
+    )?;
+    let write_smoke_result = if write_smoke {
+        let result = with_explorer(exec_sql(
+            session,
+            "create table if not exists octra_sqlite_verify(first_name text not null, last_name text not null);
+delete from octra_sqlite_verify;
+insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');",
+            false,
+        )?, session);
+        Some(write_envelope(session, result, Some(3)))
+    } else {
+        None
+    };
+    let integrity_result = if integrity {
+        let path = env::temp_dir().join(format!(
+            "octra-sqlite-integrity-{}-{}.sqlite",
+            session.target().circle,
+            std::process::id()
+        ));
+        let summary = backup_database(session, &path)?;
+        let result = run_local_sqlite_integrity(&path)?;
+        let _ = fs::remove_file(&path);
+        Some(json!({
+            "result": result,
+            "bytes": summary.bytes,
+            "pages": summary.pages,
+            "generation": summary.generation,
+            "sha256": summary.sha256,
+        }))
+    } else {
+        None
+    };
+    print_json(&json!({
+        "ok": true,
+        "type": "verify",
+        "schema": "octra-sqlite.cli.v1",
+        "database": database_identity(session),
+        "program": {
+            "info": info,
+            "expected_hash": expected,
+            "personalized_hash": personalized_hash,
+        },
+        "storage": storage,
+        "auth": auth,
+        "sqlite_version": sqlite_version,
+        "schema_rows": schema,
+        "tables": tables,
+        "write_smoke": write_smoke_result,
+        "integrity": integrity_result,
+    }))
 }
 
 fn cmd_deploy(args: DeployArgs) -> Result<()> {
@@ -2283,8 +3081,9 @@ mod tests {
             Cli::try_parse_from(["octra-sqlite", "database", "info", "organization"]).unwrap();
         match cli.command {
             Commands::Database { command } => match command {
-                DatabaseCommand::Info { database } => {
+                DatabaseCommand::Info { database, json } => {
                     assert_eq!(database.as_deref(), Some("organization"));
+                    assert!(!json);
                 }
                 _ => panic!("expected database info command"),
             },
@@ -2296,7 +3095,10 @@ mod tests {
     fn status_and_config_are_public_commands() {
         let status = Cli::try_parse_from(["octra-sqlite", "status", "--skip-network"]).unwrap();
         match status.command {
-            Commands::Status(args) => assert!(args.skip_network),
+            Commands::Status(args) => {
+                assert!(args.skip_network);
+                assert!(!args.json);
+            }
             _ => panic!("expected status command"),
         }
 
@@ -2304,6 +3106,48 @@ mod tests {
         match config.command {
             Commands::Config(args) => assert!(args.json),
             _ => panic!("expected config command"),
+        }
+    }
+
+    #[test]
+    fn restore_check_and_limits_are_public_commands() {
+        let restore = Cli::try_parse_from([
+            "octra-sqlite",
+            "restore",
+            "art",
+            "--file",
+            "dump.sql",
+            "--json",
+        ])
+        .unwrap();
+        match restore.command {
+            Commands::Restore(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert_eq!(args.file.as_deref(), Some(Path::new("dump.sql")));
+                assert!(args.json);
+            }
+            _ => panic!("expected restore command"),
+        }
+
+        let check =
+            Cli::try_parse_from(["octra-sqlite", "check", "art", "--sql-file", "-", "--json"])
+                .unwrap();
+        match check.command {
+            Commands::Check(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert_eq!(args.sql_file.as_deref(), Some(Path::new("-")));
+                assert!(args.json);
+            }
+            _ => panic!("expected check command"),
+        }
+
+        let limits = Cli::try_parse_from(["octra-sqlite", "limits", "art", "--json"]).unwrap();
+        match limits.command {
+            Commands::Limits(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert!(args.json);
+            }
+            _ => panic!("expected limits command"),
         }
     }
 
@@ -2369,6 +3213,37 @@ insert into person values (1);",
         assert!(statements[1].contains("insert into trigger_log"));
         assert!(statements[1].contains("case when"));
         assert!(statements[2].starts_with("insert into person"));
+    }
+
+    #[test]
+    fn sql_script_splitter_handles_sqlite_dump_style_trigger_fixture() {
+        let dump = "PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE artist(
+  id integer primary key,
+  name text not null
+);
+CREATE TABLE audit(
+  artist_id integer not null,
+  note text not null
+);
+CREATE TRIGGER artist_ai after insert on artist BEGIN
+  INSERT INTO audit VALUES(new.id, 'created; yes');
+  SELECT CASE WHEN new.name LIKE 'P%' THEN 'modern;ok' ELSE 'classic;ok' END;
+END;
+INSERT INTO artist VALUES(1,'Monet');
+COMMIT;";
+        let statements = portability::split_sql_statements(dump);
+        assert_eq!(statements.len(), 7);
+        assert!(portability::should_skip_import_wrapper(&statements[0]));
+        assert!(portability::should_skip_import_wrapper(&statements[1]));
+        assert!(statements[5].starts_with("INSERT INTO artist"));
+        assert!(portability::should_skip_import_wrapper(&statements[6]));
+        let trigger = &statements[4];
+        assert!(trigger.starts_with("CREATE TRIGGER artist_ai"));
+        assert!(trigger.contains("'created; yes'"));
+        assert!(trigger.contains("'modern;ok'"));
+        assert!(trigger.trim_end().ends_with("END;"));
     }
 
     #[test]
@@ -2498,12 +3373,20 @@ COMMIT;",
             "new",
             "my-db",
             "create table people(first_name text);",
+            "insert into people values ('Ada');",
         ])
         .unwrap();
         match cli.command {
             Commands::New(args) => {
                 assert_eq!(args.name, "my-db");
-                assert_eq!(args.sql_args, vec!["create table people(first_name text);"]);
+                assert_eq!(
+                    args.sql_args,
+                    vec![
+                        "create table people(first_name text);",
+                        "insert into people values ('Ada');"
+                    ]
+                );
+                assert_eq!(collect_initializer_sql(&args).unwrap(), args.sql_args);
                 assert!(args.wasm.is_none());
             }
             _ => panic!("expected new command"),
@@ -2533,6 +3416,19 @@ COMMIT;",
             new_followup_target("organization", "oct://devnet/octABC", false),
             "organization"
         );
+    }
+
+    #[test]
+    fn recovery_command_arguments_are_shell_safe() {
+        assert_eq!(shell_quote("art"), "art");
+        assert_eq!(shell_quote("my art"), "'my art'");
+        assert_eq!(shell_quote("weird'name"), "'weird'\"'\"'name'");
+        assert_eq!(dot_arg_quote("schema.sql"), "schema.sql");
+        assert_eq!(
+            dot_arg_quote("schema files/init.sql"),
+            "\"schema files/init.sql\""
+        );
+        assert_eq!(dot_arg_quote("schema\"file.sql"), "\"schema\"\"file.sql\"");
     }
 
     #[test]

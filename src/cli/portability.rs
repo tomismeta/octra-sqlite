@@ -12,9 +12,49 @@ use crate::client::low_level::{exec_sql, view, Session};
 
 use super::BackupSummary;
 
-const MAX_SQL_TEXT_BYTES: usize = 8_191;
-const SQL_BATCH_TARGET_BYTES: usize = 7_500;
+pub(super) const MAX_SQL_TEXT_BYTES: usize = 8_191;
+pub(super) const SQL_BATCH_TARGET_BYTES: usize = 7_500;
 const BACKUP_RETRIES: usize = 2;
+
+pub(super) struct SqlScriptExecution {
+    pub statements: usize,
+    pub batches: usize,
+    pub results: Vec<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SqlScriptPlan {
+    pub source_bytes: usize,
+    pub total_statements: usize,
+    pub executable_statements: usize,
+    pub skipped_statements: usize,
+    pub batches: usize,
+    pub max_statement_bytes: usize,
+    pub max_payload_bytes: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SqlBatchProgress {
+    pub batch_index: usize,
+    pub total_batches: usize,
+    pub start_statement: usize,
+    pub end_statement: usize,
+    pub statements: usize,
+    pub bytes: usize,
+}
+
+struct ScriptStatement {
+    index: usize,
+    sql: String,
+}
+
+struct ScriptBatch {
+    sql: String,
+    start_statement: usize,
+    end_statement: usize,
+    statements: usize,
+    bytes: usize,
+}
 
 pub(super) fn backup_database(session: &Session, path: &Path) -> Result<BackupSummary> {
     let mut last_error = None;
@@ -270,65 +310,90 @@ fn quote_identifier(name: &str) -> String {
 }
 
 pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
-    let statements = split_sql_statements(sql);
-    for statement in &statements {
-        ensure_sql_statement_size(statement)?;
-    }
-    if statements.is_empty() {
-        return Ok(0);
-    }
-    if sql.trim().len() < SQL_BATCH_TARGET_BYTES {
-        let script = sql_script_for_single_exec(&statements);
-        if script.trim().is_empty() {
-            return Ok(0);
-        }
-        ensure_exec_payload_size(&script)?;
-        exec_sql(session, &script, false)?;
-        return Ok(statements
+    Ok(execute_sql_script_with_progress(session, sql, false, |_| {})?.statements)
+}
+
+pub(super) fn submit_sql_script_no_wait(
+    session: &Session,
+    sql: &str,
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_progress(session, sql, true, |_| {})
+}
+
+pub(super) fn plan_sql_script(sql: &str) -> Result<SqlScriptPlan> {
+    let statements = planned_statements(sql)?;
+    let batches = script_batches(&statements)?;
+    Ok(SqlScriptPlan {
+        source_bytes: sql.len(),
+        total_statements: split_sql_statements(sql).len(),
+        executable_statements: statements.len(),
+        skipped_statements: split_sql_statements(sql)
             .iter()
-            .filter(|statement| !should_skip_import_wrapper(statement))
-            .count());
+            .filter(|statement| should_skip_import_wrapper(statement))
+            .count(),
+        batches: batches.len(),
+        max_statement_bytes: statements
+            .iter()
+            .map(|statement| statement.sql.len())
+            .max()
+            .unwrap_or(0),
+        max_payload_bytes: batches.iter().map(|batch| batch.bytes).max().unwrap_or(0),
+    })
+}
+
+pub(super) fn execute_sql_script_with_progress(
+    session: &Session,
+    sql: &str,
+    no_wait: bool,
+    mut progress: impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    let statements = planned_statements(sql)?;
+    let batches = script_batches(&statements)?;
+    if batches.is_empty() {
+        return Ok(SqlScriptExecution {
+            statements: 0,
+            batches: 0,
+            results: Vec::new(),
+        });
     }
-    let mut batch = String::new();
+    let mut results = Vec::new();
+    let total_batches = batches.len();
     let mut executed = 0usize;
-    for statement in statements {
-        if should_skip_import_wrapper(&statement) {
-            continue;
-        }
-        let candidate_len = batch.len() + statement.len() + 1;
-        if !batch.is_empty() && candidate_len >= SQL_BATCH_TARGET_BYTES {
-            ensure_exec_payload_size(&batch)?;
-            exec_sql(session, &batch, false).context(
-                "executing SQL script batch; large .read files are applied in batches on Octra",
-            )?;
-            batch.clear();
-        }
-        if statement.len() >= SQL_BATCH_TARGET_BYTES {
-            ensure_exec_payload_size(&statement)?;
-            exec_sql(session, &statement, false).context(
-                "executing SQL script statement; large .read files are applied in batches on Octra",
-            )?;
-            executed += 1;
-            continue;
-        }
-        batch.push_str(&statement);
-        if !batch.ends_with(';') {
-            batch.push(';');
-        }
-        batch.push('\n');
-        executed += 1;
+    for (offset, batch) in batches.iter().enumerate() {
+        let progress_event = SqlBatchProgress {
+            batch_index: offset + 1,
+            total_batches,
+            start_statement: batch.start_statement,
+            end_statement: batch.end_statement,
+            statements: batch.statements,
+            bytes: batch.bytes,
+        };
+        progress(progress_event.clone());
+        let result = exec_sql(session, &batch.sql, no_wait).with_context(|| {
+            format!(
+                "executing SQL script batch {} of {}; statements {}..{}",
+                offset + 1,
+                total_batches,
+                batch.start_statement,
+                batch.end_statement
+            )
+        })?;
+        results.push(result);
+        executed += batch.statements;
     }
-    if !batch.trim().is_empty() {
-        ensure_exec_payload_size(&batch)?;
-        exec_sql(session, &batch, false).context(
-            "executing SQL script batch; large .read files are applied in batches on Octra",
-        )?;
-    }
-    Ok(executed)
+    Ok(SqlScriptExecution {
+        statements: executed,
+        batches: total_batches,
+        results,
+    })
 }
 
 fn ensure_sql_statement_size(statement: &str) -> Result<()> {
     ensure_sql_len("SQL statement", statement.len())
+}
+
+pub(super) fn ensure_sql_text_fits(sql: &str) -> Result<()> {
+    ensure_sql_statement_size(sql)
 }
 
 fn ensure_exec_payload_size(sql: &str) -> Result<()> {
@@ -348,27 +413,44 @@ pub(super) fn should_skip_import_wrapper(statement: &str) -> bool {
     if should_skip_foreign_keys_pragma(statement) {
         return true;
     }
-    let trimmed = statement
-        .trim()
-        .trim_end_matches(';')
-        .trim()
-        .to_ascii_lowercase();
-    trimmed == "begin"
-        || trimmed == "begin transaction"
-        || trimmed == "commit"
-        || trimmed == "end"
-        || trimmed == "rollback"
+    let trimmed = normalized_sql_statement(statement);
+    trimmed == "begin transaction" || trimmed == "commit"
 }
 
 fn should_skip_foreign_keys_pragma(statement: &str) -> bool {
-    let trimmed = statement
-        .trim()
-        .trim_end_matches(';')
-        .trim()
-        .to_ascii_lowercase();
+    let trimmed = normalized_sql_statement(statement);
     trimmed.starts_with("pragma foreign_keys")
 }
 
+fn normalized_sql_statement(statement: &str) -> String {
+    statement
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn ensure_supported_restore_statement(statement: &str) -> Result<()> {
+    let trimmed = normalized_sql_statement(statement);
+    let unsupported = trimmed == "rollback"
+        || trimmed.starts_with("rollback ")
+        || trimmed == "end"
+        || trimmed.starts_with("end ")
+        || (trimmed.starts_with("commit ") && trimmed != "commit")
+        || trimmed == "savepoint"
+        || trimmed.starts_with("savepoint ")
+        || trimmed == "release"
+        || trimmed.starts_with("release ")
+        || (trimmed.starts_with("begin") && trimmed != "begin transaction");
+    if unsupported {
+        bail!(
+            "transactions_not_supported: restore only strips SQLite dump wrappers (BEGIN TRANSACTION, COMMIT, PRAGMA foreign_keys); unsupported transaction control statement: {statement}"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub(super) fn sql_script_for_single_exec(statements: &[String]) -> String {
     let mut script = String::new();
     for statement in statements {
@@ -382,6 +464,99 @@ pub(super) fn sql_script_for_single_exec(statements: &[String]) -> String {
         script.push('\n');
     }
     script
+}
+
+fn planned_statements(sql: &str) -> Result<Vec<ScriptStatement>> {
+    let mut statements = Vec::new();
+    for (offset, statement) in split_sql_statements(sql).into_iter().enumerate() {
+        ensure_sql_statement_size(&statement)
+            .with_context(|| format!("statement {}", offset + 1))?;
+        ensure_supported_restore_statement(&statement)
+            .with_context(|| format!("statement {}", offset + 1))?;
+        if should_skip_import_wrapper(&statement) {
+            continue;
+        }
+        statements.push(ScriptStatement {
+            index: offset + 1,
+            sql: statement,
+        });
+    }
+    Ok(statements)
+}
+
+fn script_batches(statements: &[ScriptStatement]) -> Result<Vec<ScriptBatch>> {
+    let mut batches = Vec::new();
+    let mut batch = String::new();
+    let mut start_statement = 0usize;
+    let mut end_statement = 0usize;
+    let mut batch_statements = 0usize;
+
+    for statement in statements {
+        let rendered = render_statement_for_batch(&statement.sql);
+        if !batch.is_empty() && batch.len() + rendered.len() >= SQL_BATCH_TARGET_BYTES {
+            push_script_batch(
+                &mut batches,
+                std::mem::take(&mut batch),
+                start_statement,
+                end_statement,
+                batch_statements,
+            )?;
+            start_statement = 0;
+            end_statement = 0;
+            batch_statements = 0;
+        }
+        if rendered.len() >= SQL_BATCH_TARGET_BYTES {
+            push_script_batch(&mut batches, rendered, statement.index, statement.index, 1)?;
+            continue;
+        }
+        if batch.is_empty() {
+            start_statement = statement.index;
+        }
+        end_statement = statement.index;
+        batch_statements += 1;
+        batch.push_str(&rendered);
+    }
+    if !batch.trim().is_empty() {
+        push_script_batch(
+            &mut batches,
+            batch,
+            start_statement,
+            end_statement,
+            batch_statements,
+        )?;
+    }
+    Ok(batches)
+}
+
+fn push_script_batch(
+    batches: &mut Vec<ScriptBatch>,
+    sql: String,
+    start_statement: usize,
+    end_statement: usize,
+    statements: usize,
+) -> Result<()> {
+    ensure_exec_payload_size(&sql)?;
+    batches.push(ScriptBatch {
+        bytes: sql.len(),
+        sql,
+        start_statement,
+        end_statement,
+        statements,
+    });
+    Ok(())
+}
+
+fn render_statement_for_batch(statement: &str) -> String {
+    let trimmed = statement.trim();
+    if trimmed.len() >= SQL_BATCH_TARGET_BYTES {
+        return trimmed.to_string();
+    }
+    let mut out = trimmed.to_string();
+    if !out.ends_with(';') {
+        out.push(';');
+    }
+    out.push('\n');
+    out
 }
 
 pub(super) fn split_sql_statements(sql: &str) -> Vec<String> {
@@ -698,6 +873,8 @@ fn parse_csv_records(text: &str) -> Result<Vec<Vec<String>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::process::Command as ProcessCommand;
 
     #[test]
     fn sql_statement_size_limit_is_explicit() {
@@ -714,10 +891,119 @@ mod tests {
         let statements = vec!["x;".to_string(); 3_749];
         let script = sql_script_for_single_exec(&statements);
         assert!(script.len() > MAX_SQL_TEXT_BYTES);
-        let error = ensure_exec_payload_size(&script)
-            .unwrap_err()
-            .to_string();
+        let error = ensure_exec_payload_size(&script).unwrap_err().to_string();
         assert!(error.contains("SQL payload"));
+    }
+
+    #[test]
+    fn script_plan_skips_dump_wrappers_and_counts_batches() {
+        let sql = "BEGIN TRANSACTION;
+create table artist(id integer primary key, name text not null);
+insert into artist(name) values ('Monet');
+COMMIT;";
+        let plan = plan_sql_script(sql).unwrap();
+        assert_eq!(plan.total_statements, 4);
+        assert_eq!(plan.executable_statements, 2);
+        assert_eq!(plan.skipped_statements, 2);
+        assert_eq!(plan.batches, 1);
+        assert!(plan.max_payload_bytes > 0);
+    }
+
+    #[test]
+    fn script_plan_rejects_rollback_and_savepoints() {
+        let rollback = "BEGIN TRANSACTION;
+insert into artist(name) values ('Monet');
+ROLLBACK;";
+        let error = format!("{:#}", plan_sql_script(rollback).unwrap_err());
+        assert!(error.contains("transactions_not_supported"));
+        assert!(error.contains("statement 3"));
+
+        let savepoint = "SAVEPOINT load;
+insert into artist(name) values ('Monet');
+RELEASE load;";
+        let error = format!("{:#}", plan_sql_script(savepoint).unwrap_err());
+        assert!(error.contains("transactions_not_supported"));
+        assert!(error.contains("statement 1"));
+    }
+
+    #[test]
+    fn script_plan_rejects_bare_begin() {
+        let error = format!(
+            "{:#}",
+            plan_sql_script("BEGIN; insert into artist(name) values ('Monet'); COMMIT;")
+                .unwrap_err()
+        );
+        assert!(error.contains("transactions_not_supported"));
+        assert!(error.contains("statement 1"));
+    }
+
+    #[test]
+    fn script_plan_rejects_commit_transaction() {
+        let error = format!(
+            "{:#}",
+            plan_sql_script(
+                "BEGIN TRANSACTION; insert into artist(name) values ('Monet'); COMMIT TRANSACTION;",
+            )
+            .unwrap_err()
+        );
+        assert!(error.contains("transactions_not_supported"));
+        assert!(error.contains("statement 3"));
+    }
+
+    #[test]
+    fn splitter_round_trips_real_sqlite_dump_when_available() -> Result<()> {
+        if ProcessCommand::new("sqlite3")
+            .arg("-version")
+            .output()
+            .is_err()
+        {
+            eprintln!("sqlite3 not installed; skipping splitter conformance smoke");
+            return Ok(());
+        }
+
+        let dir =
+            std::env::temp_dir().join(format!("octra-sqlite-splitter-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)?;
+        let source = dir.join("source.sqlite");
+        let restored = dir.join("restored.sqlite");
+        let seed = "create table person(id integer primary key, name text not null);
+create table audit(person_id integer not null, note text not null);
+create trigger person_audit after insert on person begin
+  insert into audit(person_id, note) values (new.id, 'created; ok');
+end;
+insert into person(name) values ('Ada; Lovelace'),('Grace Hopper');";
+
+        assert!(ProcessCommand::new("sqlite3")
+            .arg(&source)
+            .arg(seed)
+            .status()?
+            .success());
+        let dump = ProcessCommand::new("sqlite3")
+            .arg(&source)
+            .arg(".dump")
+            .output()?;
+        assert!(dump.status.success());
+        let dump = String::from_utf8(dump.stdout)?;
+        let statements = split_sql_statements(&dump);
+        assert!(statements.iter().any(|sql| sql.contains("CREATE TRIGGER")));
+        assert!(statements.iter().any(|sql| sql.contains("created; ok")));
+
+        let split_dump = dir.join("split.sql");
+        fs::write(&split_dump, statements.join("\n"))?;
+        assert!(ProcessCommand::new("sqlite3")
+            .arg(&restored)
+            .arg(format!(".read {}", split_dump.display()))
+            .status()?
+            .success());
+        let integrity = ProcessCommand::new("sqlite3")
+            .arg(&restored)
+            .arg("pragma integrity_check;")
+            .output()?;
+        assert!(integrity.status.success());
+        assert_eq!(String::from_utf8(integrity.stdout)?.trim(), "ok");
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
     }
 
     #[test]

@@ -911,6 +911,23 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         let trailing_block_comment =
             contract.call_query("query_typed", &["select /* ; */ 1 as one; /* trailing */"])?;
         assert!(trailing_block_comment.starts_with("OSR1:"));
+        let second_statement =
+            json_response(&contract.call_query("query_typed", &["select 1 as one; select 2;"])?);
+        assert_eq!(second_statement["ok"], false);
+        assert_eq!(second_statement["error"], "sqlite_single_query_required");
+        let second_write_statement = json_response(&contract.call_query(
+            "query_typed",
+            &["select 1 as one; insert into people(first_name) values ('Mallory');"],
+        )?);
+        assert_eq!(second_write_statement["ok"], false);
+        assert_eq!(
+            second_write_statement["error"],
+            "sqlite_single_query_required"
+        );
+        let malformed_tail =
+            json_response(&contract.call_query("query_typed", &["select 1 as one; slect 2;"])?);
+        assert_eq!(malformed_tail["ok"], false);
+        assert_eq!(malformed_tail["error"], "sqlite_tail_prepare_failed");
         let denied = json_response(
             &contract.call_query("query", &["insert into people(first_name) values ('Ada');"])?,
         );

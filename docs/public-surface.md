@@ -19,9 +19,9 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite new organization "create table person(first_name text not null, last_name text not null);"
-octra-sqlite organization ".tables"
-octra-sqlite organization "select * from person;"
+octra-sqlite new art "create table artist(id integer primary key, name text not null);"
+octra-sqlite art ".tables"
+octra-sqlite art "select * from artist;"
 ```
 
 The reference configurable database creation path is:
@@ -31,6 +31,9 @@ octra-sqlite quickstart my_collections --sample remilia
 octra-sqlite new DATABASE
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
+octra-sqlite restore DATABASE --file dump.sql
+octra-sqlite check DATABASE --sql-file dump.sql
+octra-sqlite limits DATABASE
 ```
 
 `quickstart` is a thin opt-in convenience layer over `new`: it creates a new
@@ -56,6 +59,8 @@ addition to the default SQL hash event.
 They should stay expressive enough that users do not need to inspect
 `~/.octra/sqlite.json`, transaction JSON, or explorer pages for the common path.
 `config` shows the active RPC/explorer plus all bundled network profiles.
+For automation, use `--json` on non-interactive commands and prefer full
+`oct://NETWORK/<circle>` URIs over local database names.
 
 ## Public
 
@@ -85,7 +90,9 @@ They should stay expressive enough that users do not need to inspect
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
 - `docs/spec/osr1.md`: typed result codec.
 - `docs/spec/osw1.md`: OSW1 owner write intent frame.
-- `release/octra-sqlite-0.3.0.json`: release manifest for the bundled Circle
+- `docs/operations.md`: large restore, limits, atomicity, and migration
+  guidance.
+- `release/octra-sqlite-0.3.1.json`: release manifest for the bundled Circle
   WASM and published network-specific deployment.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

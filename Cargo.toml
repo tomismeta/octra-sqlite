@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT"
 description = "Real SQLite inside an Octra Circle, with a Rust CLI and client library"
@@ -17,9 +17,18 @@ include = [
     "/circle/source/octra_sqlite_circle.c",
     "/circle/wasm/octra_sqlite_circle.wasm",
     "/config/defaults.json",
+    "/docs/headless.md",
+    "/docs/operations.md",
+    "/docs/public-surface.md",
+    "/docs/spec/**",
+    "/docs/storage-model.md",
+    "/docs/toolchain.md",
+    "/examples/README.md",
+    "/examples/artists.sql",
     "/examples/remilia-collections.sql",
     "/examples/remilia-read-api/README.md",
     "/examples/remilia-read-api/main.rs",
+    "/release/README.md",
     "/release/*.json",
     "/src/**",
     "/tests/**",

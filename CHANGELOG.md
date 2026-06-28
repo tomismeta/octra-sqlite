@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.1
+
+- Added `restore DATABASE --file dump.sql` for large SQL restores with internal
+  batching, progress, and stable JSON output.
+- Added `DATABASE --sql-file FILE` and stdin execution so automation does not
+  need to pass large SQL through shell arguments.
+- Added `check DATABASE --sql-file dump.sql` to validate script size, batching,
+  and known restore limits without writing.
+- Added `limits [DATABASE]` to expose statement-size, restore, transaction,
+  owner-write, and read-only guard behavior.
+- Added `--json` output for `status`, `verify`, `database list`,
+  `database info`, `restore`, `check`, and `limits`.
+- Added structured JSON errors for automation, including `sql_too_large`,
+  `transactions_not_supported`, `read_only`, `database_error`, `wallet_error`,
+  `target_error`, and `rpc_error`.
+- Added `--read-only` for one-shot SQL execution.
+- Documented headless/server use, large restore, idempotent imports, concurrency,
+  and migration guidance.
+- Rebuilt the bundled Circle WASM so query tail validation delegates to SQLite
+  instead of a contract-owned SQL comment parser.
+
 ## 0.3.0
 
 - Added `.backup ?main? FILE` and `.save FILE` to export Circle-backed SQLite
