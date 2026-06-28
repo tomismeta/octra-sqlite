@@ -3,6 +3,16 @@
 Runnable examples for `octra-sqlite` live here so the top-level README can stay
 minimal.
 
+## Artists
+
+The smallest example mirrors the top-level README.
+
+```sh
+octra-sqlite new art < examples/artists.sql
+octra-sqlite art "select * from artist order by name;"
+octra-sqlite art ".schema artist"
+```
+
 ## Remilia Collections
 
 The default config does not preload this database. This walkthrough creates your
