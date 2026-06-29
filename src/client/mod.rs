@@ -23,8 +23,8 @@ pub use write::{PreparedOwnerWrite, PreparedWrite, SignedWrite};
 pub mod low_level {
     #[cfg(feature = "http")]
     pub use super::database::{
-        auth_info, exec_sql, next_nonce, program_info, query_typed, submit_tx, view,
-        wait_for_transaction,
+        auth_info, exec_sql, next_nonce, program_info, query_typed, query_typed_traced, submit_tx,
+        view, wait_for_transaction,
     };
     pub use super::session::{
         build_control_session, build_session, resolve_wallet_path, Session, SessionOptions,

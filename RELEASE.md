@@ -1,5 +1,27 @@
 # Release Notes
 
+## 0.3.2
+
+This is an automation polish release over the deployed `0.3.1` Circle WASM.
+
+## Added
+
+- `--trace-rpc-json FILE` for one-shot read SQL, writing exact JSON-RPC
+  request/response envelopes to JSONL.
+- `restore DATABASE --file dump.sql --json-summary` for compact restore output
+  with totals and first/last transaction hashes.
+- `docs/json-output.md` documenting stable CLI JSON envelopes for `query`,
+  `write`, `restore`, `check`, `status`, `verify`, and `error`.
+- Clearer headless install guidance for `rustup stable`, lockfile-compatible
+  Cargo, and service-user executable permissions.
+
+## Notes
+
+- RPC trace is read-only and opt-in. It may contain SQL text, Circle IDs, caller
+  wallet, public keys, read signatures, and response data. It never contains
+  private keys.
+- The bundled Circle WASM and live devnet proof are unchanged from `0.3.1`.
+
 ## 0.3.1
 
 This is a DevEx hardening release for automation, large SQL restore, and

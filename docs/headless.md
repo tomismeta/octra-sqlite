@@ -35,6 +35,20 @@ OCTRA_SQLITE_CONFIG=/secure/path/sqlite.json octra-sqlite status
 
 ## Server Checklist
 
+Install with a current Rust stable toolchain:
+
+```sh
+rustup toolchain install stable --profile minimal
+cargo install --path . --locked
+```
+
+If installing into a shared path, make the binary executable by the service
+user or group:
+
+```sh
+sudo install -m 0755 ~/.cargo/bin/octra-sqlite /opt/octra-sqlite/bin/octra-sqlite
+```
+
 ```sh
 octra-sqlite config
 octra-sqlite database list
@@ -60,5 +74,14 @@ octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite restore DATABASE --file dump.sql
 ```
 
-Use `--json` for machine-readable output, and prefer full
-`oct://NETWORK/<circle>` URIs in automation.
+Use `--json` or `--json-summary` for machine-readable output, and prefer full
+`oct://NETWORK/<circle>` URIs in automation. For read proof/debugging, write
+RPC traces to a file:
+
+```sh
+octra-sqlite DATABASE --trace-rpc-json trace.jsonl "select 1;"
+```
+
+Trace files can include SQL text, Circle IDs, wallet addresses, signatures, and
+query responses. They do not include private keys, but store them like sensitive
+logs: use restrictive permissions and do not commit them.

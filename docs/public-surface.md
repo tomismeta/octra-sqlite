@@ -32,6 +32,7 @@ octra-sqlite new DATABASE
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
 octra-sqlite restore DATABASE --file dump.sql
+octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite limits DATABASE
 ```
@@ -61,6 +62,8 @@ They should stay expressive enough that users do not need to inspect
 `config` shows the active RPC/explorer plus all bundled network profiles.
 For automation, use `--json` on non-interactive commands and prefer full
 `oct://NETWORK/<circle>` URIs over local database names.
+Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the
+exact Octra JSON-RPC request/response envelope for proof or debugging.
 
 ## Public
 
@@ -92,7 +95,8 @@ For automation, use `--json` on non-interactive commands and prefer full
 - `docs/spec/osw1.md`: OSW1 owner write intent frame.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
-- `release/octra-sqlite-0.3.1.json`: release manifest for the bundled Circle
+- `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
+- `release/octra-sqlite-0.3.2.json`: release manifest for the bundled Circle
   WASM and published network-specific deployment.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

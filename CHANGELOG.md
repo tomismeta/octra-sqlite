@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2
+
+- Added `--trace-rpc-json FILE` for one-shot read SQL JSON-RPC trace files.
+- Added `restore --json-summary` for compact restore automation output.
+- Documented stable CLI JSON envelope shapes in `docs/json-output.md`.
+- Documented rustup/Cargo lockfile expectations and service-user install
+  permissions for headless deployments.
+- Kept the bundled Circle WASM unchanged from 0.3.1.
+
 ## 0.3.1
 
 - Added `restore DATABASE --file dump.sql` for large SQL restores with internal

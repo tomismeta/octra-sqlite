@@ -193,6 +193,16 @@ pub fn query_typed(session: &Session, sql: &str) -> Result<Value> {
 }
 
 #[cfg(feature = "http")]
+pub fn query_typed_traced(
+    session: &Session,
+    sql: &str,
+    trace_path: &std::path::Path,
+) -> Result<Value> {
+    let transport = HttpTransport::with_trace_jsonl(trace_path)?;
+    query_typed_with(&transport, session, sql)
+}
+
+#[cfg(feature = "http")]
 pub fn auth_info(session: &Session) -> Result<AuthInfo> {
     let transport = HttpTransport::default();
     auth_info_with(&transport, session)

@@ -104,6 +104,7 @@ pub(super) fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
                 state.headers,
                 output.as_deref(),
                 false,
+                None,
             ) {
                 eprintln!("error: {error:#}");
             }

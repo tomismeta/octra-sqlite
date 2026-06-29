@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.3.1-111827)](./release/octra-sqlite-0.3.1.json)
+[![version](https://img.shields.io/badge/version-v0.3.2-111827)](./release/octra-sqlite-0.3.2.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -69,6 +69,7 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite quickstart DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
 | `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
+| `octra-sqlite DATABASE --trace-rpc-json trace.jsonl "SQL"` | Trace read JSON-RPC envelopes. |
 | `octra-sqlite DATABASE ".COMMAND"` | Run a SQLite-style dot command. |
 | `octra-sqlite open DATABASE` | Open the interactive shell. |
 | `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution. |
@@ -159,6 +160,7 @@ backup, restore, and local developer experience.
 - [Release manifests](./release/)
 - [Public surface](./docs/public-surface.md)
 - [Headless setup](./docs/headless.md)
+- [JSON output](./docs/json-output.md)
 - [Operations](./docs/operations.md)
 - [Storage model](./docs/storage-model.md)
 - [Toolchain and builds](./docs/toolchain.md)

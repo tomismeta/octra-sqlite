@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "MIT"
 description = "Real SQLite inside an Octra Circle, with a Rust CLI and client library"
@@ -18,6 +18,7 @@ include = [
     "/circle/wasm/octra_sqlite_circle.wasm",
     "/config/defaults.json",
     "/docs/headless.md",
+    "/docs/json-output.md",
     "/docs/operations.md",
     "/docs/public-surface.md",
     "/docs/spec/**",
