@@ -81,3 +81,7 @@ RPC traces to a file:
 ```sh
 octra-sqlite DATABASE --trace-rpc-json trace.jsonl "select 1;"
 ```
+
+Trace files can include SQL text, Circle IDs, wallet addresses, signatures, and
+query responses. They do not include private keys, but store them like sensitive
+logs: use restrictive permissions and do not commit them.

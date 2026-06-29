@@ -166,4 +166,5 @@ Each line is:
 
 Trace files are opt-in. They may contain SQL text, Circle IDs, caller wallet,
 public keys, read signatures, and response data. They never contain private
-keys.
+keys, but treat them as sensitive operational logs: keep them out of git and
+use restrictive file permissions when storing them on shared systems.

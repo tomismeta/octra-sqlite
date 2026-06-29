@@ -86,13 +86,13 @@ impl HttpTransport {
         response: Option<&Value>,
         http_status: Option<u16>,
         error: Option<&str>,
-    ) -> Result<()> {
+    ) {
         let Some(trace) = &self.trace else {
-            return Ok(());
+            return;
         };
-        let mut trace = trace.lock().map_err(|_| {
-            ClientError::with_kind(ClientErrorKind::Io, "RPC trace writer lock poisoned")
-        })?;
+        let Ok(mut trace) = trace.lock() else {
+            return;
+        };
         trace.sequence += 1;
         let event = json!({
             "schema": "octra-sqlite.rpc-trace.v1",
@@ -105,13 +105,10 @@ impl HttpTransport {
             "response": response,
             "error": error,
         });
-        serde_json::to_writer(&mut trace.file, &event).map_err(|error| {
-            ClientError::with_kind(ClientErrorKind::Io, format!("writing RPC trace: {error}"))
-        })?;
-        trace.file.write_all(b"\n").map_err(|error| {
-            ClientError::with_kind(ClientErrorKind::Io, format!("writing RPC trace: {error}"))
-        })?;
-        Ok(())
+        if serde_json::to_writer(&mut trace.file, &event).is_err() {
+            return;
+        }
+        let _ = trace.file.write_all(b"\n");
     }
 }
 
@@ -128,7 +125,7 @@ impl Transport for HttpTransport {
             Ok(response) => response,
             Err(error) => {
                 let message = format!("calling {method}: {error}");
-                self.trace_rpc(rpc, method, &body, None, None, Some(&message))?;
+                self.trace_rpc(rpc, method, &body, None, None, Some(&message));
                 return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
             }
         };
@@ -138,7 +135,7 @@ impl Transport for HttpTransport {
             Ok(payload) => payload,
             Err(error) => {
                 let message = format!("decoding {method} response: {error}");
-                self.trace_rpc(rpc, method, &body, None, Some(status_code), Some(&message))?;
+                self.trace_rpc(rpc, method, &body, None, Some(status_code), Some(&message));
                 return Err(ClientError::with_kind(ClientErrorKind::Decode, message));
             }
         };
@@ -151,7 +148,7 @@ impl Transport for HttpTransport {
                 Some(&payload),
                 Some(status_code),
                 Some(&message),
-            )?;
+            );
             return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
         }
         if let Some(error) = payload.get("error") {
@@ -163,10 +160,10 @@ impl Transport for HttpTransport {
                 Some(&payload),
                 Some(status_code),
                 Some(&message),
-            )?;
+            );
             return Err(ClientError::with_kind(ClientErrorKind::Rpc, message));
         }
-        self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None)?;
+        self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None);
         Ok(payload.get("result").cloned().unwrap_or(Value::Null))
     }
 }
@@ -204,16 +201,14 @@ mod tests {
             "result": "ok"
         });
 
-        transport
-            .trace_rpc(
-                "https://devnet.octrascan.io/rpc",
-                "octra_circleViewAuth",
-                &request,
-                Some(&response),
-                Some(200),
-                None,
-            )
-            .unwrap();
+        transport.trace_rpc(
+            "https://devnet.octrascan.io/rpc",
+            "octra_circleViewAuth",
+            &request,
+            Some(&response),
+            Some(200),
+            None,
+        );
 
         let text = std::fs::read_to_string(&path).unwrap();
         let event: Value = serde_json::from_str(text.trim()).unwrap();
@@ -223,6 +218,33 @@ mod tests {
         assert_eq!(event["request"], request);
         assert_eq!(event["response"], response);
         assert!(event["error"].is_null());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn trace_writer_is_best_effort_after_open() {
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-rpc-trace-poison-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let transport = HttpTransport::with_trace_jsonl(&path).unwrap();
+        let trace = transport.trace.as_ref().unwrap().clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = trace.lock().unwrap();
+            panic!("poison trace lock");
+        })
+        .join();
+
+        transport.trace_rpc(
+            "https://devnet.octrascan.io/rpc",
+            "octra_circleViewAuth",
+            &json!({"params": []}),
+            None,
+            None,
+            Some("real rpc error"),
+        );
+
         let _ = std::fs::remove_file(path);
     }
 }
