@@ -10,8 +10,9 @@ use crate::{
         low_level::{
             auth_info, build_control_session as client_build_control_session,
             build_session as client_build_session, discover_wallet_path, exec_sql, next_nonce,
-            program_info, query_typed, resolve_wallet_path as client_resolve_wallet_path,
-            submit_tx, view, wait_for_transaction, wallet_caller, Session,
+            program_info, query_typed, query_typed_traced,
+            resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
+            wait_for_transaction, wallet_caller, Session,
         },
         write_config, AuthInfo, ClientError, ClientErrorKind, Config, SessionOptions,
     },
@@ -42,7 +43,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.1.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.2.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
@@ -208,6 +209,9 @@ struct OpenArgs {
     /// Print raw JSON instead of table or compact receipt output.
     #[arg(long)]
     json: bool,
+    /// Write exact read JSON-RPC request/response envelopes to a JSONL file.
+    #[arg(long = "trace-rpc-json", value_name = "FILE")]
+    trace_rpc_json: Option<PathBuf>,
     /// Execute SQL from a file. Use - to read stdin.
     #[arg(long = "sql-file", value_name = "FILE")]
     sql_file: Option<PathBuf>,
@@ -408,9 +412,12 @@ struct RestoreArgs {
     /// SQL dump/script to restore. Use - or omit to read stdin.
     #[arg(long = "file", alias = "sql-file", value_name = "FILE")]
     file: Option<PathBuf>,
-    /// Print a stable JSON summary.
+    /// Print the full stable JSON restore envelope.
     #[arg(long)]
     json: bool,
+    /// Print compact stable JSON with totals and transaction hash summary.
+    #[arg(long)]
+    json_summary: bool,
 }
 
 #[derive(Args)]
@@ -1920,16 +1927,40 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
     };
     if let Some(path) = &args.sql_file {
         let sql = read_sql_file_arg(path)?;
-        return run_sql_input(&session, &sql, mode, true, args.read_only);
+        return run_sql_input(
+            &session,
+            &sql,
+            mode,
+            true,
+            args.read_only,
+            args.trace_rpc_json.as_deref(),
+        );
     }
     if args.sql.is_empty() {
         if let Some(sql) = read_stdin_sql()? {
-            return run_sql_input(&session, &sql, mode, true, args.read_only);
+            return run_sql_input(
+                &session,
+                &sql,
+                mode,
+                true,
+                args.read_only,
+                args.trace_rpc_json.as_deref(),
+            );
+        }
+        if args.trace_rpc_json.is_some() {
+            bail!("--trace-rpc-json requires one SQL statement; interactive shell tracing is not supported");
         }
         run_shell(session, mode)
     } else {
         let sql = args.sql.join(" ");
-        run_sql_input(&session, &sql, mode, true, args.read_only)
+        run_sql_input(
+            &session,
+            &sql,
+            mode,
+            true,
+            args.read_only,
+            args.trace_rpc_json.as_deref(),
+        )
     }
 }
 
@@ -1940,7 +1971,8 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
         None => read_stdin_sql()?.ok_or_else(|| anyhow!("restore requires --file or piped SQL"))?,
     };
     let plan = plan_sql_script(&sql)?;
-    if !args.json {
+    let json_output = args.json || args.json_summary;
+    if !json_output {
         print_field("database", canonical_database_uri(session.target()));
         print_field("statements", plan.executable_statements.to_string());
         print_field("batches", plan.batches.to_string());
@@ -1959,16 +1991,20 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
     }
     let mut progress_events = Vec::new();
     let mut execution = execute_sql_script_with_progress(&session, &sql, false, |progress| {
-        if !args.json {
+        if !json_output {
             print_field("restore", format_progress(&progress));
         }
-        progress_events.push(progress);
+        if args.json {
+            progress_events.push(progress);
+        }
     })?;
     for result in &mut execution.results {
         let raw = std::mem::take(result);
         *result = with_explorer(raw, &session);
     }
-    if args.json {
+    if args.json_summary {
+        print_json(&restore_summary_envelope(&session, &plan, &execution))
+    } else if args.json {
         print_json(&restore_envelope(
             &session,
             &plan,
@@ -2078,8 +2114,9 @@ fn run_sql_input(
     mode: OutputMode,
     headers: bool,
     read_only: bool,
+    trace_rpc_json: Option<&Path>,
 ) -> Result<()> {
-    run_one_sql_to(session, sql, mode, headers, None, read_only)
+    run_one_sql_to(session, sql, mode, headers, None, read_only, trace_rpc_json)
 }
 
 pub(super) fn run_one_sql_to(
@@ -2089,9 +2126,13 @@ pub(super) fn run_one_sql_to(
     headers: bool,
     output: Option<&Path>,
     read_only: bool,
+    trace_rpc_json: Option<&Path>,
 ) -> Result<()> {
     let trimmed = sql.trim();
     if trimmed.starts_with('.') && !trimmed.contains('\n') {
+        if trace_rpc_json.is_some() {
+            bail!("--trace-rpc-json supports one read-only SQL statement, not dot commands");
+        }
         if read_only && write_dot_command(trimmed) {
             bail!("read_only: dot command may write to the database");
         }
@@ -2099,13 +2140,20 @@ pub(super) fn run_one_sql_to(
         return Ok(());
     }
     if looks_like_sql_script(sql) {
+        if trace_rpc_json.is_some() {
+            bail!("--trace-rpc-json supports one read-only SQL statement, not SQL scripts");
+        }
         if read_only {
             bail!("read_only: multi-statement SQL scripts are not submitted in read-only mode");
         }
         return run_exec_script_to(session, sql, mode, output);
     }
     ensure_sql_text_fits(sql)?;
-    match query_typed(session, sql) {
+    let query_result = match trace_rpc_json {
+        Some(path) => query_typed_traced(session, sql, path),
+        None => query_typed(session, sql),
+    };
+    match query_result {
         Ok(result) => {
             if mode == OutputMode::Json {
                 write_text(output, &format_json(&query_envelope(session, result))?)
@@ -2114,6 +2162,9 @@ pub(super) fn run_one_sql_to(
             }
         }
         Err(error) if sqlite_requires_exec(&error) => {
+            if trace_rpc_json.is_some() {
+                bail!("--trace-rpc-json is read-only; SQL would write");
+            }
             if read_only {
                 bail!("read_only: SQL would write; remove --read-only to sign and submit it");
             }
@@ -2244,6 +2295,44 @@ fn restore_envelope(
     progress: &[SqlBatchProgress],
 ) -> Value {
     script_envelope("restore", session, plan, execution, progress)
+}
+
+fn restore_summary_envelope(
+    session: &Session,
+    plan: &SqlScriptPlan,
+    execution: &SqlScriptExecution,
+) -> Value {
+    let writes = execution
+        .results
+        .iter()
+        .map(write_result_summary)
+        .collect::<Vec<_>>();
+    let failed = writes
+        .iter()
+        .filter(|write| write.get("status").and_then(Value::as_str) == Some("rejected"))
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({
+        "ok": true,
+        "type": "restore",
+        "schema": "octra-sqlite.cli.v1",
+        "summary": true,
+        "database": database_identity(session),
+        "plan": script_plan_json(plan),
+        "statements": execution.statements,
+        "batches": execution.batches,
+        "writes": {
+            "total": writes.len(),
+            "confirmed": writes.iter().filter(|write| write.get("status").and_then(Value::as_str) == Some("confirmed")).count(),
+            "submitted": writes.iter().filter(|write| write.get("status").and_then(Value::as_str) == Some("submitted")).count(),
+            "rejected": failed.len(),
+            "first_tx_hash": writes.first().and_then(|write| write.get("tx_hash")).cloned().unwrap_or(Value::Null),
+            "last_tx_hash": writes.last().and_then(|write| write.get("tx_hash")).cloned().unwrap_or(Value::Null),
+            "first_tx_url": writes.first().and_then(|write| write.get("tx_url")).cloned().unwrap_or(Value::Null),
+            "last_tx_url": writes.last().and_then(|write| write.get("tx_url")).cloned().unwrap_or(Value::Null),
+            "failed": failed,
+        }
+    })
 }
 
 fn script_envelope(
@@ -3391,6 +3480,67 @@ COMMIT;",
             }
             _ => panic!("expected new command"),
         }
+    }
+
+    #[test]
+    fn open_accepts_read_rpc_trace_path() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "open",
+            "art",
+            "--trace-rpc-json",
+            "trace.jsonl",
+            "select * from artist;",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Open(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert_eq!(args.trace_rpc_json, Some(PathBuf::from("trace.jsonl")));
+                assert_eq!(args.sql, vec!["select * from artist;"]);
+            }
+            _ => panic!("expected open command"),
+        }
+    }
+
+    #[test]
+    fn restore_summary_envelope_omits_per_batch_receipts() {
+        let session = build_session(&TargetArgs {
+            target: Some("oct://devnet/octABC".to_string()),
+            wallet: None,
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCaller".to_string()),
+            private_key_b64: Some(
+                "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+            ),
+            public_key_b64: None,
+        })
+        .unwrap();
+        let plan = SqlScriptPlan {
+            source_bytes: 42,
+            total_statements: 2,
+            executable_statements: 2,
+            skipped_statements: 0,
+            batches: 2,
+            max_statement_bytes: 21,
+            max_payload_bytes: 21,
+        };
+        let execution = SqlScriptExecution {
+            statements: 2,
+            batches: 2,
+            results: vec![
+                json!({"tx_hash": "tx1", "tx_url": "https://example/tx1", "receipt": {"success": true}}),
+                json!({"tx_hash": "tx2", "tx_url": "https://example/tx2", "receipt": {"success": true}}),
+            ],
+        };
+        let envelope = restore_summary_envelope(&session, &plan, &execution);
+        assert_eq!(envelope["type"], "restore");
+        assert_eq!(envelope["summary"], true);
+        assert_eq!(envelope["writes"]["total"], 2);
+        assert_eq!(envelope["writes"]["confirmed"], 2);
+        assert_eq!(envelope["writes"]["first_tx_hash"], "tx1");
+        assert_eq!(envelope["writes"]["last_tx_hash"], "tx2");
+        assert!(envelope.get("progress").is_none());
     }
 
     #[test]
