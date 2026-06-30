@@ -1,3 +1,5 @@
+#[cfg(feature = "http")]
+use super::write::prepare_write_with_bootstrap_owner;
 use super::{
     error::Result,
     results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx},
@@ -226,6 +228,26 @@ pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     let prepared = prepare_write_with(&transport, session, sql, operation)?;
     let signed = sign_write(session, &prepared)?;
     submit_signed_write_with(&transport, session, signed, no_wait)
+}
+
+#[cfg(feature = "http")]
+pub fn exec_sql_bootstrap_owner(
+    session: &Session,
+    sql: &str,
+    db_id: &str,
+    owner_pubkey: &str,
+) -> Result<Value> {
+    let transport = HttpTransport::default();
+    let prepared = prepare_write_with_bootstrap_owner(
+        &transport,
+        session,
+        sql,
+        DatabaseOperation::Execute,
+        db_id,
+        owner_pubkey,
+    )?;
+    let signed = sign_write(session, &prepared)?;
+    submit_signed_write_with(&transport, session, signed, false)
 }
 
 #[cfg(feature = "http")]

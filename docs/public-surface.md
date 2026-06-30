@@ -48,8 +48,10 @@ signed `exec` path as later writes.
 RPC path. The Octra webcli helper is not required for the maintained SQLite
 workflow. `deploy --bootstrap-owner` is a narrow recovery path for empty
 owner-owned Circles whose older program cannot expose `auth_info` before first
-storage pages exist; it verifies Circle ownership and deploys owner-personalized
-bundled WASM without submitting SQL.
+storage pages exist; it verifies Circle ownership, deploys owner-personalized
+bundled WASM, and saves local bootstrap metadata without submitting SQL. Pair it
+with `restore --bootstrap-owner` to submit only the first storage-creating batch
+as an OSW1 owner-signed write, then return to the normal `auth_info` path.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write

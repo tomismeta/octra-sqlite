@@ -4,7 +4,10 @@
 
 This is an automation contract hardening release over `0.3.2`. The bundled
 Circle WASM is rebuilt so empty sealed database Circles can expose `auth_info`
-before the first SQLite storage pages exist.
+before the first SQLite storage pages exist on runtimes that can invoke empty
+storage views. It also includes an explicit first-write bootstrap path for
+mainnet RPCs that fail authenticated views below the contract while storage is
+still empty.
 
 ## Added
 
@@ -22,6 +25,9 @@ before the first SQLite storage pages exist.
 - `deploy --bootstrap-owner` for explicit owner-checked recovery of empty
   Circles created by older builds that cannot expose `auth_info` before first
   storage pages exist.
+- `restore --bootstrap-owner` for the exact empty-storage cache case: the first
+  restore batch is OSW1 owner-signed from saved bootstrap metadata, then the CLI
+  immediately returns to normal `auth_info` verification.
 - Local creation metadata for newly saved databases, including owner wallet,
   owner public key, database id, bundled code hash, code bytes, and create
   transaction.
@@ -39,6 +45,9 @@ before the first SQLite storage pages exist.
 - `deploy --bootstrap-owner` does not bypass OSW1 and does not submit SQL. It
   only deploys owner-personalized bundled WASM after confirming the current
   wallet is the Circle owner.
+- `restore --bootstrap-owner` is deliberately narrow: full `oct://` URI only,
+  exact missing empty-storage cache failure only, bundled owner-personalized
+  WASM hash match required, and first batch only.
 
 ## 0.3.2
 

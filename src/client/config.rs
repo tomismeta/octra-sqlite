@@ -40,6 +40,8 @@ pub struct DatabaseMetadata {
     pub code_hash: String,
     pub code_bytes: usize,
     pub create_tx: Option<String>,
+    #[serde(default)]
+    pub program_update_tx: Option<String>,
 }
 
 impl Config {
@@ -250,6 +252,13 @@ mod tests {
                 .get("organization")
                 .map(|metadata| metadata.code_hash.as_str()),
             Some("cc")
+        );
+        assert_eq!(
+            merged
+                .database_metadata
+                .get("organization")
+                .and_then(|metadata| metadata.program_update_tx.as_deref()),
+            None
         );
     }
 

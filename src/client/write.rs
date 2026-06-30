@@ -190,11 +190,82 @@ pub(super) fn prepare_write_with<T: Transport>(
             "database is not owner-write-personalized; refusing unsigned SQL write",
         ));
     }
-    let db_id = hex_to_32("db_id", &auth.db_id)?;
-    let owner_pubkey = hex::encode(session.intent_public_key()?);
-    let frame = osw1::frame(&db_id, nonce as u64, method, sql)?;
+    prepare_write_with_owner_parts(
+        session,
+        sql,
+        operation,
+        nonce,
+        timestamp,
+        method,
+        OwnerWriteAuth {
+            db_id: &auth.db_id,
+            owner_pubkey: auth.owner_pubkey.as_deref(),
+        },
+    )
+}
+
+#[cfg(feature = "http")]
+pub(super) fn prepare_write_with_bootstrap_owner<T: Transport>(
+    transport: &T,
+    session: &Session,
+    sql: &str,
+    operation: DatabaseOperation,
+    db_id: &str,
+    owner_pubkey: &str,
+) -> Result<PreparedWrite> {
+    let nonce = next_nonce_with(transport, session)?;
+    let timestamp = now_timestamp();
+    let method = if trace_sql_event_enabled() {
+        "exec_trace"
+    } else {
+        "exec"
+    };
+    prepare_write_with_owner_parts(
+        session,
+        sql,
+        operation,
+        nonce,
+        timestamp,
+        method,
+        OwnerWriteAuth {
+            db_id,
+            owner_pubkey: Some(owner_pubkey),
+        },
+    )
+}
+
+struct OwnerWriteAuth<'a> {
+    db_id: &'a str,
+    owner_pubkey: Option<&'a str>,
+}
+
+fn prepare_write_with_owner_parts(
+    session: &Session,
+    sql: &str,
+    operation: DatabaseOperation,
+    nonce: i64,
+    timestamp: f64,
+    method: &str,
+    auth: OwnerWriteAuth<'_>,
+) -> Result<PreparedWrite> {
+    let db_id_bytes = hex_to_32("db_id", auth.db_id)?;
+    let session_owner_pubkey = session.intent_public_key()?;
+    let owner_pubkey = match auth.owner_pubkey {
+        Some(owner_pubkey) => {
+            let configured = hex_to_32("owner_pubkey", owner_pubkey)?;
+            if configured != session_owner_pubkey {
+                return Err(ClientError::with_kind(
+                    ClientErrorKind::Authorization,
+                    "owner write metadata does not match the active wallet",
+                ));
+            }
+            hex::encode(configured)
+        }
+        None => hex::encode(session_owner_pubkey),
+    };
+    let frame = osw1::frame(&db_id_bytes, nonce as u64, method, sql)?;
     let owner_write = PreparedOwnerWrite {
-        db_id: auth.db_id,
+        db_id: auth.db_id.to_string(),
         owner_pubkey,
         sequence: nonce as u64,
         frame_hex: hex::encode(frame),

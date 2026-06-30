@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::low_level::{exec_sql, view, Session};
+use crate::client::low_level::{auth_info, exec_sql, exec_sql_bootstrap_owner, view, Session};
 
 use super::BackupSummary;
 
@@ -347,6 +347,32 @@ pub(super) fn execute_sql_script_with_progress(
     no_wait: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_submitter(session, sql, no_wait, None, &mut progress)
+}
+
+pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
+    session: &Session,
+    sql: &str,
+    db_id: &str,
+    owner_pubkey: &str,
+    mut progress: impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_submitter(
+        session,
+        sql,
+        false,
+        Some((db_id, owner_pubkey)),
+        &mut progress,
+    )
+}
+
+fn execute_sql_script_with_submitter(
+    session: &Session,
+    sql: &str,
+    no_wait: bool,
+    bootstrap_owner: Option<(&str, &str)>,
+    progress: &mut impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
     let statements = planned_statements(sql)?;
     let batches = script_batches(&statements)?;
     if batches.is_empty() {
@@ -369,7 +395,17 @@ pub(super) fn execute_sql_script_with_progress(
             bytes: batch.bytes,
         };
         progress(progress_event.clone());
-        let result = exec_sql(session, &batch.sql, no_wait).with_context(|| {
+        let result = if offset == 0 {
+            match bootstrap_owner {
+                Some((db_id, owner_pubkey)) => {
+                    exec_sql_bootstrap_owner(session, &batch.sql, db_id, owner_pubkey)
+                }
+                None => exec_sql(session, &batch.sql, no_wait),
+            }
+        } else {
+            exec_sql(session, &batch.sql, no_wait)
+        }
+        .with_context(|| {
             format!(
                 "executing SQL script batch {} of {}; statements {}..{}",
                 offset + 1,
@@ -380,6 +416,9 @@ pub(super) fn execute_sql_script_with_progress(
         })?;
         results.push(result);
         executed += batch.statements;
+        if offset == 0 && bootstrap_owner.is_some() {
+            auth_info(session).context("checking auth_info after bootstrap-owner first write")?;
+        }
     }
     Ok(SqlScriptExecution {
         statements: executed,

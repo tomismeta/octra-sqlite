@@ -26,8 +26,8 @@ first owner-signed initializer write can run normally.
 
 If an older empty database Circle was created but cannot expose `auth_info`
 because the RPC reports a missing storage cache, redeploy the bundled
-owner-personalized WASM with the Circle owner wallet, then retry the schema or
-restore:
+owner-personalized WASM with the Circle owner wallet, then run the first schema
+or restore batch through the explicit bootstrap path:
 
 ```sh
 octra-sqlite deploy \
@@ -35,12 +35,23 @@ octra-sqlite deploy \
   --rpc https://octra.network/rpc \
   --bootstrap-owner
 
-octra-sqlite restore oct://mainnet/oct... --file schema.sql --json-summary
+octra-sqlite restore \
+  oct://mainnet/oct... \
+  --file schema.sql \
+  --bootstrap-owner \
+  --json-summary
 ```
 
-`--bootstrap-owner` does not submit SQL and does not bypass OSW1. It only runs
-a signed Circle program update after confirming the active wallet is the Circle
-owner.
+`deploy --bootstrap-owner` does not submit SQL. It records local bootstrap
+metadata after confirming the active wallet is the Circle owner and deploying
+the owner-personalized bundled WASM.
+
+`restore --bootstrap-owner` is narrower still: it requires a full
+`oct://NETWORK/CIRCLE` URI, requires that `auth_info` fails with the exact empty
+storage-cache error, verifies the Circle owner and deployed code hash, submits
+only the first restore batch as an OSW1 owner-signed write using the saved
+metadata, then immediately returns to normal `auth_info` verification for any
+remaining batches.
 
 ## Large Restore
 

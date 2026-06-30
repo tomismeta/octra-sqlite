@@ -144,6 +144,24 @@ Produced by `restore DATABASE --file dump.sql --json`.
 Full restore output includes per-batch progress and write summaries. It does
 not include SQL result rows.
 
+When `restore --bootstrap-owner` is used for an empty-storage recovery, the
+envelope also includes:
+
+```json
+{
+  "bootstrap_owner": true,
+  "bootstrap": {
+    "mode": "owner_first_write",
+    "reason": "empty_storage_cache",
+    "uri": "oct://mainnet/oct...",
+    "owner": "oct...",
+    "owner_pubkey": "hex...",
+    "db_id": "hex...",
+    "code_hash": "hex..."
+  }
+}
+```
+
 Use `--json-summary` for compact restore output:
 
 ```json

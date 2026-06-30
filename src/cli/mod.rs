@@ -28,7 +28,8 @@ use output::{
     OutputMode,
 };
 use portability::{
-    backup_database, ensure_sql_text_fits, execute_sql_script, execute_sql_script_with_progress,
+    backup_database, ensure_sql_text_fits, execute_sql_script,
+    execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_progress,
     plan_sql_script, run_local_sqlite_integrity, submit_sql_script_no_wait, SqlBatchProgress,
     SqlScriptExecution, SqlScriptPlan, MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
 };
@@ -453,6 +454,9 @@ struct RestoreArgs {
     /// Print compact stable JSON with totals and transaction hash summary.
     #[arg(long)]
     json_summary: bool,
+    /// Submit only the first restore batch with saved owner bootstrap metadata.
+    #[arg(long)]
+    bootstrap_owner: bool,
 }
 
 #[derive(Args)]
@@ -936,6 +940,7 @@ fn save_new_database_alias(
             code_hash: created.code_hash.clone(),
             code_bytes: created.code_bytes,
             create_tx: created.tx_hash.clone(),
+            program_update_tx: None,
         },
     );
     if args.default || config.default_database.is_none() {
@@ -1711,6 +1716,12 @@ fn resolve_wasm_path(build: bool, wasm: Option<&Path>) -> Result<PathBuf> {
     )
 }
 
+fn resolve_bundled_wasm_path() -> Result<PathBuf> {
+    find_project_file(DEFAULT_WASM_REL).ok_or_else(|| {
+        anyhow!("could not find bundled {DEFAULT_WASM_REL}; restore the repo artifact")
+    })
+}
+
 fn require_file(path: PathBuf, label: &str) -> Result<PathBuf> {
     if path.is_file() {
         Ok(path)
@@ -2026,6 +2037,11 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
 
 fn cmd_restore(args: RestoreArgs) -> Result<()> {
     let session = build_session(&args.target)?;
+    let bootstrap_owner = if args.bootstrap_owner {
+        Some(resolve_bootstrap_owner_metadata(&args.target, &session)?)
+    } else {
+        None
+    };
     let sql = match args.file.as_deref() {
         Some(path) => read_sql_file_arg(path)?,
         None => read_stdin_sql()?.ok_or_else(|| anyhow!("restore requires --file or piped SQL"))?,
@@ -2048,28 +2064,49 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
                 "each batch is atomic; the full restore can partially apply",
             );
         }
+        if bootstrap_owner.is_some() {
+            print_field("bootstrap owner", "first batch only; OSW1 signed");
+        }
     }
     let mut progress_events = Vec::new();
-    let mut execution = execute_sql_script_with_progress(&session, &sql, false, |progress| {
-        if !json_output {
-            print_field("restore", format_progress(&progress));
-        }
-        if args.json {
-            progress_events.push(progress);
-        }
-    })?;
+    let mut execution = if let Some(metadata) = &bootstrap_owner {
+        execute_sql_script_with_bootstrap_owner_progress(
+            &session,
+            &sql,
+            &metadata.db_id,
+            &metadata.owner_pubkey,
+            |progress| {
+                if !json_output {
+                    print_field("restore", format_progress(&progress));
+                }
+                if args.json {
+                    progress_events.push(progress);
+                }
+            },
+        )?
+    } else {
+        execute_sql_script_with_progress(&session, &sql, false, |progress| {
+            if !json_output {
+                print_field("restore", format_progress(&progress));
+            }
+            if args.json {
+                progress_events.push(progress);
+            }
+        })?
+    };
     for result in &mut execution.results {
         let raw = std::mem::take(result);
         *result = with_explorer(raw, &session);
     }
     if args.json_summary {
-        print_json(&restore_summary_envelope(&session, &plan, &execution))
+        print_json(&add_bootstrap_owner_json(
+            restore_summary_envelope(&session, &plan, &execution),
+            bootstrap_owner.as_ref(),
+        ))
     } else if args.json {
-        print_json(&restore_envelope(
-            &session,
-            &plan,
-            &execution,
-            &progress_events,
+        print_json(&add_bootstrap_owner_json(
+            restore_envelope(&session, &plan, &execution, &progress_events),
+            bootstrap_owner.as_ref(),
         ))
     } else {
         print_field(
@@ -2081,6 +2118,138 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
         );
         Ok(())
     }
+}
+
+#[derive(Clone, Debug)]
+struct BootstrapOwnerMetadata {
+    uri: String,
+    owner: String,
+    owner_pubkey: String,
+    db_id: String,
+    code_hash: String,
+}
+
+fn resolve_bootstrap_owner_metadata(
+    target_args: &TargetArgs,
+    session: &Session,
+) -> Result<BootstrapOwnerMetadata> {
+    let requested = target_args.target.as_deref().ok_or_else(|| {
+        anyhow!("--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI")
+    })?;
+    if !requested.starts_with("oct://") {
+        bail!("--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI");
+    }
+
+    match auth_info(session) {
+        Ok(_) => bail!("--bootstrap-owner refused because auth_info is already readable"),
+        Err(error) if is_empty_storage_cache_error(&error.to_string()) => {}
+        Err(error) => bail!(
+            "--bootstrap-owner only handles empty storage-cache auth_info failures; auth_info failed with: {error:#}"
+        ),
+    }
+
+    let metadata = find_bootstrap_owner_metadata(session)?;
+    if metadata.owner != session.caller() {
+        bail!(
+            "bootstrap metadata owner {} does not match current wallet {}",
+            metadata.owner,
+            session.caller()
+        );
+    }
+    let wallet_owner_pubkey = hex::encode(session.intent_public_key()?);
+    if metadata.owner_pubkey != wallet_owner_pubkey {
+        bail!("bootstrap metadata owner public key does not match the active wallet");
+    }
+    let expected_code_hash = bootstrap_owner_personalized_hash(&metadata)?;
+    if metadata.code_hash != expected_code_hash {
+        bail!(
+            "bootstrap metadata code hash {} does not match locally personalized bundled WASM {expected_code_hash}",
+            metadata.code_hash
+        );
+    }
+
+    let info = program_info(session).context("reading Circle program info for bootstrap-owner")?;
+    match program_owner(&info) {
+        Some(owner) if owner == session.caller() => {}
+        Some(owner) => bail!(
+            "Circle owner is {owner}; current wallet {} cannot bootstrap owner writes",
+            session.caller()
+        ),
+        None => bail!("Circle program info did not expose an owner; refusing bootstrap-owner"),
+    }
+    let live_code_hash = info
+        .get("code_hash")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("Circle program info missing code_hash"))?;
+    if live_code_hash != expected_code_hash {
+        bail!(
+            "live program hash {live_code_hash} does not match locally personalized bundled WASM {expected_code_hash}"
+        );
+    }
+
+    Ok(metadata)
+}
+
+fn find_bootstrap_owner_metadata(session: &Session) -> Result<BootstrapOwnerMetadata> {
+    let config = load_config().unwrap_or_default();
+    let uri = canonical_database_uri(session.target());
+    let metadata = config
+        .database_metadata
+        .values()
+        .find(|metadata| {
+            metadata.uri == uri
+                || (metadata.network == session.target().network
+                    && metadata.circle == session.target().circle)
+        })
+        .ok_or_else(|| {
+            anyhow!(
+                "missing bootstrap metadata for {uri}; rerun deploy --bootstrap-owner with this CLI"
+            )
+        })?;
+    Ok(BootstrapOwnerMetadata {
+        uri,
+        owner: metadata.owner.clone(),
+        owner_pubkey: metadata.owner_pubkey.clone(),
+        db_id: metadata.db_id.clone(),
+        code_hash: metadata.code_hash.clone(),
+    })
+}
+
+fn bootstrap_owner_personalized_hash(metadata: &BootstrapOwnerMetadata) -> Result<String> {
+    let wasm_path = resolve_bundled_wasm_path()?;
+    let mut wasm =
+        fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
+    let owner_pubkey = hex_to_32("owner_pubkey", &metadata.owner_pubkey)?;
+    let db_id = hex_to_32("db_id", &metadata.db_id)?;
+    patch_wasm_auth_bytes(&mut wasm, &owner_pubkey, &db_id)?;
+    Ok(sha256_hex(&wasm))
+}
+
+fn is_empty_storage_cache_error(text: &str) -> bool {
+    const ZERO_ROOT: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+    text.contains("missing storage cache") && text.contains(ZERO_ROOT)
+}
+
+fn add_bootstrap_owner_json(mut value: Value, metadata: Option<&BootstrapOwnerMetadata>) -> Value {
+    let Some(metadata) = metadata else {
+        return value;
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert("bootstrap_owner".to_string(), Value::Bool(true));
+        object.insert(
+            "bootstrap".to_string(),
+            json!({
+                "mode": "owner_first_write",
+                "reason": "empty_storage_cache",
+                "uri": metadata.uri,
+                "owner": metadata.owner,
+                "owner_pubkey": metadata.owner_pubkey,
+                "db_id": metadata.db_id,
+                "code_hash": metadata.code_hash,
+            }),
+        );
+    }
+    value
 }
 
 fn cmd_check(args: CheckArgs) -> Result<()> {
@@ -3087,6 +3256,12 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         if args.wasm.is_some() {
             bail!("--bootstrap-owner uses the bundled Circle WASM; omit --wasm");
         }
+        if args.build {
+            bail!("--bootstrap-owner uses the bundled Circle WASM; omit --build");
+        }
+        if args.no_wait {
+            bail!("--bootstrap-owner requires receipt confirmation; omit --no-wait");
+        }
     }
     let target_args = TargetArgs {
         target: Some(circle.clone()),
@@ -3097,7 +3272,11 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         public_key_b64: args.public_key_b64.clone(),
     };
     let session = build_session(&target_args)?;
-    let wasm_path = resolve_wasm_path(args.build, args.wasm.as_deref())?;
+    let wasm_path = if args.bootstrap_owner {
+        resolve_bundled_wasm_path()?
+    } else {
+        resolve_wasm_path(args.build, args.wasm.as_deref())?
+    };
     let mut wasm =
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
     if args.bootstrap_owner && args.allow_unconfigured {
@@ -3173,7 +3352,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         "bootstrap_owner".to_string(),
         Value::Bool(args.bootstrap_owner),
     );
-    if let Some(patch) = auth_patch {
+    if let Some(patch) = auth_patch.as_ref() {
         out.insert(
             "auth_patch".to_string(),
             json!({
@@ -3199,6 +3378,19 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         let info = wait_for_program_info(&session, &code_hash)?;
         out.insert("program_info".to_string(), info);
     }
+    if args.bootstrap_owner {
+        let patch = auth_patch
+            .as_ref()
+            .ok_or_else(|| anyhow!("bootstrap-owner deploy missing auth patch"))?;
+        let saved = save_bootstrap_owner_metadata(
+            &session,
+            patch,
+            &code_hash,
+            wasm.len(),
+            tx_hash.clone(),
+        )?;
+        out.insert("metadata_saved".to_string(), json!(saved));
+    }
     print_json(&Value::Object(out))
 }
 
@@ -3217,6 +3409,61 @@ fn redact_code_payload(value: Value) -> Value {
         );
     }
     Value::Object(map)
+}
+
+fn save_bootstrap_owner_metadata(
+    session: &Session,
+    patch: &AuthPatch,
+    code_hash: &str,
+    code_bytes: usize,
+    tx_hash: Option<String>,
+) -> Result<Vec<String>> {
+    let mut config = load_config().unwrap_or_default();
+    let uri = canonical_database_uri(session.target());
+    let mut keys = config
+        .databases
+        .iter()
+        .filter_map(|(name, database)| {
+            resolve_target(database, &config)
+                .ok()
+                .filter(|target| {
+                    target.network == session.target().network
+                        && target.circle == session.target().circle
+                })
+                .map(|_| name.clone())
+        })
+        .collect::<Vec<_>>();
+    if keys.is_empty() {
+        keys.push(uri.clone());
+    }
+    let create_tx = config
+        .database_metadata
+        .values()
+        .find(|metadata| {
+            metadata.uri == uri
+                || (metadata.network == session.target().network
+                    && metadata.circle == session.target().circle)
+        })
+        .and_then(|metadata| metadata.create_tx.clone());
+    for key in &keys {
+        config.database_metadata.insert(
+            key.clone(),
+            DatabaseMetadata {
+                uri: uri.clone(),
+                network: session.target().network.clone(),
+                circle: session.target().circle.clone(),
+                owner: session.caller().to_string(),
+                owner_pubkey: patch.owner_pubkey_hex.clone(),
+                db_id: patch.db_id_hex.clone(),
+                code_hash: code_hash.to_string(),
+                code_bytes,
+                create_tx: create_tx.clone(),
+                program_update_tx: tx_hash.clone(),
+            },
+        );
+    }
+    write_config(&config)?;
+    Ok(keys)
 }
 
 fn wait_for_program_info(session: &Session, expected_hash: &str) -> Result<Value> {
@@ -3586,6 +3833,59 @@ COMMIT;",
             }
             _ => panic!("expected deploy command"),
         }
+    }
+
+    #[test]
+    fn restore_accepts_owner_bootstrap_for_explicit_uri() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "restore",
+            "oct://mainnet/octABC",
+            "--file",
+            "schema.sql",
+            "--bootstrap-owner",
+            "--json-summary",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Restore(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("oct://mainnet/octABC"));
+                assert_eq!(args.file, Some(PathBuf::from("schema.sql")));
+                assert!(args.bootstrap_owner);
+                assert!(args.json_summary);
+            }
+            _ => panic!("expected restore command"),
+        }
+    }
+
+    #[test]
+    fn bootstrap_owner_only_accepts_empty_storage_cache_errors() {
+        let zero_root = "0000000000000000000000000000000000000000000000000000000000000000";
+        assert!(is_empty_storage_cache_error(&format!(
+            "octra_circleViewAuth failed: missing storage cache: octABC:{zero_root}"
+        )));
+        assert!(!is_empty_storage_cache_error(
+            "octra_circleViewAuth failed: missing storage cache: octABC:1111111111111111111111111111111111111111111111111111111111111111"
+        ));
+        assert!(!is_empty_storage_cache_error(
+            "octra_circleViewAuth failed: wasm export returned 1"
+        ));
+    }
+
+    #[test]
+    fn bootstrap_owner_json_marks_first_write_recovery() {
+        let metadata = BootstrapOwnerMetadata {
+            uri: "oct://mainnet/octABC".to_string(),
+            owner: "octOwner".to_string(),
+            owner_pubkey: "aa".repeat(32),
+            db_id: "bb".repeat(32),
+            code_hash: "cc".repeat(32),
+        };
+        let value = add_bootstrap_owner_json(json!({"ok": true}), Some(&metadata));
+        assert_eq!(value["bootstrap_owner"], true);
+        assert_eq!(value["bootstrap"]["mode"], "owner_first_write");
+        assert_eq!(value["bootstrap"]["reason"], "empty_storage_cache");
+        assert_eq!(value["bootstrap"]["uri"], "oct://mainnet/octABC");
     }
 
     #[test]

@@ -17,8 +17,12 @@
 - Added `deploy --bootstrap-owner` for explicit owner-checked recovery of an
   empty Circle whose deployed program cannot expose `auth_info` before first
   storage pages exist.
+- Added `restore --bootstrap-owner` for the exact empty-storage cache bootstrap
+  case: first restore batch only, full `oct://` URI required, OSW1 signed, then
+  normal `auth_info` verification resumes.
 - Persisted local creation metadata for new saved databases: owner wallet,
-  owner public key, database id, code hash, code bytes, and create transaction.
+  owner public key, database id, code hash, code bytes, create transaction, and
+  bootstrap program update transaction.
 - Documented Rust/Cargo 1.87+, pinned source installs, read/write auth,
   restore/backfill happy path, result limits, and compact trace usage.
 - Added `.claude/` to `.gitignore` so local agent settings cannot be committed
