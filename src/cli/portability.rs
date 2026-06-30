@@ -22,6 +22,11 @@ pub(super) struct SqlScriptExecution {
     pub results: Vec<Value>,
 }
 
+pub(super) struct BootstrapOwnerSqlScriptExecution {
+    pub execution: SqlScriptExecution,
+    pub post_auth_error: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SqlScriptPlan {
     pub source_bytes: usize,
@@ -347,7 +352,7 @@ pub(super) fn execute_sql_script_with_progress(
     no_wait: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_submitter(session, sql, no_wait, None, &mut progress)
+    execute_sql_script_with_submitter(session, sql, no_wait, &mut progress)
 }
 
 pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
@@ -356,12 +361,12 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
     db_id: &str,
     owner_pubkey: &str,
     mut progress: impl FnMut(SqlBatchProgress),
-) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_submitter(
+) -> Result<BootstrapOwnerSqlScriptExecution> {
+    execute_sql_script_with_bootstrap_owner_submitter(
         session,
         sql,
-        false,
-        Some((db_id, owner_pubkey)),
+        db_id,
+        owner_pubkey,
         &mut progress,
     )
 }
@@ -370,7 +375,6 @@ fn execute_sql_script_with_submitter(
     session: &Session,
     sql: &str,
     no_wait: bool,
-    bootstrap_owner: Option<(&str, &str)>,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
     let statements = planned_statements(sql)?;
@@ -395,15 +399,62 @@ fn execute_sql_script_with_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event.clone());
+        let result = exec_sql(session, &batch.sql, no_wait).with_context(|| {
+            format!(
+                "executing SQL script batch {} of {}; statements {}..{}",
+                offset + 1,
+                total_batches,
+                batch.start_statement,
+                batch.end_statement
+            )
+        })?;
+        results.push(result);
+        executed += batch.statements;
+    }
+    Ok(SqlScriptExecution {
+        statements: executed,
+        batches: total_batches,
+        results,
+    })
+}
+
+fn execute_sql_script_with_bootstrap_owner_submitter(
+    session: &Session,
+    sql: &str,
+    db_id: &str,
+    owner_pubkey: &str,
+    progress: &mut impl FnMut(SqlBatchProgress),
+) -> Result<BootstrapOwnerSqlScriptExecution> {
+    let statements = planned_statements(sql)?;
+    let batches = script_batches(&statements)?;
+    if batches.is_empty() {
+        return Ok(BootstrapOwnerSqlScriptExecution {
+            execution: SqlScriptExecution {
+                statements: 0,
+                batches: 0,
+                results: Vec::new(),
+            },
+            post_auth_error: None,
+        });
+    }
+
+    let mut results = Vec::new();
+    let total_batches = batches.len();
+    let mut executed = 0usize;
+    for (offset, batch) in batches.iter().enumerate() {
+        let progress_event = SqlBatchProgress {
+            batch_index: offset + 1,
+            total_batches,
+            start_statement: batch.start_statement,
+            end_statement: batch.end_statement,
+            statements: batch.statements,
+            bytes: batch.bytes,
+        };
+        progress(progress_event);
         let result = if offset == 0 {
-            match bootstrap_owner {
-                Some((db_id, owner_pubkey)) => {
-                    exec_sql_bootstrap_owner(session, &batch.sql, db_id, owner_pubkey)
-                }
-                None => exec_sql(session, &batch.sql, no_wait),
-            }
+            exec_sql_bootstrap_owner(session, &batch.sql, db_id, owner_pubkey)
         } else {
-            exec_sql(session, &batch.sql, no_wait)
+            exec_sql(session, &batch.sql, false)
         }
         .with_context(|| {
             format!(
@@ -416,14 +467,26 @@ fn execute_sql_script_with_submitter(
         })?;
         results.push(result);
         executed += batch.statements;
-        if offset == 0 && bootstrap_owner.is_some() {
-            auth_info(session).context("checking auth_info after bootstrap-owner first write")?;
+        if offset == 0 {
+            if let Err(error) = auth_info(session) {
+                return Ok(BootstrapOwnerSqlScriptExecution {
+                    execution: SqlScriptExecution {
+                        statements: executed,
+                        batches: offset + 1,
+                        results,
+                    },
+                    post_auth_error: Some(format!("{error:#}")),
+                });
+            }
         }
     }
-    Ok(SqlScriptExecution {
-        statements: executed,
-        batches: total_batches,
-        results,
+    Ok(BootstrapOwnerSqlScriptExecution {
+        execution: SqlScriptExecution {
+            statements: executed,
+            batches: total_batches,
+            results,
+        },
+        post_auth_error: None,
     })
 }
 

@@ -53,6 +53,11 @@ only the first restore batch as an OSW1 owner-signed write using the saved
 metadata, then immediately returns to normal `auth_info` verification for any
 remaining batches.
 
+If the first write is submitted but post-write `auth_info` still fails,
+`restore --bootstrap-owner --json-summary` emits `ok:false`, the first write
+transaction summary, and `post_auth_info.error`, then exits nonzero. Do not
+publish or backfill the database until normal `status` passes.
+
 ## Large Restore
 
 Prefer `restore` for SQL dumps, mirrors, and backfills:

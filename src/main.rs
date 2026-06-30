@@ -55,6 +55,10 @@ fn classify_error(message: &str) -> &'static str {
         || message.contains("receipt")
     {
         "circle_write_failed"
+    } else if message.contains("bootstrap first write was submitted")
+        && message.contains("post-write auth_info")
+    {
+        "bootstrap_unverified"
     } else if message.contains("sqlite_") || message.contains("database error") {
         "sql_rejected"
     } else if message.contains("wallet") {
@@ -114,6 +118,12 @@ mod tests {
         assert_eq!(
             classify_error("calling octra_circleViewAuth: connection refused"),
             "rpc_unavailable"
+        );
+        assert_eq!(
+            classify_error(
+                "bootstrap first write was submitted but post-write auth_info still failed"
+            ),
+            "bootstrap_unverified"
         );
     }
 }

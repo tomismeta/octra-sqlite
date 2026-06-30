@@ -48,6 +48,7 @@ Stable error classifications:
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
 | `circle_write_failed` | A submitted Circle write was rejected or failed. |
+| `bootstrap_unverified` | A bootstrap first write was submitted, but post-write `auth_info` still failed. |
 | `wallet_error` | Wallet config or key loading failed. |
 | `target_error` | Database name, URI, network, or Circle target failed. |
 | `timeout` | Receipt or transaction wait timed out. |

@@ -2069,8 +2069,9 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
         }
     }
     let mut progress_events = Vec::new();
+    let mut post_auth_error = None;
     let mut execution = if let Some(metadata) = &bootstrap_owner {
-        execute_sql_script_with_bootstrap_owner_progress(
+        let outcome = execute_sql_script_with_bootstrap_owner_progress(
             &session,
             &sql,
             &metadata.db_id,
@@ -2083,7 +2084,9 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
                     progress_events.push(progress);
                 }
             },
-        )?
+        )?;
+        post_auth_error = outcome.post_auth_error;
+        outcome.execution
     } else {
         execute_sql_script_with_progress(&session, &sql, false, |progress| {
             if !json_output {
@@ -2097,6 +2100,18 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
     for result in &mut execution.results {
         let raw = std::mem::take(result);
         *result = with_explorer(raw, &session);
+    }
+    if let Some(error) = post_auth_error {
+        return report_bootstrap_post_auth_failure(BootstrapPostAuthReport {
+            session: &session,
+            plan: &plan,
+            execution: &execution,
+            progress: &progress_events,
+            metadata: bootstrap_owner.as_ref(),
+            json_summary: args.json_summary,
+            json_full: args.json,
+            post_auth_error: &error,
+        });
     }
     if args.json_summary {
         print_json(&add_bootstrap_owner_json(
@@ -2118,6 +2133,64 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
         );
         Ok(())
     }
+}
+
+struct BootstrapPostAuthReport<'a> {
+    session: &'a Session,
+    plan: &'a SqlScriptPlan,
+    execution: &'a SqlScriptExecution,
+    progress: &'a [SqlBatchProgress],
+    metadata: Option<&'a BootstrapOwnerMetadata>,
+    json_summary: bool,
+    json_full: bool,
+    post_auth_error: &'a str,
+}
+
+fn report_bootstrap_post_auth_failure(report: BootstrapPostAuthReport<'_>) -> Result<()> {
+    let first_write = report
+        .execution
+        .results
+        .first()
+        .map(write_result_summary)
+        .unwrap_or_else(|| json!({"status": "missing"}));
+    if report.json_summary || report.json_full {
+        let base = if report.json_summary {
+            restore_summary_envelope(report.session, report.plan, report.execution)
+        } else {
+            restore_envelope(
+                report.session,
+                report.plan,
+                report.execution,
+                report.progress,
+            )
+        };
+        let mut envelope = add_bootstrap_owner_json(base, report.metadata);
+        if let Some(object) = envelope.as_object_mut() {
+            object.insert("ok".to_string(), Value::Bool(false));
+            object.insert(
+                "status".to_string(),
+                Value::String("bootstrap_post_auth_failed".to_string()),
+            );
+            object.insert(
+                "post_auth_info".to_string(),
+                json!({
+                    "ok": false,
+                    "error": report.post_auth_error,
+                }),
+            );
+            object.insert("first_write".to_string(), first_write.clone());
+        }
+        print_json(&envelope)?;
+    } else {
+        print_field("bootstrap first write", value_to_string(&first_write));
+        print_field("post auth_info", "failed");
+        print_field("auth_info error", report.post_auth_error);
+    }
+    bail!(
+        "bootstrap first write was submitted but post-write auth_info still failed; first_write={}; post_auth_info_error={post_auth_error}",
+        serde_json::to_string(&first_write)?,
+        post_auth_error = report.post_auth_error
+    )
 }
 
 #[derive(Clone, Debug)]
