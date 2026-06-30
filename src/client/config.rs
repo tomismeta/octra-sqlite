@@ -19,12 +19,27 @@ pub struct Config {
     pub default_database: Option<String>,
     #[serde(default, alias = "aliases")]
     pub databases: BTreeMap<String, String>,
+    #[serde(default)]
+    pub database_metadata: BTreeMap<String, DatabaseMetadata>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkConfig {
     pub rpc: Option<String>,
     pub explorer: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct DatabaseMetadata {
+    pub uri: String,
+    pub network: String,
+    pub circle: String,
+    pub owner: String,
+    pub owner_pubkey: String,
+    pub db_id: String,
+    pub code_hash: String,
+    pub code_bytes: usize,
+    pub create_tx: Option<String>,
 }
 
 impl Config {
@@ -141,6 +156,7 @@ fn merge_config(mut defaults: Config, user: Config) -> Config {
         .or(defaults.explorer);
     defaults.default_database = user.default_database.or(defaults.default_database);
     defaults.databases.extend(user.databases);
+    defaults.database_metadata.extend(user.database_metadata);
     defaults
 }
 
@@ -163,6 +179,7 @@ mod tests {
         let written = serde_json::to_string(&config).unwrap();
         assert!(written.contains("default_database"));
         assert!(written.contains("databases"));
+        assert!(written.contains("database_metadata"));
         assert!(!written.contains("default_target"));
         assert!(!written.contains("aliases"));
     }
@@ -202,6 +219,7 @@ mod tests {
             Some("https://octrascan.io")
         );
         assert!(config.databases.is_empty());
+        assert!(config.database_metadata.is_empty());
     }
 
     #[test]
@@ -211,7 +229,7 @@ mod tests {
         )
         .unwrap();
         let user: Config = serde_json::from_str(
-            r#"{"rpc":"http://custom","default_database":"organization","databases":{"organization":"oct://devnet/octB"}}"#,
+            r#"{"rpc":"http://custom","default_database":"organization","databases":{"organization":"oct://devnet/octB"},"database_metadata":{"organization":{"uri":"oct://devnet/octB","network":"devnet","circle":"octB","owner":"octOwner","owner_pubkey":"aa","db_id":"bb","code_hash":"cc","code_bytes":123,"create_tx":"tx"}}}"#,
         )
         .unwrap();
         let merged = merge_config(defaults, user);
@@ -225,6 +243,13 @@ mod tests {
         assert_eq!(
             merged.databases.get("organization").map(String::as_str),
             Some("oct://devnet/octB")
+        );
+        assert_eq!(
+            merged
+                .database_metadata
+                .get("organization")
+                .map(|metadata| metadata.code_hash.as_str()),
+            Some("cc")
         );
     }
 

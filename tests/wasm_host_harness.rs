@@ -452,6 +452,24 @@ mod wasm_behavior {
     }
 
     #[test]
+    fn auth_info_does_not_require_existing_storage_pages() -> Result<()> {
+        let (_, owner_pubkey, db_id_bytes) = owner_fixture();
+        let mut contract = Contract::load_patched(&owner_pubkey, &db_id_bytes)?;
+
+        assert!(contract.host.borrow().kv.is_empty());
+        let auth = json_response(&contract.call_query("auth_info", &[])?);
+
+        assert_eq!(auth["ok"], true);
+        assert_eq!(auth["configured"], true);
+        assert_eq!(auth["auth"], "osw1");
+        assert_eq!(auth["owner_pubkey"], hex::encode(owner_pubkey));
+        assert_eq!(auth["db_id"], hex::encode(db_id_bytes));
+        assert!(auth.get("owner_sequence").is_none());
+        assert!(contract.host.borrow().kv.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn commit_rollback_and_generation_storage_are_behavioral() -> Result<()> {
         let mut contract = Contract::load()?;
         let first = json_response(&contract.call_update(

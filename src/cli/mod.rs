@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 mod portability;
 mod shell;
@@ -14,7 +14,8 @@ use crate::{
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
             wait_for_transaction, wallet_caller, Session,
         },
-        write_config, AuthInfo, ClientError, ClientErrorKind, Config, SessionOptions,
+        write_config, AuthInfo, ClientError, ClientErrorKind, Config, DatabaseMetadata,
+        RpcTraceMode, SessionOptions,
     },
     protocol::{
         target::{parse_database_target, DatabaseTarget as Target},
@@ -43,14 +44,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.2.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.3.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b";
-const EXPECTED_WASM_BYTES: usize = 609_404;
+    "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d";
+const EXPECTED_WASM_BYTES: usize = 609_354;
 const CREATE_ART_EXAMPLE: &str =
     "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
+const SQLITE_VERSION: &str = "3.53.2";
+const MAX_RESULT_ROWS: usize = 512;
+const MAX_RESPONSE_BYTES: usize = 65_526;
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -212,6 +216,13 @@ struct OpenArgs {
     /// Write exact read JSON-RPC request/response envelopes to a JSONL file.
     #[arg(long = "trace-rpc-json", value_name = "FILE")]
     trace_rpc_json: Option<PathBuf>,
+    /// Trace detail: full, summary, request_only, or response_meta.
+    #[arg(
+        long = "trace-rpc-json-mode",
+        value_enum,
+        default_value_t = TraceRpcJsonMode::Full
+    )]
+    trace_rpc_json_mode: TraceRpcJsonMode,
     /// Execute SQL from a file. Use - to read stdin.
     #[arg(long = "sql-file", value_name = "FILE")]
     sql_file: Option<PathBuf>,
@@ -220,6 +231,27 @@ struct OpenArgs {
     read_only: bool,
     /// SQL to run directly instead of opening the shell.
     sql: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum TraceRpcJsonMode {
+    Full,
+    Summary,
+    #[value(name = "request_only", alias = "request-only")]
+    RequestOnly,
+    #[value(name = "response_meta", alias = "response-meta")]
+    ResponseMeta,
+}
+
+impl From<TraceRpcJsonMode> for RpcTraceMode {
+    fn from(value: TraceRpcJsonMode) -> Self {
+        match value {
+            TraceRpcJsonMode::Full => RpcTraceMode::Full,
+            TraceRpcJsonMode::Summary => RpcTraceMode::Summary,
+            TraceRpcJsonMode::RequestOnly => RpcTraceMode::RequestOnly,
+            TraceRpcJsonMode::ResponseMeta => RpcTraceMode::ResponseMeta,
+        }
+    }
 }
 
 #[derive(Args)]
@@ -351,6 +383,9 @@ struct DeployArgs {
     /// Allow deploying unpersonalized WASM that has unsigned writes.
     #[arg(long)]
     allow_unconfigured: bool,
+    /// Patch bundled WASM for the current owner without reading auth_info.
+    #[arg(long)]
+    bootstrap_owner: bool,
     /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
     #[arg(long)]
     wallet: Option<PathBuf>,
@@ -775,7 +810,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
 
     if !args.no_name {
-        if let Err(error) = save_new_database_alias(&args, &target_uri, &mut config) {
+        if let Err(error) = save_new_database_alias(&args, &target_uri, &created, &mut config) {
             print_circle_recovery(
                 &args,
                 &target_uri,
@@ -873,10 +908,36 @@ fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -
     Ok(())
 }
 
-fn save_new_database_alias(args: &NewArgs, target_uri: &str, config: &mut Config) -> Result<()> {
+fn save_new_database_alias(
+    args: &NewArgs,
+    target_uri: &str,
+    created: &CreatedCircle,
+    config: &mut Config,
+) -> Result<()> {
     config
         .databases
         .insert(args.name.clone(), target_uri.to_string());
+    config.database_metadata.insert(
+        args.name.clone(),
+        DatabaseMetadata {
+            uri: target_uri.to_string(),
+            network: target_uri
+                .strip_prefix("oct://")
+                .and_then(|value| {
+                    value
+                        .split_once('/')
+                        .map(|(network, _)| network.to_string())
+                })
+                .unwrap_or_default(),
+            circle: created.circle.clone(),
+            owner: created.owner.clone(),
+            owner_pubkey: created.auth_patch.owner_pubkey_hex.clone(),
+            db_id: created.auth_patch.db_id_hex.clone(),
+            code_hash: created.code_hash.clone(),
+            code_bytes: created.code_bytes,
+            create_tx: created.tx_hash.clone(),
+        },
+    );
     if args.default || config.default_database.is_none() {
         config.default_database = Some(args.name.clone());
     }
@@ -1062,6 +1123,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
             "networks": config.networks,
             "default_database": config.default_database,
             "databases": config.databases,
+            "database_metadata": config.database_metadata,
         }));
     }
 
@@ -1426,8 +1488,10 @@ fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
 
 struct CreatedCircle {
     circle: String,
+    owner: String,
     code_hash: String,
     code_bytes: usize,
+    auth_patch: AuthPatch,
     tx_hash: Option<String>,
     confirmation: Option<Value>,
 }
@@ -1444,7 +1508,7 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
     let wasm_path = resolve_wasm_for_new(args)?;
     let mut wasm =
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
-    patch_wasm_auth_for_owner(&mut wasm, session)?;
+    let auth_patch = patch_wasm_auth_for_owner(&mut wasm, session)?;
     let code_hash = sha256_hex(&wasm);
     let code_b64 = general_purpose::STANDARD.encode(&wasm);
     let payload_json = circle_deploy_payload_json(Some(&code_b64))?;
@@ -1486,8 +1550,10 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
     }
     Ok(CreatedCircle {
         circle,
+        owner: session.caller().to_string(),
         code_hash,
         code_bytes: wasm.len(),
+        auth_patch,
         tx_hash,
         confirmation,
     })
@@ -1815,6 +1881,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
         }
         DatabaseCommand::Remove { name } => {
             config.databases.remove(&name);
+            config.database_metadata.remove(&name);
             if config.default_database.as_deref() == Some(&name) {
                 config.default_database = None;
             }
@@ -1870,6 +1937,7 @@ fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool)
         .or_else(|| config.default_database.clone())
         .ok_or_else(|| anyhow!("no database supplied and no default database is configured"))?;
     let saved_uri = config.databases.get(&requested);
+    let metadata = config.database_metadata.get(&requested);
     let target = resolve_target(&requested, config)?;
     if json_mode {
         return print_json(&json!({
@@ -1884,7 +1952,8 @@ fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool)
                 "network": target.network,
                 "circle": target.circle,
                 "rpc": target.rpc,
-            }
+            },
+            "metadata": metadata,
         }));
     }
     print_field(
@@ -1913,13 +1982,25 @@ fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool)
     if let Some(explorer) = config.explorer_for_network(&target.network) {
         print_field("explorer", explorer);
     }
+    if let Some(metadata) = metadata {
+        print_field("owner", &metadata.owner);
+        print_field("code hash", &metadata.code_hash);
+    }
     print_field("open", format!("octra-sqlite {}", requested));
     print_field("status", format!("octra-sqlite status {}", requested));
     Ok(())
 }
 
 fn cmd_open(args: OpenArgs) -> Result<()> {
+    if args.trace_rpc_json.is_none() && args.trace_rpc_json_mode != TraceRpcJsonMode::Full {
+        bail!("--trace-rpc-json-mode requires --trace-rpc-json");
+    }
     let session = build_session(&args.target)?;
+    let trace_mode = RpcTraceMode::from(args.trace_rpc_json_mode);
+    let trace_rpc_json = args
+        .trace_rpc_json
+        .as_deref()
+        .map(|path| (path, trace_mode));
     let mode = if args.json {
         OutputMode::Json
     } else {
@@ -1927,25 +2008,11 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
     };
     if let Some(path) = &args.sql_file {
         let sql = read_sql_file_arg(path)?;
-        return run_sql_input(
-            &session,
-            &sql,
-            mode,
-            true,
-            args.read_only,
-            args.trace_rpc_json.as_deref(),
-        );
+        return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
     }
     if args.sql.is_empty() {
         if let Some(sql) = read_stdin_sql()? {
-            return run_sql_input(
-                &session,
-                &sql,
-                mode,
-                true,
-                args.read_only,
-                args.trace_rpc_json.as_deref(),
-            );
+            return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
         }
         if args.trace_rpc_json.is_some() {
             bail!("--trace-rpc-json requires one SQL statement; interactive shell tracing is not supported");
@@ -1953,14 +2020,7 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
         run_shell(session, mode)
     } else {
         let sql = args.sql.join(" ");
-        run_sql_input(
-            &session,
-            &sql,
-            mode,
-            true,
-            args.read_only,
-            args.trace_rpc_json.as_deref(),
-        )
+        run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json)
     }
 }
 
@@ -2061,14 +2121,17 @@ fn cmd_limits(args: LimitsArgs) -> Result<()> {
     }
     print_field("max SQL bytes", MAX_SQL_TEXT_BYTES.to_string());
     print_field("batch target bytes", SQL_BATCH_TARGET_BYTES.to_string());
+    print_field("max result rows", MAX_RESULT_ROWS.to_string());
     print_field("transactions", "one accepted exec is atomic");
     print_field("user BEGIN/COMMIT", "unsupported across Octra writes");
     print_field(
         "restore",
         "chunked; multi-batch restore can partially apply",
     );
+    print_field("reads", "signed Octra view auth");
     print_field("writes", "OSW1 owner write intent");
     print_field("read-only", "client guard via --read-only");
+    print_field("trace modes", "full, summary, request_only, response_meta");
     if let Some(target) = target {
         print_field("database", target["uri"].as_str().unwrap_or(""));
         print_field("network", target["network"].as_str().unwrap_or(""));
@@ -2114,7 +2177,7 @@ fn run_sql_input(
     mode: OutputMode,
     headers: bool,
     read_only: bool,
-    trace_rpc_json: Option<&Path>,
+    trace_rpc_json: Option<(&Path, RpcTraceMode)>,
 ) -> Result<()> {
     run_one_sql_to(session, sql, mode, headers, None, read_only, trace_rpc_json)
 }
@@ -2126,7 +2189,7 @@ pub(super) fn run_one_sql_to(
     headers: bool,
     output: Option<&Path>,
     read_only: bool,
-    trace_rpc_json: Option<&Path>,
+    trace_rpc_json: Option<(&Path, RpcTraceMode)>,
 ) -> Result<()> {
     let trimmed = sql.trim();
     if trimmed.starts_with('.') && !trimmed.contains('\n') {
@@ -2150,7 +2213,7 @@ pub(super) fn run_one_sql_to(
     }
     ensure_sql_text_fits(sql)?;
     let query_result = match trace_rpc_json {
-        Some(path) => query_typed_traced(session, sql, path),
+        Some((path, mode)) => query_typed_traced(session, sql, path, mode),
         None => query_typed(session, sql),
     };
     match query_result {
@@ -2483,10 +2546,29 @@ fn limits_json(target: Option<Value>) -> Value {
         "type": "limits",
         "schema": "octra-sqlite.cli.v1",
         "target": target,
+        "versions": {
+            "cli": env!("CARGO_PKG_VERSION"),
+            "sqlite": SQLITE_VERSION,
+            "json_schema": "octra-sqlite.cli.v1",
+            "rpc_trace_schema": "octra-sqlite.rpc-trace.v1",
+        },
         "sql": {
             "max_sql_bytes": MAX_SQL_TEXT_BYTES,
             "batch_target_bytes": SQL_BATCH_TARGET_BYTES,
             "input": ["argument", "stdin", "--sql-file", ".read", "restore"],
+        },
+        "result": {
+            "max_rows": MAX_RESULT_ROWS,
+            "max_response_bytes": MAX_RESPONSE_BYTES,
+            "limit_error": "result_limit_exceeded",
+            "size_error": "result_too_large",
+            "suggestion": "add a SQL LIMIT clause or narrow selected columns",
+        },
+        "restore": {
+            "chunked": true,
+            "json_summary": true,
+            "progress": "batch_index, statement range, statement count, byte count",
+            "retry_model": "make SQL idempotent; failed multi-batch restores can be rerun after inspection",
         },
         "transactions": {
             "exec_atomicity": "one accepted exec is atomic",
@@ -2495,8 +2577,16 @@ fn limits_json(target: Option<Value>) -> Value {
             "restore_partial_apply": true,
         },
         "auth": {
+            "read_model": "signed Octra view auth",
             "write_model": "OSW1 owner write intent",
             "read_only_guard": "client-side --read-only",
+            "native_roles": false,
+        },
+        "trace": {
+            "default": "off",
+            "option": "--trace-rpc-json FILE",
+            "modes": ["full", "summary", "request_only", "response_meta"],
+            "mode_option": "--trace-rpc-json-mode MODE",
         }
     })
 }
@@ -2989,7 +3079,15 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
     let circle = args
         .circle
         .clone()
-        .ok_or_else(|| anyhow!("deploy requires --circle CIRCLE_ID"))?;
+        .ok_or_else(|| anyhow!("deploy requires --circle CIRCLE_ID or oct://NETWORK/CIRCLE_ID"))?;
+    if args.bootstrap_owner {
+        if !circle.starts_with("oct://") {
+            bail!("--bootstrap-owner requires --circle oct://NETWORK/CIRCLE_ID");
+        }
+        if args.wasm.is_some() {
+            bail!("--bootstrap-owner uses the bundled Circle WASM; omit --wasm");
+        }
+    }
     let target_args = TargetArgs {
         target: Some(circle.clone()),
         wallet: args.wallet.clone(),
@@ -3002,7 +3100,26 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
     let wasm_path = resolve_wasm_path(args.build, args.wasm.as_deref())?;
     let mut wasm =
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
-    let auth_patch = match auth_info(&session) {
+    if args.bootstrap_owner && args.allow_unconfigured {
+        bail!("--bootstrap-owner and --allow-unconfigured are mutually exclusive");
+    }
+    let auth_patch = if args.bootstrap_owner {
+        let info = program_info(&session)
+            .context("reading Circle program info before owner bootstrap deploy")?;
+        match program_owner(&info) {
+            Some(owner) if owner == session.caller() => {}
+            Some(owner) => bail!(
+                "Circle owner is {owner}; current wallet {} cannot bootstrap owner-personalized WASM",
+                session.caller()
+            ),
+            None => bail!("Circle program info did not expose an owner; refusing bootstrap deploy"),
+        }
+        Some(
+            patch_wasm_auth_for_owner(&mut wasm, &session)
+                .context("patching owner bootstrap auth into Circle WASM")?,
+        )
+    } else {
+        match auth_info(&session) {
         Ok(auth) if auth.configured => Some(patch_wasm_auth_from_info(&mut wasm, &auth).with_context(|| {
             "preserving existing OSW1 personalization; pass --allow-unconfigured to deploy raw WASM"
         })?),
@@ -3017,6 +3134,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         Err(error) => bail!(
             "could not read database auth_info; refusing to deploy because it could remove owner-write protection: {error:#}. Pass --allow-unconfigured to deploy raw WASM."
         ),
+        }
     };
     let code_hash = sha256_hex(&wasm);
     let message = serde_json::to_string(&json!({
@@ -3051,6 +3169,10 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
     );
     out.insert("code_bytes".to_string(), Value::Number(wasm.len().into()));
     out.insert("code_hash".to_string(), Value::String(code_hash.clone()));
+    out.insert(
+        "bootstrap_owner".to_string(),
+        Value::Bool(args.bootstrap_owner),
+    );
     if let Some(patch) = auth_patch {
         out.insert(
             "auth_patch".to_string(),
@@ -3436,6 +3558,7 @@ COMMIT;",
             rpc: None,
             no_wait: false,
             allow_unconfigured: false,
+            bootstrap_owner: false,
             wallet: None,
             caller: None,
             private_key_b64: None,
@@ -3443,6 +3566,26 @@ COMMIT;",
         };
         let error = cmd_deploy(args).unwrap_err().to_string();
         assert!(error.contains("requires --circle"));
+    }
+
+    #[test]
+    fn deploy_accepts_owner_bootstrap_for_explicit_circle() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "deploy",
+            "--circle",
+            "oct://mainnet/octABC",
+            "--bootstrap-owner",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Deploy(args) => {
+                assert_eq!(args.circle.as_deref(), Some("oct://mainnet/octABC"));
+                assert!(args.bootstrap_owner);
+                assert!(!args.allow_unconfigured);
+            }
+            _ => panic!("expected deploy command"),
+        }
     }
 
     #[test]
@@ -3490,6 +3633,8 @@ COMMIT;",
             "art",
             "--trace-rpc-json",
             "trace.jsonl",
+            "--trace-rpc-json-mode",
+            "summary",
             "select * from artist;",
         ])
         .unwrap();
@@ -3497,10 +3642,35 @@ COMMIT;",
             Commands::Open(args) => {
                 assert_eq!(args.target.target.as_deref(), Some("art"));
                 assert_eq!(args.trace_rpc_json, Some(PathBuf::from("trace.jsonl")));
+                assert_eq!(args.trace_rpc_json_mode, TraceRpcJsonMode::Summary);
                 assert_eq!(args.sql, vec!["select * from artist;"]);
             }
             _ => panic!("expected open command"),
         }
+    }
+
+    #[test]
+    fn trace_mode_requires_trace_path() {
+        let args = OpenArgs {
+            target: TargetArgs {
+                target: Some("oct://devnet/octABC".to_string()),
+                wallet: None,
+                rpc: Some("mock://rpc".to_string()),
+                caller: Some("octCaller".to_string()),
+                private_key_b64: Some(
+                    "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+                ),
+                public_key_b64: None,
+            },
+            json: false,
+            trace_rpc_json: None,
+            trace_rpc_json_mode: TraceRpcJsonMode::Summary,
+            sql_file: None,
+            read_only: false,
+            sql: vec!["select 1;".to_string()],
+        };
+        let error = cmd_open(args).unwrap_err().to_string();
+        assert!(error.contains("--trace-rpc-json-mode requires --trace-rpc-json"));
     }
 
     #[test]
@@ -3541,6 +3711,24 @@ COMMIT;",
         assert_eq!(envelope["writes"]["first_tx_hash"], "tx1");
         assert_eq!(envelope["writes"]["last_tx_hash"], "tx2");
         assert!(envelope.get("progress").is_none());
+    }
+
+    #[test]
+    fn limits_json_exposes_automation_contract_facts() {
+        let limits = limits_json(None);
+        assert_eq!(limits["ok"], true);
+        assert_eq!(limits["type"], "limits");
+        assert_eq!(limits["schema"], "octra-sqlite.cli.v1");
+        assert_eq!(limits["versions"]["sqlite"], SQLITE_VERSION);
+        assert_eq!(limits["sql"]["max_sql_bytes"], MAX_SQL_TEXT_BYTES);
+        assert_eq!(limits["result"]["max_rows"], MAX_RESULT_ROWS);
+        assert_eq!(limits["result"]["limit_error"], "result_limit_exceeded");
+        assert_eq!(limits["auth"]["read_model"], "signed Octra view auth");
+        assert_eq!(limits["auth"]["write_model"], "OSW1 owner write intent");
+        assert!(limits["trace"]["modes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("summary")));
     }
 
     #[test]

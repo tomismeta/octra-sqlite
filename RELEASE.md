@@ -1,5 +1,45 @@
 # Release Notes
 
+## 0.3.3
+
+This is an automation contract hardening release over `0.3.2`. The bundled
+Circle WASM is rebuilt so empty sealed database Circles can expose `auth_info`
+before the first SQLite storage pages exist.
+
+## Added
+
+- `--trace-rpc-json-mode` for compact read trace files: `summary`,
+  `request_only`, and `response_meta`, while keeping `full` as the default.
+- Expanded `limits --json` output for SQL/result limits, restore behavior,
+  read/write auth boundaries, trace modes, and schema versions.
+- Stable JSON error `exit_code` plus clearer machine-readable classifications
+  such as `sql_rejected`, `result_limit_exceeded`, `result_too_large`,
+  `auth_failed`, `rpc_unavailable`, and `circle_write_failed`.
+- A small CLI JSON contract fixture covering real binary `limits --json` and
+  JSON error output.
+- Storage-independent `auth_info` in the Circle WASM for safe first-write
+  bootstrap on empty database Circles.
+- `deploy --bootstrap-owner` for explicit owner-checked recovery of empty
+  Circles created by older builds that cannot expose `auth_info` before first
+  storage pages exist.
+- Local creation metadata for newly saved databases, including owner wallet,
+  owner public key, database id, bundled code hash, code bytes, and create
+  transaction.
+- Rust/Cargo 1.87+ and pinned release install documentation.
+
+## Notes
+
+- JSON shapes remain additive. Existing `query`, `write`, `write_script`,
+  `restore`, `check`, `status`, `verify`, and `limits` envelopes keep their
+  command-specific fields.
+- `--read-only` is a client guard. Reads still use signed Octra view auth;
+  writes remain OSW1 owner-gated by the Circle program.
+- Multi-batch restore is practical for backfills but not globally atomic. Make
+  restore SQL idempotent before retrying a failed load.
+- `deploy --bootstrap-owner` does not bypass OSW1 and does not submit SQL. It
+  only deploys owner-personalized bundled WASM after confirming the current
+  wallet is the Circle owner.
+
 ## 0.3.2
 
 This is an automation polish release over the deployed `0.3.1` Circle WASM.
@@ -187,7 +227,10 @@ devnet.
 - Bit-for-bit reproducible builds across arbitrary host toolchains.
 - A stable public package API beyond the starter CLI and documented scripts.
 
-## Live Devnet Proof
+## Prior Live Devnet Proof
+
+The latest deployed devnet proof is from `0.3.2`. The `0.3.3` Circle WASM is
+rebuilt for empty-storage bootstrap and needs a fresh live proof before tagging.
 
 ```text
 circle: octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
@@ -201,6 +244,6 @@ program_update_tx: 3d1a3e308f2a29b4c7748745b269841b4025ebb777fe51629e066139c6446
 non_owner_denied_tx: 567559d31f4c8fa3a0f5eff42f8ea8b417ee2269ab1a0b5c404241de5ff6b6a1
 backup_sha256: 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
 backup_integrity: ok
-manifest: release/octra-sqlite-0.3.1.json
+manifest: release/octra-sqlite-0.3.2.json
 proof: docs/proofs/devnet.md
 ```

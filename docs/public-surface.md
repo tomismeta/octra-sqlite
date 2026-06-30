@@ -46,7 +46,10 @@ signed `exec` path as later writes.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite
-workflow.
+workflow. `deploy --bootstrap-owner` is a narrow recovery path for empty
+owner-owned Circles whose older program cannot expose `auth_info` before first
+storage pages exist; it verifies Circle ownership and deploys owner-personalized
+bundled WASM without submitting SQL.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write
@@ -63,7 +66,10 @@ They should stay expressive enough that users do not need to inspect
 For automation, use `--json` on non-interactive commands and prefer full
 `oct://NETWORK/<circle>` URIs over local database names.
 Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the
-exact Octra JSON-RPC request/response envelope for proof or debugging.
+Octra JSON-RPC request/response envelope for proof or debugging. Use
+`--trace-rpc-json-mode summary` when hashes and sizes are enough.
+`limits --json` is the supported place to discover SQL limits, result limits,
+auth behavior, restore behavior, trace modes, and JSON schema names.
 
 ## Public
 
@@ -96,8 +102,8 @@ exact Octra JSON-RPC request/response envelope for proof or debugging.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.3.2.json`: release manifest for the bundled Circle
-  WASM and published network-specific deployment.
+- `release/octra-sqlite-0.3.3.json`: release manifest for the bundled Circle
+  WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.
 - `scripts/install-cli.sh`: local installer for `cargo install --path .`.

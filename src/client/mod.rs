@@ -9,15 +9,15 @@ mod transport;
 mod wallet;
 mod write;
 
-pub use config::{config_path, load_config, write_config, Config};
+pub use config::{config_path, load_config, write_config, Config, DatabaseMetadata};
 pub use database::{Database, OctraSqlite};
 pub use error::{ClientError, ClientErrorKind, Result};
 pub use results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx};
 pub use safety::{operation_safety, DatabaseOperation, OperationSafety};
 pub use session::SessionOptions;
-#[cfg(feature = "http")]
-pub use transport::HttpTransport;
 pub use transport::Transport;
+#[cfg(feature = "http")]
+pub use transport::{HttpTransport, RpcTraceMode};
 pub use write::{PreparedOwnerWrite, PreparedWrite, SignedWrite};
 
 pub mod low_level {

@@ -10,6 +10,10 @@ Use `--json` for stable machine-readable output. Every envelope has:
 }
 ```
 
+The 0.3.x contract is additive: consumers should require `ok`, `type`, and
+`schema`, then read command-specific fields. New fields may be added, but the
+documented meanings below should not change inside the 0.3 line.
+
 Errors use the same schema on stderr:
 
 ```json
@@ -17,12 +21,41 @@ Errors use the same schema on stderr:
   "ok": false,
   "type": "error",
   "schema": "octra-sqlite.cli.v1",
+  "exit_code": 1,
   "error": {
-    "code": "database_error",
+    "code": "sql_rejected",
     "message": "database error (sqlite_prepare_failed): no such table: demo"
   }
 }
 ```
+
+Process exit codes are intentionally small for now:
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Command succeeded. |
+| `1` | Command failed; use `error.code` and `error.message` for detail. |
+
+Stable error classifications:
+
+| Code | Meaning |
+| --- | --- |
+| `sql_too_large` | SQL exceeded the Circle statement/payload byte limit. |
+| `transactions_not_supported` | Restore saw unsupported transaction control SQL. |
+| `read_only` | `--read-only` refused a write. |
+| `result_limit_exceeded` | Query exceeded the Circle row limit. |
+| `result_too_large` | Query response exceeded the Circle response buffer. |
+| `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
+| `auth_failed` | Wallet/signature/owner authorization failed. |
+| `circle_write_failed` | A submitted Circle write was rejected or failed. |
+| `wallet_error` | Wallet config or key loading failed. |
+| `target_error` | Database name, URI, network, or Circle target failed. |
+| `timeout` | Receipt or transaction wait timed out. |
+| `decode_error` | RPC or contract response could not be decoded. |
+| `rpc_unavailable` | HTTP transport failed. |
+| `rpc_error` | Octra RPC returned an error envelope. |
+| `config_error` | Local config could not be loaded or resolved. |
+| `command_failed` | Fallback classification for other command failures. |
 
 ## Envelopes
 
@@ -70,6 +103,26 @@ Produced by single-statement writes with `--json`.
 ```
 
 Writes do not include `columns` or `rows`.
+
+### `write_script`
+
+Produced by multi-statement SQL scripts with `--json`.
+
+```json
+{
+  "ok": true,
+  "type": "write_script",
+  "schema": "octra-sqlite.cli.v1",
+  "database": {},
+  "plan": {},
+  "statements": 3,
+  "batches": 1,
+  "progress": [],
+  "writes": []
+}
+```
+
+Script writes do not include SQL `columns` or `rows`.
 
 ### `restore`
 
@@ -139,27 +192,44 @@ Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
 embedded typed SQLite query result.
 
+`limits --json` is the compact capability surface for automation. It includes
+CLI/SQLite/schema versions, SQL byte limits, result row/response limits, restore
+behavior, read/write auth facts, and available trace modes.
+
 ## RPC Trace
 
-For read proof/debugging, write exact JSON-RPC request/response envelopes to a
-JSONL file:
+For read proof/debugging, write JSON-RPC trace envelopes to a JSONL file:
 
 ```sh
 octra-sqlite DATABASE --trace-rpc-json trace.jsonl "select * from artist;"
+octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary "select * from artist;"
 ```
 
-Each line is:
+Trace mode defaults to `full`. Available modes:
+
+| Mode | Contents |
+| --- | --- |
+| `full` | Exact JSON-RPC request and response bodies plus metadata. |
+| `summary` | Method, status, hashes, byte counts, and error only. |
+| `request_only` | Exact request body plus response metadata. |
+| `response_meta` | Request and response hashes/byte counts only. |
+
+Each full-trace line is:
 
 ```json
 {
   "schema": "octra-sqlite.rpc-trace.v1",
+  "mode": "full",
   "sequence": 1,
   "timestamp_ms": 1780000000000,
   "rpc": "https://devnet.octrascan.io/rpc",
   "method": "octra_circleViewAuth",
   "http_status": 200,
+  "ok": true,
   "request": {},
   "response": {},
+  "request_meta": {},
+  "response_meta": {},
   "error": null
 }
 ```

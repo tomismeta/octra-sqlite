@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.3
+
+- Added compact RPC trace modes: `full`, `summary`, `request_only`, and
+  `response_meta`, with `full` preserved as the default exact trace.
+- Expanded `limits --json` into the supported automation capability surface for
+  versions, SQL/result limits, restore behavior, auth boundaries, and trace
+  modes.
+- Tightened JSON error output with `exit_code` and stable error classifications
+  for SQL rejection, auth, result limits, RPC, wallet, target, and write
+  failures.
+- Added a binary-level JSON contract fixture for `limits --json` and JSON error
+  envelopes.
+- Rebuilt the bundled Circle WASM so `auth_info` no longer reads SQLite page
+  metadata, allowing owner-signed first writes on empty sealed database Circles.
+- Added `deploy --bootstrap-owner` for explicit owner-checked recovery of an
+  empty Circle whose deployed program cannot expose `auth_info` before first
+  storage pages exist.
+- Persisted local creation metadata for new saved databases: owner wallet,
+  owner public key, database id, code hash, code bytes, and create transaction.
+- Documented Rust/Cargo 1.87+, pinned source installs, read/write auth,
+  restore/backfill happy path, result limits, and compact trace usage.
+- Added `.claude/` to `.gitignore` so local agent settings cannot be committed
+  accidentally.
+
 ## 0.3.2
 
 - Added `--trace-rpc-json FILE` for one-shot read SQL JSON-RPC trace files.

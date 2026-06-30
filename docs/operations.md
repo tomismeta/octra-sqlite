@@ -19,6 +19,29 @@ octra-sqlite database info art --json
 octra-sqlite status oct://devnet/oct... --json
 ```
 
+## Empty Circle Bootstrap Recovery
+
+New `0.3.3` databases expose `auth_info` before any SQLite pages exist, so the
+first owner-signed initializer write can run normally.
+
+If an older empty database Circle was created but cannot expose `auth_info`
+because the RPC reports a missing storage cache, redeploy the bundled
+owner-personalized WASM with the Circle owner wallet, then retry the schema or
+restore:
+
+```sh
+octra-sqlite deploy \
+  --circle oct://mainnet/oct... \
+  --rpc https://octra.network/rpc \
+  --bootstrap-owner
+
+octra-sqlite restore oct://mainnet/oct... --file schema.sql --json-summary
+```
+
+`--bootstrap-owner` does not submit SQL and does not bypass OSW1. It only runs
+a signed Circle program update after confirming the active wallet is the Circle
+owner.
+
 ## Large Restore
 
 Prefer `restore` for SQL dumps, mirrors, and backfills:
@@ -38,11 +61,22 @@ meaning would violate SQLite expectations.
 Use JSON for automation:
 
 ```sh
-octra-sqlite restore art --file dump.sql --json
+octra-sqlite restore art --file dump.sql --json-summary
 ```
 
 The JSON summary includes statement counts, batch counts, transaction hashes,
-and per-batch statement ranges.
+and failed batches only. Use `--json` when a caller needs every batch receipt.
+
+Happy path for a mirror/backfill:
+
+1. Generate idempotent SQL with stable primary keys.
+2. Run `octra-sqlite check DATABASE --sql-file dump.sql --json`.
+3. Run `octra-sqlite restore DATABASE --file dump.sql --json-summary`.
+4. Run an application count/range query, then `octra-sqlite verify DATABASE`.
+
+If restore fails, inspect the reported batch or statement range. A multi-batch
+restore can partially apply, so retry by rerunning idempotent SQL after fixing
+the cause. There is no persisted resume checkpoint in 0.3.x.
 
 ## Limits
 
@@ -54,6 +88,9 @@ octra-sqlite limits art --json
 Current operational limits:
 
 - One SQL statement or payload must fit within the Circle SQL byte limit.
+- One read query returns at most 512 rows.
+- Large result payloads can fail with `result_too_large`; select fewer columns
+  or add a narrower `where` / `limit`.
 - Large scripts are split into multiple signed writes.
 - Each accepted write is atomic.
 - A multi-batch restore is not globally atomic.
@@ -97,4 +134,6 @@ Use `--read-only` in scripts that must never submit writes:
 octra-sqlite art --read-only "select * from artist;"
 ```
 
-This is a client-side safety guard, not an Octra policy layer.
+This is a client-side safety guard, not an Octra policy layer. Reads still use
+signed Octra view auth with the active wallet. Writes use OSW1 owner write
+intent and are owner-gated by the Circle program.

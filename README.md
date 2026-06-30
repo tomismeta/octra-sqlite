@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.3.2-111827)](./release/octra-sqlite-0.3.2.json)
+[![version](https://img.shields.io/badge/version-v0.3.3-111827)](./release/octra-sqlite-0.3.3.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -12,8 +12,9 @@ wallet, and gives you a SQLite-shaped interface over live Circle state.
 
 ## Cold Start
 
-You need Rust/Cargo and an Octra wallet. Writes and new databases need a funded
-wallet. The Circle WASM is bundled; you do not need to compile it to start.
+You need Rust/Cargo 1.87+ and an Octra wallet. Writes and new databases need a
+funded wallet. The Circle WASM is bundled; you do not need to compile it to
+start.
 
 ```sh
 git clone https://github.com/tomismeta/octra-sqlite.git
@@ -22,6 +23,12 @@ cargo install --path . --locked
 
 octra-sqlite setup
 octra-sqlite status
+```
+
+Pinned release install:
+
+```sh
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.3 --locked
 ```
 
 Create a new Circle-backed SQLite database:
@@ -70,6 +77,8 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
 | `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
 | `octra-sqlite DATABASE --trace-rpc-json trace.jsonl "SQL"` | Trace read JSON-RPC envelopes. |
+| `octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary "SQL"` | Trace compact read proof metadata. |
+| `octra-sqlite DATABASE --read-only "SQL"` | Refuse to submit writes from this command. |
 | `octra-sqlite DATABASE ".COMMAND"` | Run a SQLite-style dot command. |
 | `octra-sqlite open DATABASE` | Open the interactive shell. |
 | `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution. |

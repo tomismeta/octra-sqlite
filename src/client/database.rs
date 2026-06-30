@@ -13,7 +13,7 @@ use super::{
 #[cfg(feature = "http")]
 use super::{
     rpc::{next_nonce_with, view_with, wait_for_transaction_with},
-    transport::HttpTransport,
+    transport::{HttpTransport, RpcTraceMode},
 };
 #[cfg(feature = "http")]
 use crate::protocol::tx::Tx;
@@ -197,8 +197,9 @@ pub fn query_typed_traced(
     session: &Session,
     sql: &str,
     trace_path: &std::path::Path,
+    trace_mode: RpcTraceMode,
 ) -> Result<Value> {
-    let transport = HttpTransport::with_trace_jsonl(trace_path)?;
+    let transport = HttpTransport::with_trace_jsonl_mode(trace_path, trace_mode)?;
     query_typed_with(&transport, session, sql)
 }
 

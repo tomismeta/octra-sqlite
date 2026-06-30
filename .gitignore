@@ -22,5 +22,6 @@ secrets.json
 .oct/
 .octra
 .octra/
+.claude/
 *.wasm
 !circle/wasm/octra_sqlite_circle.wasm

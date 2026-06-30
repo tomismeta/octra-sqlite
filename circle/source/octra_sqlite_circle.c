@@ -1781,11 +1781,6 @@ static int run_storage_info(void) {
 static int auth_configured(void);
 
 static int run_auth_info(void) {
-  int rc = load_meta();
-  if (rc != SQLITE_OK) {
-    append_json_error("circle_vfs_meta_failed", "could not read page VFS metadata");
-    return 1;
-  }
   append_result_envelope_open();
   append_cstr(",\"auth\":\"osw1\",");
   append_cstr("\"configured\":");
@@ -1794,8 +1789,7 @@ static int run_auth_info(void) {
   append_hex_bytes(configured_db_id, 32);
   append_cstr("\",\"owner_pubkey\":\"");
   append_hex_bytes(configured_owner_pubkey, 32);
-  append_cstr("\",\"owner_sequence\":");
-  append_i64((i64)current_owner_sequence);
+  append_cstr("\"");
   append_byte('}');
   return 0;
 }

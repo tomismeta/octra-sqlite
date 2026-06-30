@@ -1,0 +1,89 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.3.3",
+  "circle_program_version": "pending",
+  "network": "devnet",
+  "public_circle": null,
+  "circle_create_tx": null,
+  "initializer_tx": null,
+  "program_update_tx": null,
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 609354,
+    "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+  },
+  "sqlite": {
+    "version": "3.53.2",
+    "source_path": "vendor/sqlite/3.53.2/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530200",
+    "source_sha256": "d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "portability": {
+    "backup": "page_stream_v1",
+    "dump": "sqlite_shell_compatible_sql",
+    "read": "sqlite_dump_restore_without_shell_wrappers",
+    "csv_import": "sqlite_cli_subset"
+  },
+  "typed_results": {
+    "codec": "OSR1",
+    "spec": "docs/spec/osr1.md"
+  },
+  "write_intents": {
+    "codec": "OSW1",
+    "wire_domain": "octra-sqlite.osw1.v1\\0",
+    "spec": "docs/spec/osw1.md"
+  },
+  "public_deployment": {
+    "status": "pending",
+    "deployment_kind": "not_deployed",
+    "personalized_sha256": null,
+    "owner_pubkey": null,
+    "db_id": null,
+    "owner_pubkey_offset": null,
+    "db_id_offset": null,
+    "non_owner_denied_tx": null
+  },
+  "explorer_urls": {
+    "circle": null,
+    "circle_create": null,
+    "initializer": null,
+    "program_update": null,
+    "non_owner_denied": null
+  },
+  "live_portability_proof": null,
+  "client_release": {
+    "notes": "Automation contract hardening release: stable JSON envelope polish, compact read tracing, storage-independent auth_info for empty database bootstrap, and an explicit owner bootstrap deploy recovery path.",
+    "read_only_api_example": "examples/remilia-read-api"
+  },
+  "status": "draft manifest; live proof pending"
+}
