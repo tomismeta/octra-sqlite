@@ -3,8 +3,8 @@
 ## 0.4.0
 
 This is a productization release over the deployed `0.3.3` Circle WASM proof.
-The contract, wire formats, bundled SQLite engine, and devnet proof Circle are
-unchanged.
+The contract, wire formats, and bundled SQLite engine are unchanged. A separate
+devnet proof Circle records the explicit public-read Octra deployment tuple.
 
 ## Added
 
@@ -15,8 +15,10 @@ unchanged.
 - Public-read metadata in saved database records, deployment manifests,
   `database list`, `database info`, `status`, `limits --json`, and
   `commands --json`.
-- Unsigned public-read client routing for explicit public database URIs and
-  auto-detected public Circle tuples.
+- Unsigned public-read client routing for saved public database metadata and
+  URIs explicitly marked with `?read_mode=public`.
+- Explicit `?read_mode=auto` probing for callers that want the client to inspect
+  Circle info before choosing signed or unsigned reads.
 
 ## Changed
 
@@ -24,6 +26,8 @@ unchanged.
   `database` command aliases, old option aliases, and legacy config aliases.
 - `setup --yes` is the scriptable setup path; `new --sample NAME` is the
   sample database path.
+- Raw `oct://` targets without saved metadata or `?read_mode=public` now default
+  to sealed reads. This avoids hidden Circle-info probing on the shortest URI.
 - README, public surface docs, and operations docs now present one clean
   product path: setup, new, query, status, restore.
 

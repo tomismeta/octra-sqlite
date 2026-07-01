@@ -125,6 +125,12 @@ octra-sqlite new public_art --read-mode public --schema examples/artists.sql
 
 Public-read databases use unsigned Octra Circle views for SQL reads. Anyone can
 query public data. Writes are still owner-signed OSW1 calls.
+When using a raw URI instead of a saved database name, mark public reads
+explicitly:
+
+```sh
+octra-sqlite 'oct://devnet/oct...?read_mode=public' "select * from artist;"
+```
 
 ## `sqlite>` Shell
 

@@ -7,6 +7,7 @@ use serde::Deserialize;
 #[cfg(feature = "cli")]
 use sha2::{Digest, Sha256};
 use std::env;
+#[cfg(feature = "cli")]
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};

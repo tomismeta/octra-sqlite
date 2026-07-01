@@ -56,7 +56,10 @@ Interactive `new` and setup's optional sample creation both ask for read mode
 as `sealed` or `public`, with `sealed` as the default.
 `new --read-mode public` creates an explicit public-read Circle tuple
 (`public / gateway_allowed / public_resources`). Public-read SQL queries use
-`octra_circleView`; sealed databases keep `octra_circleViewAuth`. Writes stay
+`octra_circleView`; sealed databases keep `octra_circleViewAuth`. Saved public
+database metadata preserves that read mode. Raw `oct://` targets default to
+sealed unless the URI explicitly includes `?read_mode=public`; callers that
+want Circle-info probing can opt into `?read_mode=auto`. Writes stay
 owner-signed through OSW1 in both modes.
 
 `deploy` updates existing Circle programs through the same Rust-native signed

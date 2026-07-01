@@ -80,6 +80,42 @@
     "program_update": "https://devnet.octrascan.io/tx.html?hash=efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb",
     "non_owner_denied": "https://devnet.octrascan.io/tx.html?hash=fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148"
   },
+  "public_read_proof": {
+    "status": "deployed",
+    "database_uri": "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "circle": "octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "program_version": "1",
+    "program_hash": "547c68b2d4ac2abe400e1ed28a6c107218f06bdead164f2984c218099da3902e",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "browser_mode": "gateway_allowed",
+    "resource_mode": "public_resources",
+    "owner": "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "c3b4f6d245a55b6c19ef8f0c75039feb2d333f7609e2f8f44a83061051a1f180",
+    "circle_create_tx": "ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+    "initializer_tx": "a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b",
+    "owner_write_tx": "f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798",
+    "unsigned_read": {
+      "wallet_required": false,
+      "caller": "oct11111111111111111111111111111111111111111111",
+      "query": "select id, name from artist order by id;",
+      "row_count": 5
+    },
+    "owner_lock": {
+      "non_owner_wallet": "oct6NBfpTfR9zHdDy5UftWk3FstMYpjp47gDgcTQF5EAxvY",
+      "write_rejected_tx": "da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0",
+      "rejection": "wasm export returned 403",
+      "event": "auth_not_authorized:auth_denied:signed exec signer is not the database owner"
+    },
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b",
+      "owner_write": "https://devnet.octrascan.io/tx.html?hash=f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798",
+      "non_owner_denied": "https://devnet.octrascan.io/tx.html?hash=da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0"
+    }
+  },
   "live_portability_proof": {
     "database_uri": "oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
     "backup": {
@@ -102,9 +138,9 @@
     }
   },
   "client_release": {
-    "notes": "Productization release over the deployed 0.3.3 Circle WASM proof: setup and database creation remain the single front door, public-read databases are explicit through new --read-mode public, redundant commands and aliases are removed, and machine-readable manifests include the read tuple.",
+    "notes": "Productization release over the deployed 0.3.3 Circle WASM proof: setup and database creation remain the single front door, public-read databases are explicit through new --read-mode public, redundant commands and aliases are removed, machine-readable manifests include the read tuple, and a separate public-read devnet proof is recorded.",
     "public_read": "new --read-mode public deploys the public/gateway_allowed/public_resources Circle tuple; reads use octra_circleView and writes remain owner-signed OSW1.",
     "read_only_api_example": "examples/remilia-read-api"
   },
-  "status": "client-only productization release over deployed 0.3.3 devnet proof"
+  "status": "client productization release over deployed 0.3.3 devnet proof with separate public-read devnet proof"
 }

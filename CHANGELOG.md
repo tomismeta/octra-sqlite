@@ -6,11 +6,15 @@
   `new DATABASE --read-mode public`.
 - Added public-read routing: public database reads use `octra_circleView`, while
   sealed database reads keep `octra_circleViewAuth`.
+- Recorded a devnet public-read proof Circle with unsigned SQL reads and an
+  on-chain non-owner write rejection.
 - Kept writes unchanged: all state-changing SQL still uses owner-signed OSW1
   calls.
 - Saved read-mode and Circle tuple metadata for new databases and exposed it in
   manifests, `database list`, `database info`, `status`, `limits --json`, and
   `commands --json`.
+- Made raw `oct://` targets default to sealed reads unless saved metadata or an
+  explicit `?read_mode=public`/`?read_mode=auto` marker says otherwise.
 - Removed redundant public command surfaces: `init`, `quickstart`, command
   aliases, option aliases, and legacy config aliases.
 - Kept `setup --yes` as the scriptable setup path and `new --sample NAME` as

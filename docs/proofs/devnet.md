@@ -45,6 +45,29 @@ csv import tx: 3e315b5b7f0847fa360d14d4103a6d28da51fe57788324a55f8d983965f8bac6
 csv import: https://devnet.octrascan.io/tx.html?hash=3e315b5b7f0847fa360d14d4103a6d28da51fe57788324a55f8d983965f8bac6
 ```
 
+`v0.4.0` public-read proof Circle:
+
+```text
+database: oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ
+circle: octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ
+circle url: https://devnet.octrascan.io/address.html?addr=octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ
+read tuple: public / gateway_allowed / public_resources
+program: version 1, personalized hash 547c68b2d4ac2abe400e1ed28a6c107218f06bdead164f2984c218099da3902e
+storage: 2 pages, 8192 bytes
+auth owner pubkey: 2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb
+auth database id: c3b4f6d245a55b6c19ef8f0c75039feb2d333f7609e2f8f44a83061051a1f180
+circle create tx: ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc
+circle create: https://devnet.octrascan.io/tx.html?hash=ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc
+initializer tx: a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b
+initializer: https://devnet.octrascan.io/tx.html?hash=a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b
+owner write tx: f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798
+owner write: https://devnet.octrascan.io/tx.html?hash=f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798
+unsigned read: walletless query returned 5 artist rows through octra_circleView
+non-owner denied tx: da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0
+non-owner denied: https://devnet.octrascan.io/tx.html?hash=da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0
+non-owner denial event: auth_not_authorized:auth_denied:signed exec signer is not the database owner
+```
+
 Verification commands:
 
 ```sh
@@ -52,6 +75,7 @@ octra-sqlite status oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 octra-sqlite verify oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY --integrity
 octra-sqlite oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY ".backup main proof.sqlite"
 sqlite3 proof.sqlite "pragma integrity_check;"
+octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public' "select id, name from artist order by id;"
 ```
 
 `v0.2.1` public Remilia example Circle:
