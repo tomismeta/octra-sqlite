@@ -994,7 +994,7 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
 
     let config = load_config().unwrap_or_default();
     println!("{}", strong("Create an Octra SQLite database"));
-    let name = prompt_default("Database name", "art")?;
+    let name = prompt_required("Database name")?;
     if name.trim().is_empty() {
         bail!("database name is required");
     }
@@ -3956,6 +3956,18 @@ fn prompt_default(label: &str, default: &str) -> Result<String> {
     } else {
         Ok(trimmed.to_string())
     }
+}
+
+fn prompt_required(label: &str) -> Result<String> {
+    print!("{label}: ");
+    io::stdout().flush()?;
+    let mut value = String::new();
+    io::stdin().read_line(&mut value)?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        bail!("{label} is required");
+    }
+    Ok(trimmed.to_string())
 }
 
 fn prompt_optional(label: &str, default: Option<&str>) -> Result<Option<String>> {
