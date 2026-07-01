@@ -62,6 +62,7 @@ const MIN_RUST_VERSION: &str = "1.87";
 const SQLITE_VERSION: &str = "3.53.2";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
+const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -653,25 +654,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     }
 
     println!("{}", strong("Octra SQLite setup"));
-    let wallet_default = args
-        .wallet
-        .clone()
-        .or_else(|| config.wallet.as_ref().map(PathBuf::from))
-        .or_else(discover_wallet_path)
-        .unwrap_or_else(|| PathBuf::from("./wallet.json"));
-    let wallet_path = if interactive {
-        prompt_path("Wallet path", &wallet_default)?
-    } else {
-        wallet_default
-    };
-    reject_encrypted_oct_wallet(&wallet_path)?;
-    if !wallet_path.is_file() {
-        println!(
-            "{} wallet not found at {}; writes need a funded wallet",
-            strong("warning:"),
-            wallet_path.display()
-        );
-    }
+    let wallet_path = configure_setup_wallet(&args, &mut config, interactive)?;
 
     let network_default = args
         .network
@@ -692,36 +675,51 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         .or_else(|| config.rpc.clone())
         .ok_or_else(|| anyhow!("RPC is required; pass --rpc or set OCTRA_RPC_URL"))?;
 
-    config.wallet = Some(wallet_path.to_string_lossy().to_string());
     config.network = Some(network.clone());
     config.apply_active_network_profile();
     config.rpc = Some(rpc.clone());
     write_config(&config)?;
     print_field("wrote", config_path()?.display().to_string());
-    print_field("wallet", wallet_path.display().to_string());
+    match wallet_path {
+        Some(path) => print_field("wallet", path.display().to_string()),
+        None => print_field("wallet", "not configured"),
+    }
     print_field("network", &network);
     print_field("rpc", &rpc);
     if let Some(explorer) = config.explorer_for_network(&network) {
         print_field("explorer", explorer);
     }
     print_command("create", CREATE_DATABASE_COMMAND);
-    if !wallet_path.is_file() {
+    if config.wallet.is_none() {
         print_command(
             "wallet attach",
-            format!(
-                "octra-sqlite wallet attach {}",
-                shell_quote_path(&wallet_path)
-            ),
+            "octra-sqlite wallet attach /path/to/wallet.json",
         );
-        print_command(
-            "wallet import",
-            format!(
-                "octra-sqlite wallet import --stdin --output {}",
-                shell_quote_path(&wallet_path)
-            ),
-        );
+        print_command("wallet import", "octra-sqlite wallet import --stdin");
     }
     Ok(())
+}
+
+fn configure_setup_wallet(
+    args: &SetupArgs,
+    config: &mut Config,
+    interactive: bool,
+) -> Result<Option<PathBuf>> {
+    if let Some(path) = args.wallet.as_deref() {
+        let path = configure_explicit_wallet(config, path)?;
+        return Ok(Some(path));
+    }
+    if let Some(path) = configured_or_discovered_wallet(config)? {
+        config.wallet = Some(path.to_string_lossy().to_string());
+        return Ok(Some(path));
+    }
+    if interactive {
+        return match prompt_wallet_onboarding(config)? {
+            WalletOnboarding::Configured(path) => Ok(Some(path)),
+            WalletOnboarding::Walletless => Ok(None),
+        };
+    }
+    Ok(None)
 }
 
 fn cmd_new(args: NewArgs) -> Result<()> {
@@ -733,6 +731,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
 
     let mut config = load_config().unwrap_or_default();
     ensure_new_database_name_available(&args, &config, name)?;
+    ensure_wallet_for_database_creation(&args, &mut config)?;
     let init_sql = collect_initializer_sql(&args)?;
     let network = args
         .network
@@ -924,13 +923,6 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
         args.network = Some(prompt_network(&network_default)?);
     }
     args.read_mode = prompt_read_mode(args.read_mode)?;
-    if args.wallet.is_none() {
-        args.wallet = config
-            .wallet
-            .as_ref()
-            .map(PathBuf::from)
-            .or_else(discover_wallet_path);
-    }
     if !args.no_name && !args.default {
         args.default = true;
     }
@@ -945,6 +937,52 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
 
 fn default_new_manifest_path(name: &str) -> PathBuf {
     PathBuf::from(format!("{name}.octra-sqlite.json"))
+}
+
+fn ensure_wallet_for_database_creation(args: &NewArgs, config: &mut Config) -> Result<()> {
+    if args.private_key_b64.is_some() || env::var("OCTRA_PRIVATE_KEY_B64").is_ok() {
+        return Ok(());
+    }
+    if let Some(path) = args.wallet.as_deref() {
+        reject_encrypted_oct_wallet(path)?;
+        let path = canonical_existing_wallet_path(path)?;
+        wallet_file_material(&path)?;
+        return Ok(());
+    }
+    if let Ok(path) = env::var("OCTRA_WALLET") {
+        let path = PathBuf::from(path);
+        reject_encrypted_oct_wallet(&path)?;
+        let path = canonical_existing_wallet_path(&path)?;
+        wallet_file_material(&path)?;
+        return Ok(());
+    }
+    if let Some(path) = config.wallet.as_ref().map(PathBuf::from) {
+        reject_encrypted_oct_wallet(&path)?;
+        if path.is_file() {
+            wallet_file_material(&path)?;
+            return Ok(());
+        }
+        println!(
+            "{} configured wallet not found at {}",
+            strong("warning:"),
+            path.display()
+        );
+    }
+    if let Some(path) = discover_wallet_path() {
+        reject_encrypted_oct_wallet(&path)?;
+        let path = canonical_existing_wallet_path(&path)?;
+        wallet_file_material(&path)?;
+        return Ok(());
+    }
+    if !io::stdin().is_terminal() {
+        bail!("database creation requires a wallet; run octra-sqlite setup, pass --wallet, or set OCTRA_PRIVATE_KEY_B64");
+    }
+    match prompt_wallet_onboarding(config)? {
+        WalletOnboarding::Configured(_) => Ok(()),
+        WalletOnboarding::Walletless => {
+            bail!("database creation requires a wallet; walletless mode only works for public-read queries")
+        }
+    }
 }
 
 fn database_read_uri(target_uri: &str, read_mode: ReadMode) -> String {
@@ -1344,10 +1382,6 @@ fn shell_quote(value: &str) -> String {
     }
 }
 
-fn shell_quote_path(path: &Path) -> String {
-    shell_quote(&path.display().to_string())
-}
-
 fn dot_arg_quote(value: &str) -> String {
     if !value.is_empty()
         && value
@@ -1519,6 +1553,135 @@ fn cmd_wallet(command: WalletCommand) -> Result<()> {
     }
 }
 
+enum WalletOnboarding {
+    Configured(PathBuf),
+    Walletless,
+}
+
+fn configured_or_discovered_wallet(config: &Config) -> Result<Option<PathBuf>> {
+    if let Ok(path) = env::var("OCTRA_WALLET") {
+        let path = PathBuf::from(path);
+        reject_encrypted_oct_wallet(&path)?;
+        let path = canonical_existing_wallet_path(&path)?;
+        wallet_file_material(&path)?;
+        return Ok(Some(path));
+    }
+    if let Some(path) = config.wallet.as_ref().map(PathBuf::from) {
+        reject_encrypted_oct_wallet(&path)?;
+        if path.is_file() {
+            let path = canonical_existing_wallet_path(&path)?;
+            wallet_file_material(&path)?;
+            return Ok(Some(path));
+        }
+        println!(
+            "{} configured wallet not found at {}",
+            strong("warning:"),
+            path.display()
+        );
+    }
+    if let Some(path) = discover_wallet_path() {
+        reject_encrypted_oct_wallet(&path)?;
+        let path = canonical_existing_wallet_path(&path)?;
+        wallet_file_material(&path)?;
+        return Ok(Some(path));
+    }
+    Ok(None)
+}
+
+fn configure_explicit_wallet(config: &mut Config, path: &Path) -> Result<PathBuf> {
+    reject_encrypted_oct_wallet(path)?;
+    let path = canonical_existing_wallet_path(path)?;
+    let material = wallet_file_material(&path)?;
+    config.wallet = Some(path.to_string_lossy().to_string());
+    print_field("wallet", path.display().to_string());
+    print_field("address", &material.address);
+    Ok(path)
+}
+
+fn prompt_wallet_onboarding(config: &mut Config) -> Result<WalletOnboarding> {
+    println!("{}", strong("No wallet found."));
+    println!("Choose wallet setup:");
+    println!("  1. Use wallet.json from Octra wallet generator");
+    println!("  2. Attach existing wallet.json");
+    println!("  3. Paste private key securely");
+    println!("  4. Continue without wallet");
+    println!("  5. Cancel");
+    loop {
+        let choice = prompt_default("Wallet setup", "1")?;
+        match choice.trim() {
+            "1" => return import_wallet_from_generator(config).map(WalletOnboarding::Configured),
+            "2" => return attach_wallet_interactive(config).map(WalletOnboarding::Configured),
+            "3" => return paste_wallet_interactive(config).map(WalletOnboarding::Configured),
+            "4" => {
+                println!(
+                    "{} walletless mode only works for public-read databases. Sealed reads and all writes require a wallet.",
+                    strong("note:")
+                );
+                return Ok(WalletOnboarding::Walletless);
+            }
+            "5" => bail!("wallet setup cancelled"),
+            _ => println!("Enter 1, 2, 3, 4, or 5."),
+        }
+    }
+}
+
+fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
+    println!("{}", strong("Official Octra wallet generator"));
+    print_field("url", OFFICIAL_WALLET_GENERATOR_URL);
+    println!("Generate a wallet with the official Octra generator, save wallet.json, then enter its path.");
+    println!(
+        "Only use the official Octra generator; private-key generator URLs are phishing targets."
+    );
+    let source = prompt_path_no_default("Wallet JSON path")?;
+    reject_encrypted_oct_wallet(&source)?;
+    let source = canonical_existing_wallet_path(&source)?;
+    let material = wallet_file_material(&source)?;
+    let output = default_wallet_output_path()?;
+    let output = absolute_wallet_output_path(&output)?;
+    if source != output {
+        write_wallet_json(&output, &material, false)?;
+        config.wallet = Some(output.to_string_lossy().to_string());
+        write_config(config)?;
+        print_field("wallet", output.display().to_string());
+        print_field("address", &material.address);
+        print_field(
+            "next",
+            format!("delete the downloaded copy at {}", source.display()),
+        );
+        warn_wallet_permissions_if_needed(&output);
+        return Ok(output);
+    }
+    config.wallet = Some(source.to_string_lossy().to_string());
+    write_config(config)?;
+    print_field("wallet", source.display().to_string());
+    print_field("address", &material.address);
+    Ok(source)
+}
+
+fn attach_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
+    let path = prompt_path_no_default("Wallet JSON path")?;
+    let path = configure_explicit_wallet(config, &path)?;
+    write_config(config)?;
+    Ok(path)
+}
+
+fn paste_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
+    println!("Private key is needed to create databases and sign writes.");
+    println!("It will be saved locally at ~/.octra/wallet.json with restricted permissions where supported.");
+    println!("It will not be printed, logged, or stored in shell history.");
+    let mut private_key = read_tty_secret("Paste private key: ")?;
+    let material = wallet_material_from_private_key(&private_key, None)?;
+    private_key.zeroize();
+    let output = absolute_wallet_output_path(&default_wallet_output_path()?)?;
+    write_wallet_json(&output, &material, false)?;
+    config.wallet = Some(output.to_string_lossy().to_string());
+    write_config(config)?;
+    print_field("wallet", output.display().to_string());
+    print_field("address", &material.address);
+    warn_wallet_permissions_if_needed(&output);
+    Ok(output)
+}
+
 fn cmd_wallet_attach(args: WalletAttachArgs) -> Result<()> {
     reject_encrypted_oct_wallet(&args.path)?;
     let path = canonical_existing_wallet_path(&args.path)?;
@@ -1603,6 +1766,7 @@ fn cmd_wallet_import(args: WalletImportArgs) -> Result<()> {
     } else {
         print_field("wrote", config_path.display().to_string());
     }
+    warn_wallet_permissions_if_needed(&output);
     print_field("next", "octra-sqlite wallet status");
     Ok(())
 }
@@ -1720,6 +1884,13 @@ fn read_stdin_secret(error: &str) -> Result<String> {
     Ok(secret)
 }
 
+fn read_tty_secret(prompt: &str) -> Result<String> {
+    if !io::stdin().is_terminal() {
+        bail!("interactive private-key import requires a terminal; use wallet import --stdin for automation");
+    }
+    rpassword::prompt_password(prompt).context("reading private key from terminal")
+}
+
 fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -1748,6 +1919,16 @@ fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Res
     #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(())
+}
+
+fn warn_wallet_permissions_if_needed(path: &Path) {
+    let _ = path;
+    #[cfg(not(unix))]
+    println!(
+        "{} could not automatically restrict wallet file permissions on this OS; protect {}",
+        strong("warning:"),
+        path.display()
+    );
 }
 
 fn report_wallet_permissions(report: &mut StatusReport, path: &Path) {
@@ -3606,13 +3787,13 @@ fn commands_json() -> Value {
         "commands": [
             {
                 "command": "octra-sqlite setup",
-                "purpose": "interactive wallet and network setup",
+                "purpose": "interactive wallet and network setup; can guide official wallet-generator import, attach, or hidden private-key paste",
                 "writes": false,
                 "json": false,
             },
             {
                 "command": "octra-sqlite new [DATABASE] [SQL]",
-                "purpose": "create a Circle-backed SQLite database; prompts when DATABASE is omitted in a terminal",
+                "purpose": "create a Circle-backed SQLite database; prompts for wallet setup when needed and DATABASE is omitted in a terminal",
                 "writes": true,
                 "json": true,
                 "envelope": "new",
@@ -3755,7 +3936,7 @@ fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite wallet import PATH|--stdin",
-                "purpose": "normalize a plaintext wallet or stdin private key into a local wallet JSON",
+                "purpose": "normalize a plaintext wallet JSON or stdin private key into a local wallet JSON",
                 "writes": "local_file",
                 "json": true,
                 "envelope": "wallet_import",
@@ -3893,11 +4074,8 @@ fn prompt_required(label: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-fn prompt_path(label: &str, default: &Path) -> Result<PathBuf> {
-    Ok(PathBuf::from(prompt_default(
-        label,
-        &default.to_string_lossy(),
-    )?))
+fn prompt_path_no_default(label: &str) -> Result<PathBuf> {
+    Ok(PathBuf::from(prompt_required(label)?))
 }
 
 fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {

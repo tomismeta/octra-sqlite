@@ -38,12 +38,16 @@ Need machine-readable install guidance:
 octra-sqlite install --json
 ```
 
-Already have a wallet:
+Wallet setup:
 
 ```sh
 octra-sqlite wallet attach ./wallet.json
 printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
 ```
+
+`setup` and guided `new` can also walk you through the safe paths: use
+`wallet.json` from the official Octra wallet generator, attach an existing
+plaintext wallet JSON, or paste a private key into a hidden prompt.
 
 Create directly with inline SQL:
 
@@ -59,10 +63,10 @@ octra-sqlite art
 ```
 
 The guided flow asks for an explicit database name, network, read mode, and
-confirmation. It uses your detected wallet, makes the new database the default,
-and writes `DATABASE.octra-sqlite.json`. Network defaults to `devnet`; read mode
-defaults to `sealed`. Choose `public` only for data intended to be publicly
-queryable.
+confirmation. If no wallet is configured, it starts wallet setup first. It makes
+the new database the default and writes `DATABASE.octra-sqlite.json`. Network
+defaults to `devnet`; read mode defaults to `sealed`. Choose `public` only for
+data intended to be publicly queryable.
 
 ## Interfaces
 
@@ -85,7 +89,7 @@ let rows = db.query("select * from artist order by name;")?;
 | Command | Purpose |
 | --- | --- |
 | `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
-| `octra-sqlite setup` | Configure wallet and network defaults. |
+| `octra-sqlite setup` | Configure wallet and network defaults, with guided wallet setup when needed. |
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
 | `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |

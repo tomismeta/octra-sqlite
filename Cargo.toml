@@ -38,7 +38,7 @@ include = [
 
 [features]
 default = ["cli", "http"]
-cli = ["dep:anyhow", "dep:clap", "dep:rustyline", "http"]
+cli = ["dep:anyhow", "dep:clap", "dep:rpassword", "dep:rustyline", "http"]
 http = ["dep:reqwest"]
 wasm-behavior = ["dep:wasmtime"]
 
@@ -60,6 +60,7 @@ dirs = "6"
 ed25519-dalek = "2"
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+rpassword = { version = "7", optional = true }
 rustyline = { version = "18.0.1", default-features = false, features = ["with-file-history"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

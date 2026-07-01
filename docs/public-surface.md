@@ -31,8 +31,11 @@ octra-sqlite art "select * from artist;"
 ```
 
 `setup` configures wallet and network defaults only. It does not ask for or set
-a default database. The first successful `new` saves the created database and
-makes it the default.
+a default database. If no wallet is found, it offers the same wallet setup flow
+as guided `new`: import `wallet.json` from the official Octra wallet generator,
+attach an existing plaintext wallet JSON, paste a private key into a hidden
+prompt, or continue without a wallet for public-read queries only. The first
+successful `new` saves the created database and makes it the default.
 
 The reference configurable database creation path is:
 
@@ -57,8 +60,9 @@ the bundled audited SQLite WASM, saves an `oct://` database URI, and then runs
 optional initializer SQL through the same signed `exec` path as later writes.
 `new --sample NAME` is the built-in sample path; it is not a separate command.
 Interactive `new` asks only for an explicit database name, network, read mode,
-and confirmation. It uses the detected wallet, makes the new database the
-default, and writes `DATABASE.octra-sqlite.json`. Network is `devnet` or
+and confirmation once a wallet is available. If no wallet is configured, it
+starts wallet setup first. It uses the detected wallet, makes the new database
+the default, and writes `DATABASE.octra-sqlite.json`. Network is `devnet` or
 `mainnet`; read mode is `sealed` or `public`, with `devnet` and `sealed` as the
 defaults.
 `new --read-mode public` creates an explicit public-read Circle tuple
@@ -68,6 +72,12 @@ database metadata preserves that read mode. Raw `oct://` targets default to
 sealed unless the URI explicitly includes `?read_mode=public`; callers that
 want Circle-info probing can opt into `?read_mode=auto`. Writes stay
 owner-signed through OSW1 in both modes.
+
+Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
+then local `wallet.json` candidates. `.oct` WebCLI wallets are detected and
+explained but not decrypted by octra-sqlite. Future external signers must be
+paired/authenticated and user-confirming, not blind localhost signing or private
+key export.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite

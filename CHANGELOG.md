@@ -20,6 +20,16 @@
   are resolved from configuration and conventions.
 - Simplified `setup` to wallet and network configuration. Database defaults are
   established by `new`.
+- Added a shared wallet onboarding flow for `setup` and guided `new`: use
+  `wallet.json` from the official Octra wallet generator, attach existing
+  plaintext wallet JSON, paste a private key through a hidden terminal prompt,
+  or continue without a wallet for public-read queries only.
+- Added `rpassword` as a CLI-only dependency for no-echo interactive private-key
+  import; the protocol/client core and `--no-default-features` build stay
+  dependency-light.
+- Kept `.oct` WebCLI wallets out of the direct import path: they are explained
+  as encrypted/PIN-protected and reserved for a future paired, confirming
+  external signer flow.
 - Shortened human `new` output and added a manifest `read_uri` field for
   shareable public-read database URIs.
 - Removed redundant public command surfaces: `init`, `quickstart`, command
