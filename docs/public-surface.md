@@ -52,6 +52,8 @@ octra-sqlite install --json
 the bundled audited SQLite WASM, saves an `oct://` database URI, and then runs
 optional initializer SQL through the same signed `exec` path as later writes.
 `new --sample NAME` is the built-in sample path; it is not a separate command.
+Interactive `new` and setup's optional sample creation both ask for read mode
+as `sealed` or `public`, with `sealed` as the default.
 `new --read-mode public` creates an explicit public-read Circle tuple
 (`public / gateway_allowed / public_resources`). Public-read SQL queries use
 `octra_circleView`; sealed databases keep `octra_circleViewAuth`. Writes stay

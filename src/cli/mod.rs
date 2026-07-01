@@ -733,6 +733,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
         let name = prompt_default("Database name", "art")?;
         let sample = prompt_default("Sample", "artists")?;
+        let read_mode = prompt_read_mode(ReadModeArg::Sealed)?;
         cmd_new(NewArgs {
             name: Some(name),
             build: false,
@@ -740,7 +741,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             create_ou: "200000".to_string(),
             rpc: Some(rpc),
             network: Some(network),
-            read_mode: ReadModeArg::Sealed,
+            read_mode,
             no_wait: false,
             no_name: false,
             default: true,
@@ -1003,9 +1004,7 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
         let default_network = config.network.as_deref().unwrap_or("devnet");
         args.network = Some(prompt_default("Network", default_network)?);
     }
-    if prompt_yes_no("Make reads public?", false)? {
-        args.read_mode = ReadModeArg::Public;
-    }
+    args.read_mode = prompt_read_mode(args.read_mode)?;
     if args.wallet.is_none() {
         let wallet_default = config
             .wallet
@@ -3992,6 +3991,19 @@ fn prompt_path(label: &str, default: &Path) -> Result<PathBuf> {
         label,
         &default.to_string_lossy(),
     )?))
+}
+
+fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
+    let default_text = match default {
+        ReadModeArg::Sealed => "sealed",
+        ReadModeArg::Public => "public",
+    };
+    let value = prompt_default("Read mode (sealed/public)", default_text)?;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "sealed" => Ok(ReadModeArg::Sealed),
+        "public" => Ok(ReadModeArg::Public),
+        _ => bail!("read mode must be sealed or public"),
+    }
 }
 
 fn prompt_yes_no(label: &str, default: bool) -> Result<bool> {
