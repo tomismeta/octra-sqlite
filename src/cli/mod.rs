@@ -653,7 +653,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         bail!("setup is interactive; run it in a terminal or pass --yes with flags");
     }
 
-    println!("{}", strong("Octra SQLite setup"));
+    print_title("Octra SQLite setup");
     let wallet_path = configure_setup_wallet(&args, &mut config, interactive)?;
 
     let network_default = args
@@ -679,6 +679,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     config.apply_active_network_profile();
     config.rpc = Some(rpc.clone());
     write_config(&config)?;
+    println!();
+    print_section("Setup complete");
     print_field("wrote", config_path()?.display().to_string());
     match wallet_path {
         Some(path) => print_field("wallet", path.display().to_string()),
@@ -689,6 +691,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     if let Some(explorer) = config.explorer_for_network(&network) {
         print_field("explorer", explorer);
     }
+    println!();
+    print_section("Next");
     print_command("create", CREATE_DATABASE_COMMAND);
     if config.wallet.is_none() {
         print_command(
@@ -760,6 +764,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         )
     };
     if !args.json {
+        println!();
         print_field("funding", funding_detail);
     }
     let read_mode = ReadMode::from(args.read_mode);
@@ -878,6 +883,8 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
 
     let followup_target = new_followup_target(name, &target_uri, args.no_name);
+    println!();
+    print_section("Database ready");
     if args.no_name {
         print_field("created", "(not saved)");
     } else {
@@ -892,7 +899,13 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     if let Some(hash) = &created.tx_hash {
         print_field("tx", linked_tx(&network, hash));
     }
-    print_field("open", format!("octra-sqlite open {followup_target}"));
+    println!();
+    print_section("Next");
+    print_command("open", format!("octra-sqlite open {followup_target}"));
+    print_command(
+        "tables",
+        format!("octra-sqlite {followup_target} \".tables\""),
+    );
     Ok(())
 }
 
@@ -908,8 +921,8 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
     }
 
     let config = load_config().unwrap_or_default();
-    println!("{}", strong("Create an Octra SQLite database"));
-    let name = prompt_required("Database name")?;
+    print_title("Create an Octra SQLite database");
+    let name = prompt_required("database name")?;
     if name.trim().is_empty() {
         bail!("database name is required");
     }
@@ -929,7 +942,7 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
     if args.manifest.is_none() {
         args.manifest = Some(default_new_manifest_path(&name));
     }
-    if !prompt_yes_no("Create database?", true)? {
+    if !prompt_yes_no("create database?", true)? {
         bail!("cancelled");
     }
     Ok(args)
@@ -962,10 +975,9 @@ fn ensure_wallet_for_database_creation(args: &NewArgs, config: &mut Config) -> R
             wallet_file_material(&path)?;
             return Ok(());
         }
-        println!(
-            "{} configured wallet not found at {}",
-            strong("warning:"),
-            path.display()
+        print_field(
+            "warning",
+            format!("configured wallet not found at {}", path.display()),
         );
     }
     if let Some(path) = discover_wallet_path() {
@@ -1406,6 +1418,19 @@ pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
     print!("{}", format_field(label, detail));
 }
 
+fn print_title(title: &str) {
+    println!("{}", strong(title));
+    println!();
+}
+
+fn print_section(title: &str) {
+    println!("{}", strong(title));
+}
+
+fn print_choice(number: usize, label: &str) {
+    println!("  {}  {label}", dim(format!("{number}.")));
+}
+
 fn print_command(label: &str, command: impl AsRef<str>) {
     println!("{} {}", dim(format!("{label}:")), command.as_ref());
 }
@@ -1599,23 +1624,25 @@ fn configure_explicit_wallet(config: &mut Config, path: &Path) -> Result<PathBuf
 }
 
 fn prompt_wallet_onboarding(config: &mut Config) -> Result<WalletOnboarding> {
-    println!("{}", strong("No wallet found."));
-    println!("Choose wallet setup:");
-    println!("  1. Use wallet.json from Octra wallet generator");
-    println!("  2. Attach existing wallet.json");
-    println!("  3. Paste private key securely");
-    println!("  4. Continue without wallet");
-    println!("  5. Cancel");
+    print_section("Wallet");
+    print_field("status", "not configured");
+    println!("{}", dim("Choose how octra-sqlite should find a signer."));
+    print_choice(1, "Use wallet.json from Octra wallet generator");
+    print_choice(2, "Attach existing wallet.json");
+    print_choice(3, "Paste private key securely");
+    print_choice(4, "Continue without wallet");
+    print_choice(5, "Cancel");
+    println!();
     loop {
-        let choice = prompt_default("Wallet setup", "1")?;
+        let choice = prompt_default("wallet setup", "1")?;
         match choice.trim() {
             "1" => return import_wallet_from_generator(config).map(WalletOnboarding::Configured),
             "2" => return attach_wallet_interactive(config).map(WalletOnboarding::Configured),
             "3" => return paste_wallet_interactive(config).map(WalletOnboarding::Configured),
             "4" => {
-                println!(
-                    "{} walletless mode only works for public-read databases. Sealed reads and all writes require a wallet.",
-                    strong("note:")
+                print_field(
+                    "note",
+                    "walletless mode only works for public-read databases. Sealed reads and all writes require a wallet.",
                 );
                 return Ok(WalletOnboarding::Walletless);
             }
@@ -1626,13 +1653,18 @@ fn prompt_wallet_onboarding(config: &mut Config) -> Result<WalletOnboarding> {
 }
 
 fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
-    println!("{}", strong("Official Octra wallet generator"));
+    println!();
+    print_section("Import generated wallet");
     print_field("url", OFFICIAL_WALLET_GENERATOR_URL);
-    println!("Generate a wallet with the official Octra generator, save wallet.json, then enter its path.");
-    println!(
-        "Only use the official Octra generator; private-key generator URLs are phishing targets."
+    print_field(
+        "step",
+        "generate a wallet with the official Octra generator, save wallet.json, then paste its local path here.",
     );
-    let source = prompt_path_no_default("Wallet JSON path")?;
+    print_field(
+        "warning",
+        "only use the official Octra generator; private-key generator URLs are phishing targets.",
+    );
+    let source = prompt_path_no_default("wallet JSON path")?;
     reject_encrypted_oct_wallet(&source)?;
     let source = canonical_existing_wallet_path(&source)?;
     let material = wallet_file_material(&source)?;
@@ -1660,17 +1692,28 @@ fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
 }
 
 fn attach_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
-    let path = prompt_path_no_default("Wallet JSON path")?;
+    println!();
+    print_section("Attach wallet");
+    print_field(
+        "expects",
+        "wallet.json with address and private key material",
+    );
+    let path = prompt_path_no_default("wallet JSON path")?;
     let path = configure_explicit_wallet(config, &path)?;
     write_config(config)?;
     Ok(path)
 }
 
 fn paste_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
-    println!("Private key is needed to create databases and sign writes.");
-    println!("It will be saved locally at ~/.octra/wallet.json with restricted permissions where supported.");
-    println!("It will not be printed, logged, or stored in shell history.");
-    let mut private_key = read_tty_secret("Paste private key: ")?;
+    println!();
+    print_section("Paste private key");
+    print_field("used for", "creating databases and signing writes");
+    print_field(
+        "saved at",
+        "~/.octra/wallet.json with restricted permissions where supported",
+    );
+    print_field("secret", "input is hidden and not stored in shell history");
+    let mut private_key = read_tty_secret("private key")?;
     let material = wallet_material_from_private_key(&private_key, None)?;
     private_key.zeroize();
     let output = absolute_wallet_output_path(&default_wallet_output_path()?)?;
@@ -1889,6 +1932,7 @@ fn read_tty_secret(prompt: &str) -> Result<String> {
     if !io::stdin().is_terminal() {
         bail!("interactive private-key import requires a terminal; use wallet import --stdin for automation");
     }
+    let prompt = format!("{}: ", dim(prompt));
     rpassword::prompt_password(prompt).context("reading private key from terminal")
 }
 
@@ -4086,7 +4130,7 @@ fn sample_sql(name: &str) -> Result<String> {
 }
 
 fn prompt_default(label: &str, default: &str) -> Result<String> {
-    print!("{label} [{default}]: ");
+    print!("{} [{}]: ", dim(label), default);
     io::stdout().flush()?;
     let mut value = String::new();
     io::stdin().read_line(&mut value)?;
@@ -4099,7 +4143,7 @@ fn prompt_default(label: &str, default: &str) -> Result<String> {
 }
 
 fn prompt_required(label: &str) -> Result<String> {
-    print!("{label}: ");
+    print!("{}: ", dim(label));
     io::stdout().flush()?;
     let mut value = String::new();
     io::stdin().read_line(&mut value)?;
@@ -4119,7 +4163,7 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
         ReadModeArg::Sealed => "sealed",
         ReadModeArg::Public => "public",
     };
-    let value = prompt_default("Read mode (sealed/public)", default_text)?;
+    let value = prompt_default("read mode (sealed/public)", default_text)?;
     match value.trim().to_ascii_lowercase().as_str() {
         "sealed" => Ok(ReadModeArg::Sealed),
         "public" => Ok(ReadModeArg::Public),
@@ -4128,7 +4172,7 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
 }
 
 fn prompt_network(default: &str) -> Result<String> {
-    let value = prompt_default("Network (devnet/mainnet)", default)?;
+    let value = prompt_default("network (devnet/mainnet)", default)?;
     match value.trim().to_ascii_lowercase().as_str() {
         "devnet" => Ok("devnet".to_string()),
         "mainnet" => Ok("mainnet".to_string()),
@@ -4138,7 +4182,7 @@ fn prompt_network(default: &str) -> Result<String> {
 
 fn prompt_yes_no(label: &str, default: bool) -> Result<bool> {
     let default_text = if default { "Y/n" } else { "y/N" };
-    print!("{label} [{default_text}]: ");
+    print!("{} [{}]: ", dim(label), default_text);
     io::stdout().flush()?;
     let mut value = String::new();
     io::stdin().read_line(&mut value)?;
