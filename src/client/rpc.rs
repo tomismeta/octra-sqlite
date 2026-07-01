@@ -5,11 +5,28 @@ use super::{
     transport::Transport,
 };
 use crate::protocol::osr1::{decode_typed_result, TYPED_PREFIX};
+use crate::protocol::target::ReadMode;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 pub(super) fn view_with<T: Transport>(
+    transport: &T,
+    session: &Session,
+    method: &str,
+    params: Vec<Value>,
+) -> Result<Value> {
+    match session.target().read_mode {
+        ReadMode::Public => return public_view_with(transport, session, method, params),
+        ReadMode::Auto if circle_is_public_read(&circle_info_with(transport, session)?) => {
+            return public_view_with(transport, session, method, params);
+        }
+        _ => {}
+    }
+    signed_view_with(transport, session, method, params)
+}
+
+fn signed_view_with<T: Transport>(
     transport: &T,
     session: &Session,
     method: &str,
@@ -25,7 +42,7 @@ pub(super) fn view_with<T: Transport>(
         method,
         params_hash
     );
-    let signature = session.sign_view_auth_b64(&message);
+    let signature = session.sign_view_auth_b64(&message)?;
     let result = rpc_call(
         transport,
         session,
@@ -35,12 +52,48 @@ pub(super) fn view_with<T: Transport>(
             method,
             params,
             session.caller(),
-            session.public_key_b64(),
+            session.public_key_b64()?,
             signature,
             false
         ]),
     )?;
     decode_rpc_result(result)
+}
+
+fn public_view_with<T: Transport>(
+    transport: &T,
+    session: &Session,
+    method: &str,
+    params: Vec<Value>,
+) -> Result<Value> {
+    let result = rpc_call(
+        transport,
+        session,
+        "octra_circleView",
+        json!([
+            session.target().circle,
+            method,
+            params,
+            session.caller(),
+            false
+        ]),
+    )?;
+    decode_rpc_result(result)
+}
+
+pub(super) fn circle_info_with<T: Transport>(transport: &T, session: &Session) -> Result<Value> {
+    rpc_call(
+        transport,
+        session,
+        "octra_circleInfo",
+        json!([session.target().circle]),
+    )
+}
+
+fn circle_is_public_read(info: &Value) -> bool {
+    info.get("privacy_class").and_then(Value::as_str) == Some("public")
+        && info.get("browser_mode").and_then(Value::as_str) == Some("gateway_allowed")
+        && info.get("resource_mode").and_then(Value::as_str) == Some("public_resources")
 }
 
 pub(super) fn query_typed_with<T: Transport>(
@@ -86,7 +139,7 @@ pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) 
         session.target().circle,
         session.caller()
     );
-    let signature = session.sign_program_info_b64(&message);
+    let signature = session.sign_program_info_b64(&message)?;
     rpc_call(
         transport,
         session,
@@ -94,7 +147,7 @@ pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) 
         json!([
             session.target().circle,
             session.caller(),
-            session.public_key_b64(),
+            session.public_key_b64()?,
             signature
         ]),
     )

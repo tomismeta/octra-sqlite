@@ -25,8 +25,8 @@ pub mod low_level {
     pub(crate) use super::database::exec_sql_with_owner_auth;
     #[cfg(feature = "http")]
     pub use super::database::{
-        auth_info, exec_sql, next_nonce, program_info, query_typed, query_typed_traced, submit_tx,
-        view, wait_for_transaction,
+        auth_info, circle_info, exec_sql, next_nonce, program_info, query_typed,
+        query_typed_traced, submit_tx, view, wait_for_transaction,
     };
     pub use super::session::{
         build_control_session, build_session, resolve_wallet_path, Session, SessionOptions,

@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.3.4-111827)](./release/octra-sqlite-0.3.4.json)
+[![version](https://img.shields.io/badge/version-v0.4.0-111827)](./release/octra-sqlite-0.4.0.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -29,7 +29,7 @@ octra-sqlite art "select * from artist order by name;"
 Pinned install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
 ```
 
 Need machine-readable install guidance:
@@ -80,7 +80,6 @@ let rows = db.query("select * from artist order by name;")?;
 | --- | --- |
 | `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
 | `octra-sqlite setup` | Configure wallet, network, RPC, and defaults. |
-| `octra-sqlite init [OPTIONS]` | Scriptable setup. |
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
 | `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |
@@ -89,7 +88,8 @@ let rows = db.query("select * from artist order by name;")?;
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |
 | `octra-sqlite new` | Open the guided database creation flow. |
 | `octra-sqlite new DATABASE --schema FILE --manifest FILE --json` | Create from a SQL file and emit machine-readable output. |
-| `octra-sqlite quickstart DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
+| `octra-sqlite new DATABASE --sample NAME` | Create from an explicit built-in sample. |
+| `octra-sqlite new DATABASE --read-mode public` | Create a public-read database; writes remain owner-signed. |
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
 | `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
 | `octra-sqlite DATABASE --trace-rpc-json trace.jsonl "SQL"` | Trace read JSON-RPC envelopes. |
@@ -107,6 +107,20 @@ let rows = db.query("select * from artist order by name;")?;
 | `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status. |
 | `octra-sqlite deploy [OPTIONS]` | Update an existing Circle with Circle WASM. |
 | `octra-sqlite help` | Show CLI help. |
+
+## Read Modes
+
+Databases are sealed by default. Sealed databases use signed Octra view auth for
+reads and owner-signed OSW1 writes for writes.
+
+Public-read databases are explicit:
+
+```sh
+octra-sqlite new public_art --read-mode public --schema examples/artists.sql
+```
+
+Public-read databases use unsigned Octra Circle views for SQL reads. Anyone can
+query public data. Writes are still owner-signed OSW1 calls.
 
 ## `sqlite>` Shell
 

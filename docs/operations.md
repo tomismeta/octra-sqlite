@@ -19,6 +19,22 @@ octra-sqlite database info art --json
 octra-sqlite status oct://devnet/oct... --json
 ```
 
+## Read Modes
+
+Databases are sealed by default. Sealed reads use `octra_circleViewAuth`, so a
+wallet signs view requests. Writes use owner-signed OSW1 calls.
+
+Public-read databases are explicit:
+
+```sh
+octra-sqlite new public_art --read-mode public --schema examples/artists.sql
+```
+
+Public-read SQL queries use unauthenticated `octra_circleView`, so anyone can
+read data intended to be public. Writes still use owner-signed OSW1 calls. For
+public apps, prefer application-level rate limits or query allowlists at the app
+edge; the database Circle is a public SQL read surface.
+
 ## Empty Circle Bootstrap Recovery
 
 New `0.3.3+` databases expose `auth_info` before any SQLite pages exist, so the

@@ -6,7 +6,7 @@ This is an application integration example, not a supported server framework.
 It reuses the same Rust client boundary as the CLI and exposes one read route.
 Writes are intentionally not implemented.
 
-Run it after `octra-sqlite setup` or `octra-sqlite init`:
+Run it after `octra-sqlite setup`:
 
 ```sh
 cargo run --example remilia-read-api

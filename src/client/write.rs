@@ -277,7 +277,7 @@ fn prepare_write_with_owner_parts(
         timestamp,
         circle: session.target().circle.clone(),
         wallet: session.caller().to_string(),
-        public_key: session.public_key_b64().to_string(),
+        public_key: session.public_key_b64()?.to_string(),
         owner_write,
         safety: operation_safety(operation),
     })
@@ -290,7 +290,7 @@ pub(super) fn sign_write(session: &Session, prepared: &PreparedWrite) -> Result<
         Value::String(prepared.sql.clone()),
         Value::String(owner_write.owner_pubkey.clone()),
         Value::String(owner_write.sequence.to_string()),
-        Value::String(session.sign_owner_write_hex(&hex::decode(&owner_write.frame_hex)?)),
+        Value::String(session.sign_owner_write_hex(&hex::decode(&owner_write.frame_hex)?)?),
     ];
     let message = compact_json(&Value::Array(params))?;
     let mut tx = Tx {
@@ -306,7 +306,7 @@ pub(super) fn sign_write(session: &Session, prepared: &PreparedWrite) -> Result<
         signature: String::new(),
         public_key: prepared.public_key.clone(),
     };
-    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx));
+    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx))?;
     Ok(SignedWrite::new(tx, prepared.safety))
 }
 
@@ -327,7 +327,7 @@ pub(super) fn sign_and_submit_tx_with<T: Transport>(
     mut tx: Tx,
     no_wait: bool,
 ) -> Result<Value> {
-    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx));
+    tx.signature = session.sign_transaction_b64(&canonical_tx(&tx))?;
     submit_tx_with(transport, session, tx, no_wait)
 }
 
@@ -378,7 +378,7 @@ fn ensure_prepared_for_session(session: &Session, prepared: &PreparedWrite) -> R
             "prepared write wallet does not match the active session",
         ));
     }
-    if prepared.public_key != session.public_key_b64() {
+    if prepared.public_key != session.public_key_b64()? {
         return Err(ClientError::with_kind(
             ClientErrorKind::Authorization,
             "prepared write public key does not match the active session",
@@ -400,7 +400,7 @@ fn ensure_signed_for_session(session: &Session, signed: &SignedWrite) -> Result<
             "signed write wallet does not match the active session",
         ));
     }
-    if signed.tx.public_key != session.public_key_b64() {
+    if signed.tx.public_key != session.public_key_b64()? {
         return Err(ClientError::with_kind(
             ClientErrorKind::Authorization,
             "signed write public key does not match the active session",
@@ -492,7 +492,7 @@ mod tests {
             encrypted_data: "exec".to_string(),
             message: "[]".to_string(),
             signature: signature.to_string(),
-            public_key: session.public_key_b64().to_string(),
+            public_key: session.public_key_b64().unwrap().to_string(),
         }
     }
 

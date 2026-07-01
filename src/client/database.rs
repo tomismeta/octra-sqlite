@@ -14,7 +14,7 @@ use super::{
 };
 #[cfg(feature = "http")]
 use super::{
-    rpc::{next_nonce_with, view_with, wait_for_transaction_with},
+    rpc::{circle_info_with, next_nonce_with, view_with, wait_for_transaction_with},
     transport::{HttpTransport, RpcTraceMode},
 };
 #[cfg(feature = "http")]
@@ -218,6 +218,12 @@ pub fn program_info(session: &Session) -> Result<Value> {
 }
 
 #[cfg(feature = "http")]
+pub fn circle_info(session: &Session) -> Result<Value> {
+    let transport = HttpTransport::default();
+    circle_info_with(&transport, session)
+}
+
+#[cfg(feature = "http")]
 pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
     let operation = if no_wait {
@@ -281,6 +287,7 @@ mod tests {
     struct MockTransport {
         calls: Arc<Mutex<Vec<String>>>,
         receipt: Arc<Mutex<Value>>,
+        public_info: bool,
     }
 
     impl Default for MockTransport {
@@ -292,6 +299,7 @@ mod tests {
                     "error": null,
                     "method": "exec",
                 }))),
+                public_info: false,
             }
         }
     }
@@ -303,12 +311,34 @@ mod tests {
                 ..Self::default()
             }
         }
+
+        fn public_read_circle() -> Self {
+            Self {
+                public_info: true,
+                ..Self::default()
+            }
+        }
     }
 
     impl Transport for MockTransport {
         fn call(&self, _rpc: &str, method: &str, params: Value) -> Result<Value> {
             self.calls.lock().unwrap().push(method.to_string());
             match method {
+                "octra_circleInfo" => {
+                    if self.public_info {
+                        Ok(json!({
+                            "privacy_class": "public",
+                            "browser_mode": "gateway_allowed",
+                            "resource_mode": "public_resources",
+                        }))
+                    } else {
+                        Ok(json!({
+                            "privacy_class": "sealed",
+                            "browser_mode": "native_sealed",
+                            "resource_mode": "sealed_read",
+                        }))
+                    }
+                }
                 "octra_circleViewAuth" => {
                     let circle_method = params
                         .as_array()
@@ -321,6 +351,15 @@ mod tests {
                             "db_id": "1111111111111111111111111111111111111111111111111111111111111111",
                         }));
                     }
+                    let vector: Value =
+                        serde_json::from_str(include_str!("../../tests/fixtures/osr1/basic.json"))
+                            .unwrap();
+                    Ok(Value::String(format!(
+                        "OSR1:{}",
+                        vector["payload_b64"].as_str().unwrap()
+                    )))
+                }
+                "octra_circleView" => {
                     let vector: Value =
                         serde_json::from_str(include_str!("../../tests/fixtures/osr1/basic.json"))
                             .unwrap();
@@ -358,7 +397,7 @@ mod tests {
 
     fn test_options() -> SessionOptions {
         SessionOptions {
-            target: Some("oct://devnet/octABC".to_string()),
+            target: Some("oct://devnet/octABC?read_mode=sealed".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
             private_key: Some(
@@ -384,6 +423,45 @@ mod tests {
         assert_eq!(result.columns[0], "nil");
         assert_eq!(result.row_count, 1);
         assert_eq!(calls.lock().unwrap().as_slice(), ["octra_circleViewAuth"]);
+    }
+
+    #[test]
+    fn public_database_query_uses_unsigned_circle_view() {
+        let transport = MockTransport::default();
+        let calls = transport.calls.clone();
+        let db = Database::open_with_transport(
+            SessionOptions {
+                target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+                rpc: Some("mock://rpc".to_string()),
+                ..SessionOptions::default()
+            },
+            transport,
+        )
+        .unwrap();
+        let result = db.query("select * from demo").unwrap();
+        assert_eq!(result.row_count, 1);
+        assert_eq!(calls.lock().unwrap().as_slice(), ["octra_circleView"]);
+    }
+
+    #[test]
+    fn auto_database_query_detects_public_circle_without_wallet() {
+        let transport = MockTransport::public_read_circle();
+        let calls = transport.calls.clone();
+        let db = Database::open_with_transport(
+            SessionOptions {
+                target: Some("oct://devnet/octABC".to_string()),
+                rpc: Some("mock://rpc".to_string()),
+                ..SessionOptions::default()
+            },
+            transport,
+        )
+        .unwrap();
+        let result = db.query("select * from demo").unwrap();
+        assert_eq!(result.row_count, 1);
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["octra_circleInfo", "octra_circleView"]
+        );
     }
 
     #[test]
@@ -435,7 +513,7 @@ mod tests {
             encrypted_data: String::new(),
             message: "{}".to_string(),
             signature: String::new(),
-            public_key: session.public_key_b64().to_string(),
+            public_key: session.public_key_b64().unwrap().to_string(),
         };
         let result = sign_and_submit_tx_with(&transport, &session, tx, true).unwrap();
         assert_eq!(result["circle"], "octNewCircle");

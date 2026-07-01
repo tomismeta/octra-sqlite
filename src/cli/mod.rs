@@ -9,8 +9,8 @@ use crate::{
         config_path, load_config,
         low_level::{
             auth_info, build_control_session as client_build_control_session,
-            build_session as client_build_session, discover_wallet_path, exec_sql, next_nonce,
-            program_info, query_typed, query_typed_traced,
+            build_session as client_build_session, circle_info, discover_wallet_path, exec_sql,
+            next_nonce, program_info, query_typed, query_typed_traced,
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
             wait_for_transaction, wallet_caller, wallet_file_material,
             wallet_material_from_private_key, Session, WalletMaterial,
@@ -20,7 +20,7 @@ use crate::{
     },
     protocol::{
         base58,
-        target::{parse_database_target, DatabaseTarget as Target},
+        target::{parse_database_target, DatabaseTarget as Target, ReadMode},
         tx::Tx,
     },
 };
@@ -50,7 +50,7 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.4.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.4.0.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
@@ -89,14 +89,9 @@ struct Cli {
 enum Commands {
     /// Interactive setup wizard for wallet, RPC, and optional sample database.
     Setup(SetupArgs),
-    /// Configure wallet, RPC, network, and optional default database.
-    Init(InitArgs),
-    /// Create a sample SQLite database in one command.
-    Quickstart(QuickstartArgs),
     /// Create a new SQLite database on Octra and optionally initialize it with SQL.
     New(NewArgs),
     /// Manage saved database names.
-    #[command(alias = "db")]
     Database {
         #[command(subcommand)]
         command: DatabaseCommand,
@@ -162,7 +157,6 @@ enum DatabaseCommand {
     /// Set the default database opened when no database is supplied.
     Use { name: String },
     /// Remove a saved database name.
-    #[command(alias = "rm")]
     Remove { name: String },
 }
 
@@ -198,22 +192,6 @@ struct TargetArgs {
     public_key_b64: Option<String>,
 }
 
-#[derive(Args)]
-struct InitArgs {
-    /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
-    #[arg(long)]
-    wallet: Option<PathBuf>,
-    /// Octra RPC URL.
-    #[arg(long)]
-    rpc: Option<String>,
-    /// Octra network name.
-    #[arg(long)]
-    network: Option<String>,
-    /// Default database name, Circle ID, or oct:// database URI.
-    #[arg(long, alias = "target")]
-    database: Option<String>,
-}
-
 #[derive(Args, Clone)]
 struct SetupArgs {
     /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
@@ -226,7 +204,7 @@ struct SetupArgs {
     #[arg(long)]
     network: Option<String>,
     /// Default database name, Circle ID, or oct:// database URI.
-    #[arg(long, alias = "target")]
+    #[arg(long)]
     database: Option<String>,
     /// Use discovered values and defaults without prompting.
     #[arg(long)]
@@ -271,10 +249,25 @@ struct OpenArgs {
 enum TraceRpcJsonMode {
     Full,
     Summary,
-    #[value(name = "request_only", alias = "request-only")]
+    #[value(name = "request_only")]
     RequestOnly,
-    #[value(name = "response_meta", alias = "response-meta")]
+    #[value(name = "response_meta")]
     ResponseMeta,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ReadModeArg {
+    Sealed,
+    Public,
+}
+
+impl From<ReadModeArg> for ReadMode {
+    fn from(value: ReadModeArg) -> Self {
+        match value {
+            ReadModeArg::Sealed => ReadMode::Sealed,
+            ReadModeArg::Public => ReadMode::Public,
+        }
+    }
 }
 
 impl From<TraceRpcJsonMode> for RpcTraceMode {
@@ -317,11 +310,14 @@ struct NewArgs {
     /// Octra network name.
     #[arg(long)]
     network: Option<String>,
+    /// Octra Circle read mode. Sealed requires signed reads; public allows unsigned reads.
+    #[arg(long, value_enum, default_value = "sealed")]
+    read_mode: ReadModeArg,
     /// Do not wait for Circle creation confirmation or initializer SQL receipts.
     #[arg(long)]
     no_wait: bool,
     /// Do not save a local database name.
-    #[arg(long = "no-name", alias = "no-alias")]
+    #[arg(long = "no-name")]
     no_name: bool,
     /// Make the new database the default database.
     #[arg(long)]
@@ -330,12 +326,7 @@ struct NewArgs {
     #[arg(long)]
     sql: Option<String>,
     /// Schema SQL file to run after creating the database.
-    #[arg(
-        long = "schema",
-        visible_alias = "read",
-        alias = "sql-file",
-        value_name = "FILE"
-    )]
+    #[arg(long = "schema", value_name = "FILE")]
     read: Option<PathBuf>,
     /// Write a database deployment manifest.
     #[arg(long, value_name = "FILE")]
@@ -361,48 +352,6 @@ struct NewArgs {
     /// SQL to run after creating the database, sqlite3-style.
     #[arg(value_name = "SQL")]
     sql_args: Vec<String>,
-}
-
-#[derive(Args, Clone)]
-struct QuickstartArgs {
-    /// Local database name for the sample database.
-    name: String,
-    /// Built-in sample to install.
-    #[arg(long, value_name = "NAME")]
-    sample: String,
-    /// Rebuild the bundled WASM before deploying.
-    #[arg(long)]
-    build: bool,
-    /// Custom WASM program to deploy into the new Circle.
-    #[arg(long)]
-    wasm: Option<PathBuf>,
-    /// OU budget for Circle creation.
-    #[arg(long, default_value = "200000")]
-    create_ou: String,
-    /// Octra RPC URL.
-    #[arg(long)]
-    rpc: Option<String>,
-    /// Octra network name.
-    #[arg(long)]
-    network: Option<String>,
-    /// Do not wait for Circle creation confirmation or initializer SQL receipts.
-    #[arg(long)]
-    no_wait: bool,
-    /// Do not make the new database the default database.
-    #[arg(long)]
-    no_default: bool,
-    /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
-    #[arg(long)]
-    wallet: Option<PathBuf>,
-    /// Caller wallet address override.
-    #[arg(long)]
-    caller: Option<String>,
-    /// Private key override, base64 or hex.
-    #[arg(long)]
-    private_key_b64: Option<String>,
-    /// Public key override, base64.
-    #[arg(long)]
-    public_key_b64: Option<String>,
 }
 
 #[derive(Args)]
@@ -534,7 +483,7 @@ struct RestoreArgs {
     #[command(flatten)]
     target: TargetArgs,
     /// SQL dump/script to restore. Use - or omit to read stdin.
-    #[arg(long = "file", alias = "sql-file", value_name = "FILE")]
+    #[arg(long = "file", value_name = "FILE")]
     file: Option<PathBuf>,
     /// Print the full stable JSON restore envelope.
     #[arg(long)]
@@ -558,7 +507,7 @@ struct CheckArgs {
     #[arg(long)]
     sql: Option<String>,
     /// SQL file to check. Use - to read stdin.
-    #[arg(long = "sql-file", alias = "file", value_name = "FILE")]
+    #[arg(long = "sql-file", value_name = "FILE")]
     sql_file: Option<PathBuf>,
     /// Print a stable JSON summary.
     #[arg(long)]
@@ -600,25 +549,9 @@ pub fn run() -> Result<()> {
 
 pub fn run_with_exit_code() -> Result<i32> {
     let args = normalize_args(env::args().collect());
-    let bare_init = args.len() == 2 && args[1] == "init";
     let cli = Cli::parse_from(args);
     match cli.command {
         Commands::Setup(args) => cmd_setup(args).map(|_| 0),
-        Commands::Init(args) => {
-            if bare_init && io::stdin().is_terminal() {
-                cmd_setup(SetupArgs {
-                    wallet: None,
-                    rpc: None,
-                    network: None,
-                    database: None,
-                    yes: false,
-                })
-                .map(|_| 0)
-            } else {
-                cmd_init(args).map(|_| 0)
-            }
-        }
-        Commands::Quickstart(args) => cmd_quickstart(args).map(|_| 0),
         Commands::New(args) => cmd_new(args).map(|_| 0),
         Commands::Database { command } => cmd_database(command).map(|_| 0),
         Commands::Open(args) => cmd_open(args).map(|_| 0),
@@ -691,11 +624,8 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     const KNOWN: &[&str] = &[
         "setup",
-        "init",
-        "quickstart",
         "new",
         "database",
-        "db",
         "open",
         "restore",
         "check",
@@ -719,47 +649,11 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     args
 }
 
-fn cmd_init(args: InitArgs) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
-    config.wallet = args
-        .wallet
-        .map(|p| p.to_string_lossy().to_string())
-        .or(config.wallet);
-    if let Some(network) = args.network {
-        config.network = Some(network);
-        config.apply_active_network_profile();
-    }
-    if let Some(rpc) = args.rpc {
-        config.rpc = Some(rpc);
-    }
-    if let Some(database) = args.database {
-        config.default_database = Some(database);
-    }
-    write_config(&config)?;
-    print_field("wrote", config_path()?.display().to_string());
-    if let Some(default_database) = &config.default_database {
-        print_field("default database", default_database);
-    }
-    if let Some(network) = &config.network {
-        print_field("network", network);
-    }
-    if let Some(rpc) = &config.rpc {
-        print_field("rpc", rpc);
-    }
-    if let Some(explorer) = &config.explorer {
-        print_field("explorer", explorer);
-    }
-    if let Some(wallet) = &config.wallet {
-        print_field("wallet", wallet);
-    }
-    Ok(())
-}
-
 fn cmd_setup(args: SetupArgs) -> Result<()> {
     let mut config = load_config().unwrap_or_default();
     let interactive = !args.yes && io::stdin().is_terminal();
     if !interactive && !args.yes {
-        bail!("setup is interactive; run it in a terminal, pass --yes, or use init with flags");
+        bail!("setup is interactive; run it in a terminal or pass --yes with flags");
     }
 
     println!("{}", strong("Octra SQLite setup"));
@@ -839,24 +733,31 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
         let name = prompt_default("Database name", "art")?;
         let sample = prompt_default("Sample", "artists")?;
-        cmd_quickstart(QuickstartArgs {
-            name,
-            sample,
+        cmd_new(NewArgs {
+            name: Some(name),
             build: false,
             wasm: None,
             create_ou: "200000".to_string(),
             rpc: Some(rpc),
             network: Some(network),
+            read_mode: ReadModeArg::Sealed,
             no_wait: false,
-            no_default: false,
+            no_name: false,
+            default: true,
+            sql: None,
+            read: None,
+            manifest: None,
+            json: false,
+            sample: Some(sample),
             wallet: Some(wallet_path),
             caller: None,
             private_key_b64: None,
             public_key_b64: None,
+            sql_args: Vec::new(),
         })?;
     } else {
         print_command("create", CREATE_ART_EXAMPLE);
-        print_command("example", "octra-sqlite quickstart art --sample artists");
+        print_command("sample", "octra-sqlite new art --sample artists");
         if !wallet_path.is_file() {
             print_command(
                 "wallet attach",
@@ -873,46 +774,6 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
                 ),
             );
         }
-    }
-    Ok(())
-}
-
-fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
-    sample_sql(&args.sample)?;
-    let config = load_config().unwrap_or_default();
-    let network = args.network.clone().or_else(|| config.network.clone());
-    let rpc = args.rpc.clone().or_else(|| {
-        network
-            .as_deref()
-            .and_then(|network| config.rpc_for_network(network))
-            .or_else(|| config.rpc.clone())
-    });
-    let name = args.name.clone();
-    let sample = args.sample.clone();
-    cmd_new(NewArgs {
-        name: Some(args.name),
-        build: args.build,
-        wasm: args.wasm,
-        create_ou: args.create_ou,
-        rpc,
-        network,
-        no_wait: args.no_wait,
-        no_name: false,
-        default: !args.no_default,
-        sql: None,
-        read: None,
-        manifest: None,
-        json: false,
-        sample: Some(sample.clone()),
-        wallet: args.wallet,
-        caller: args.caller,
-        private_key_b64: args.private_key_b64,
-        public_key_b64: args.public_key_b64,
-        sql_args: Vec::new(),
-    })?;
-    println!("next:");
-    for command in sample_next_commands(&name, &sample) {
-        println!("  {command}");
     }
     Ok(())
 }
@@ -956,7 +817,8 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     if !args.json {
         print_field("funding", funding_detail);
     }
-    let created = create_circle(&control_session, &args, &network)?;
+    let read_mode = ReadMode::from(args.read_mode);
+    let created = create_circle(&control_session, &args, &network, read_mode)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
     if !args.json {
         if args.no_name {
@@ -967,6 +829,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         print_field("uri", &target_uri);
         print_field("circle", linked_circle(&network, &created.circle));
         print_field("wallet", control_session.caller());
+        print_field("read_mode", read_mode.as_str());
         print_field(
             "code",
             format!("{} bytes, hash {}", created.code_bytes, created.code_hash),
@@ -990,16 +853,16 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
 
     if !args.no_name {
-        if let Err(error) = save_new_database_alias(&args, &target_uri, &created, &mut config) {
+        if let Err(error) = save_new_database_name(&args, &target_uri, &created, &mut config) {
             if !args.json {
                 print_circle_recovery(
                     &args,
                     &target_uri,
-                    "database alias was not saved after Circle creation",
+                    "database name was not saved after Circle creation",
                     false,
                 );
             }
-            return Err(error.context("database alias save failed after Circle creation"));
+            return Err(error.context("database name save failed after Circle creation"));
         }
         if !args.json {
             print_field("saved", "yes");
@@ -1140,6 +1003,9 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
         let default_network = config.network.as_deref().unwrap_or("devnet");
         args.network = Some(prompt_default("Network", default_network)?);
     }
+    if prompt_yes_no("Make reads public?", false)? {
+        args.read_mode = ReadModeArg::Public;
+    }
     if args.wallet.is_none() {
         let wallet_default = config
             .wallet
@@ -1234,7 +1100,7 @@ fn run_initializer_sql(
     Ok(executions)
 }
 
-fn save_new_database_alias(
+fn save_new_database_name(
     args: &NewArgs,
     target_uri: &str,
     created: &CreatedCircle,
@@ -1260,6 +1126,10 @@ fn save_new_database_alias(
                 })
                 .unwrap_or_default(),
             circle: created.circle.clone(),
+            read_mode: ReadMode::from(args.read_mode),
+            privacy_class: deploy_tuple(ReadMode::from(args.read_mode)).0.to_string(),
+            browser_mode: deploy_tuple(ReadMode::from(args.read_mode)).1.to_string(),
+            resource_mode: deploy_tuple(ReadMode::from(args.read_mode)).2.to_string(),
             owner: created.owner.clone(),
             owner_pubkey: created.auth_patch.owner_pubkey_hex.clone(),
             db_id: created.auth_patch.db_id_hex.clone(),
@@ -1387,6 +1257,8 @@ fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
     let initializer_sha256 = initializer_sql
         .as_deref()
         .map(|sql| sha256_hex(sql.as_bytes()));
+    let read_mode = ReadMode::from(args.read_mode);
+    let (privacy_class, browser_mode, resource_mode) = deploy_tuple(read_mode);
     json!({
         "manifest_version": "octra-sqlite.database.v1",
         "database": {
@@ -1396,6 +1268,12 @@ fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
             "circle": input.created.circle.clone(),
             "circle_url": explorer_circle_url(input.network, &input.created.circle),
             "rpc": input.rpc,
+            "read": {
+                "mode": read_mode.as_str(),
+                "privacy_class": privacy_class,
+                "browser_mode": browser_mode,
+                "resource_mode": resource_mode,
+            },
         },
         "owner": {
             "wallet": input.owner,
@@ -2184,6 +2062,7 @@ fn check_release_manifest(report: &mut StatusReport) {
 
 fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash: &str) {
     report.ok("rpc", session.rpc());
+    report.ok("read_mode", session.target().read_mode.as_str());
     if let Some(url) = explorer_circle_url(&session.target().network, &session.target().circle) {
         report.ok("explorer", url);
     }
@@ -2247,8 +2126,45 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
             }
         }
         Err(error) => {
-            report.ready("circle_reachable", false);
-            report.fail("program info", error.to_string());
+            if session.target().read_mode.allows_unsigned_read() {
+                match circle_info(session) {
+                    Ok(info) => {
+                        report.ready("circle_reachable", true);
+                        report.warn(
+                            "program info",
+                            format!("signed program info unavailable: {error}"),
+                        );
+                        report.ok(
+                            "circle",
+                            linked_circle(&session.target().network, &session.target().circle),
+                        );
+                        if let Some(privacy_class) =
+                            info.get("privacy_class").and_then(Value::as_str)
+                        {
+                            report.ok("privacy_class", privacy_class);
+                        }
+                        if let Some(browser_mode) = info.get("browser_mode").and_then(Value::as_str)
+                        {
+                            report.ok("browser_mode", browser_mode);
+                        }
+                        if let Some(resource_mode) =
+                            info.get("resource_mode").and_then(Value::as_str)
+                        {
+                            report.ok("resource_mode", resource_mode);
+                        }
+                    }
+                    Err(info_error) => {
+                        report.ready("circle_reachable", false);
+                        report.fail(
+                            "program info",
+                            format!("{error}; unsigned circle info failed: {info_error}"),
+                        );
+                    }
+                }
+            } else {
+                report.ready("circle_reachable", false);
+                report.fail("program info", error.to_string());
+            }
         }
     }
     match view(session, "storage_info", vec![]) {
@@ -2395,14 +2311,19 @@ struct AuthPatch {
     db_id_offset: usize,
 }
 
-fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<CreatedCircle> {
+fn create_circle(
+    session: &Session,
+    args: &NewArgs,
+    network: &str,
+    read_mode: ReadMode,
+) -> Result<CreatedCircle> {
     let wasm_path = resolve_wasm_for_new(args)?;
     let mut wasm =
         fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
     let auth_patch = patch_wasm_auth_for_owner(&mut wasm, session)?;
     let code_hash = sha256_hex(&wasm);
     let code_b64 = general_purpose::STANDARD.encode(&wasm);
-    let payload_json = circle_deploy_payload_json(Some(&code_b64))?;
+    let payload_json = circle_deploy_payload_json(Some(&code_b64), read_mode)?;
     let nonce = next_nonce(session)?;
     let circle = circle_id_of_deploy(session.caller(), nonce as u64, &payload_json);
     let tx = Tx {
@@ -2416,7 +2337,7 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
         encrypted_data: String::new(),
         message: payload_json,
         signature: String::new(),
-        public_key: session.public_key_b64().to_string(),
+        public_key: session.public_key_b64()?.to_string(),
     };
     let result = submit_tx(session, tx, true)?;
     let tx_hash = result
@@ -2435,6 +2356,7 @@ fn create_circle(session: &Session, args: &NewArgs, network: &str) -> Result<Cre
         network: network.to_string(),
         circle: circle.clone(),
         rpc: session.rpc().to_string(),
+        read_mode,
     });
     if !args.no_wait {
         wait_for_program_info(&circle_session, &code_hash)?;
@@ -2668,15 +2590,23 @@ fn project_roots() -> Vec<PathBuf> {
     unique
 }
 
-fn circle_deploy_payload_json(code_b64: Option<&str>) -> Result<String> {
+fn circle_deploy_payload_json(code_b64: Option<&str>, read_mode: ReadMode) -> Result<String> {
     let code = match code_b64 {
         Some(value) => serde_json::to_string(value)?,
         None => "null".to_string(),
     };
+    let (privacy_class, browser_mode, resource_mode) = deploy_tuple(read_mode);
     Ok(format!(
-        "{{\"runtime\":\"wasm_v1\",\"privacy_class\":\"sealed\",\"browser_mode\":\"native_sealed\",\"resource_mode\":\"sealed_read\",\"code_b64\":{},\"policy_hash\":null,\"members_root\":null,\"export_policy\":null,\"limits\":{{\"max_stable_bytes\":\"33554432\",\"max_assets_bytes\":\"33554432\",\"max_inline_value\":\"65536\",\"max_wasm_bytes\":\"33554432\"}}}}",
-        code
+        "{{\"runtime\":\"wasm_v1\",\"privacy_class\":\"{privacy_class}\",\"browser_mode\":\"{browser_mode}\",\"resource_mode\":\"{resource_mode}\",\"code_b64\":{},\"policy_hash\":null,\"members_root\":null,\"export_policy\":null,\"limits\":{{\"max_stable_bytes\":\"33554432\",\"max_assets_bytes\":\"33554432\",\"max_inline_value\":\"65536\",\"max_wasm_bytes\":\"33554432\"}}}}",
+        code,
     ))
+}
+
+fn deploy_tuple(read_mode: ReadMode) -> (&'static str, &'static str, &'static str) {
+    match read_mode {
+        ReadMode::Public => ("public", "gateway_allowed", "public_resources"),
+        ReadMode::Auto | ReadMode::Sealed => ("sealed", "native_sealed", "sealed_read"),
+    }
 }
 
 fn circle_id_of_deploy(deployer: &str, nonce: u64, payload_json: &str) -> String {
@@ -2761,9 +2691,13 @@ fn print_database_list(config: &Config, json_mode: bool) -> Result<()> {
             .databases
             .iter()
             .map(|(name, uri)| {
+                let read_mode = resolve_target(name, config)
+                    .map(|target| target.read_mode.as_str().to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
                 json!({
                     "name": name,
                     "uri": uri,
+                    "read_mode": read_mode,
                     "default": config.default_database.as_deref() == Some(name),
                 })
             })
@@ -2781,15 +2715,18 @@ fn print_database_list(config: &Config, json_mode: bool) -> Result<()> {
         print_field("create", CREATE_ART_EXAMPLE);
         return Ok(());
     }
-    println!("{}  name  uri", dim("default"));
-    println!("{}", dim("-------  ----  ---"));
+    println!("{}  name  read_mode  uri", dim("default"));
+    println!("{}", dim("-------  ----  ---------  ---"));
     for (name, database) in &config.databases {
         let default_mark = if config.default_database.as_deref() == Some(name) {
             "*"
         } else {
             ""
         };
-        println!("{default_mark:<7}  {name}  {database}");
+        let read_mode = resolve_target(name, config)
+            .map(|target| target.read_mode.as_str().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+        println!("{default_mark:<7}  {name}  {read_mode:<9}  {database}");
     }
     Ok(())
 }
@@ -2815,6 +2752,7 @@ fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool)
                 "network": target.network,
                 "circle": target.circle,
                 "rpc": target.rpc,
+                "read_mode": target.read_mode.as_str(),
             },
             "metadata": metadata,
         }));
@@ -2832,6 +2770,7 @@ fn print_database_info(config: &Config, database: Option<&str>, json_mode: bool)
         (config.default_database.as_deref() == Some(requested.as_str())).to_string(),
     );
     print_field("uri", &target.raw);
+    print_field("read_mode", target.read_mode.as_str());
     print_field("network", &target.network);
     print_field("circle", linked_circle(&target.network, &target.circle));
     print_field(
@@ -3645,6 +3584,7 @@ fn database_identity(session: &Session) -> Value {
         "circle": &target.circle,
         "rpc": &target.rpc,
         "wallet": session.caller(),
+        "read_mode": target.read_mode.as_str(),
     })
 }
 
@@ -3699,7 +3639,7 @@ fn limits_json(target: Option<Value>) -> Value {
         "sql": {
             "max_sql_bytes": MAX_SQL_TEXT_BYTES,
             "batch_target_bytes": SQL_BATCH_TARGET_BYTES,
-            "input": ["argument", "stdin", "--sql-file", ".read", "restore"],
+            "input": ["argument", "stdin", "--sql-file", "--schema", ".read", "restore"],
         },
         "result": {
             "max_rows": MAX_RESULT_ROWS,
@@ -3721,7 +3661,10 @@ fn limits_json(target: Option<Value>) -> Value {
             "restore_partial_apply": true,
         },
         "auth": {
-            "read_model": "signed Octra view auth",
+            "read_model": "sealed uses signed Octra view auth; public uses unsigned Octra circle view",
+            "read_modes": ["sealed", "public"],
+            "sealed_reads": "octra_circleViewAuth",
+            "public_reads": "octra_circleView",
             "write_model": "OSW1 owner write intent",
             "read_only_guard": "client-side --read-only",
             "native_roles": false,
@@ -3754,12 +3697,6 @@ fn commands_json() -> Value {
                 "json": false,
             },
             {
-                "command": "octra-sqlite init [OPTIONS]",
-                "purpose": "scriptable local configuration",
-                "writes": false,
-                "json": false,
-            },
-            {
                 "command": "octra-sqlite new [DATABASE] [SQL]",
                 "purpose": "create a Circle-backed SQLite database; prompts when DATABASE is omitted in a terminal",
                 "writes": true,
@@ -3767,10 +3704,18 @@ fn commands_json() -> Value {
                 "envelope": "new",
             },
             {
-                "command": "octra-sqlite quickstart DATABASE --sample NAME",
-                "purpose": "create a database from an explicit sample",
+                "command": "octra-sqlite new DATABASE --sample NAME",
+                "purpose": "create a database from an explicit built-in sample",
                 "writes": true,
-                "json": false,
+                "json": true,
+                "envelope": "new",
+            },
+            {
+                "command": "octra-sqlite new DATABASE --read-mode public",
+                "purpose": "create a public-read SQLite database; writes remain owner-signed",
+                "writes": true,
+                "json": true,
+                "envelope": "new",
             },
             {
                 "command": "octra-sqlite DATABASE \"SQL\"",
@@ -4009,23 +3954,6 @@ fn sample_sql(name: &str) -> Result<String> {
     }
 }
 
-fn sample_next_commands(database: &str, sample: &str) -> Vec<String> {
-    match sample {
-        "remilia" => vec![
-            format!("octra-sqlite {database} \".tables\""),
-            format!(
-                "octra-sqlite {database} \"select name, launched_month from collection order by launched_month;\""
-            ),
-            format!("octra-sqlite {database}"),
-        ],
-        _ => vec![
-            format!("octra-sqlite {database} \".tables\""),
-            format!("octra-sqlite {database} \"select * from artist order by name;\""),
-            format!("octra-sqlite {database}"),
-        ],
-    }
-}
-
 fn prompt_default(label: &str, default: &str) -> Result<String> {
     print!("{label} [{default}]: ");
     io::stdout().flush()?;
@@ -4085,7 +4013,9 @@ fn prompt_yes_no(label: &str, default: bool) -> Result<bool> {
 
 fn resolve_target(value: &str, config: &Config) -> Result<Target> {
     if let Some(database) = config.databases.get(value) {
-        return resolve_target(database, config);
+        let mut target = resolve_target(database, config)?;
+        apply_target_metadata(value, config, &mut target);
+        return Ok(target);
     }
     parse_target_uri(value, config)
 }
@@ -4095,7 +4025,14 @@ fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
     if target.rpc.is_empty() {
         target.rpc = config.rpc_for_network(&target.network).unwrap_or_default();
     }
+    apply_target_metadata(value, config, &mut target);
     Ok(target)
+}
+
+fn apply_target_metadata(requested: &str, config: &Config, target: &mut Target) {
+    if let Some(metadata) = config.metadata_for_target(requested, target) {
+        target.read_mode = metadata.read_mode;
+    }
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -4532,7 +4469,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         encrypted_data: String::new(),
         message,
         signature: String::new(),
-        public_key: session.public_key_b64().to_string(),
+        public_key: session.public_key_b64()?.to_string(),
     };
     let result = submit_tx(&session, tx, true)?;
     let tx_hash = result
@@ -4654,6 +4591,10 @@ fn save_bootstrap_owner_metadata(
                 uri: uri.clone(),
                 network: session.target().network.clone(),
                 circle: session.target().circle.clone(),
+                read_mode: session.target().read_mode,
+                privacy_class: deploy_tuple(session.target().read_mode).0.to_string(),
+                browser_mode: deploy_tuple(session.target().read_mode).1.to_string(),
+                resource_mode: deploy_tuple(session.target().read_mode).2.to_string(),
                 owner: session.caller().to_string(),
                 owner_pubkey: patch.owner_pubkey_hex.clone(),
                 db_id: patch.db_id_hex.clone(),
@@ -5253,7 +5194,11 @@ COMMIT;",
         assert_eq!(limits["sql"]["max_sql_bytes"], MAX_SQL_TEXT_BYTES);
         assert_eq!(limits["result"]["max_rows"], MAX_RESULT_ROWS);
         assert_eq!(limits["result"]["limit_error"], "result_limit_exceeded");
-        assert_eq!(limits["auth"]["read_model"], "signed Octra view auth");
+        assert_eq!(
+            limits["auth"]["read_model"],
+            "sealed uses signed Octra view auth; public uses unsigned Octra circle view"
+        );
+        assert_eq!(limits["auth"]["read_modes"], json!(["sealed", "public"]));
         assert_eq!(limits["auth"]["write_model"], "OSW1 owner write intent");
         assert!(limits["trace"]["modes"]
             .as_array()
@@ -5327,6 +5272,7 @@ COMMIT;",
             create_ou: "200000".to_string(),
             rpc: None,
             network: Some("devnet".to_string()),
+            read_mode: ReadModeArg::Sealed,
             no_wait: false,
             no_name: false,
             default: false,
@@ -5423,6 +5369,19 @@ COMMIT;",
     }
 
     #[test]
+    fn new_accepts_public_read_mode() {
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--read-mode", "public"]).unwrap();
+        match cli.command {
+            Commands::New(args) => {
+                assert_eq!(args.name.as_deref(), Some("my-db"));
+                assert_eq!(ReadMode::from(args.read_mode), ReadMode::Public);
+            }
+            _ => panic!("expected new command"),
+        }
+    }
+
+    #[test]
     fn new_accepts_wizard_mode_json_schema_and_manifest() {
         let cli = Cli::try_parse_from([
             "octra-sqlite",
@@ -5468,23 +5427,6 @@ COMMIT;",
             "\"schema files/init.sql\""
         );
         assert_eq!(dot_arg_quote("schema\"file.sql"), "\"schema\"\"file.sql\"");
-    }
-
-    #[test]
-    fn quickstart_requires_explicit_sample() {
-        assert!(Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).is_err());
-
-        let cli =
-            Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db", "--sample", "artists"])
-                .unwrap();
-        match cli.command {
-            Commands::Quickstart(args) => {
-                assert_eq!(args.name, "my-db");
-                assert_eq!(args.sample, "artists");
-                assert!(!args.no_default);
-            }
-            _ => panic!("expected quickstart command"),
-        }
     }
 
     #[test]
@@ -5630,7 +5572,7 @@ COMMIT;",
 
     #[test]
     fn deploy_payload_json_matches_wasm_v1_circle_shape() {
-        let payload = circle_deploy_payload_json(None).unwrap();
+        let payload = circle_deploy_payload_json(None, ReadMode::Sealed).unwrap();
         assert_eq!(
             payload,
             "{\"runtime\":\"wasm_v1\",\"privacy_class\":\"sealed\",\"browser_mode\":\"native_sealed\",\"resource_mode\":\"sealed_read\",\"code_b64\":null,\"policy_hash\":null,\"members_root\":null,\"export_policy\":null,\"limits\":{\"max_stable_bytes\":\"33554432\",\"max_assets_bytes\":\"33554432\",\"max_inline_value\":\"65536\",\"max_wasm_bytes\":\"33554432\"}}"
@@ -5638,8 +5580,17 @@ COMMIT;",
     }
 
     #[test]
+    fn deploy_payload_json_supports_public_read_tuple() {
+        let payload = circle_deploy_payload_json(None, ReadMode::Public).unwrap();
+        assert_eq!(
+            payload,
+            "{\"runtime\":\"wasm_v1\",\"privacy_class\":\"public\",\"browser_mode\":\"gateway_allowed\",\"resource_mode\":\"public_resources\",\"code_b64\":null,\"policy_hash\":null,\"members_root\":null,\"export_policy\":null,\"limits\":{\"max_stable_bytes\":\"33554432\",\"max_assets_bytes\":\"33554432\",\"max_inline_value\":\"65536\",\"max_wasm_bytes\":\"33554432\"}}"
+        );
+    }
+
+    #[test]
     fn deploy_payload_json_can_inline_wasm_code() {
-        let payload = circle_deploy_payload_json(Some("QUJD")).unwrap();
+        let payload = circle_deploy_payload_json(Some("QUJD"), ReadMode::Sealed).unwrap();
         assert!(payload.contains("\"runtime\":\"wasm_v1\""));
         assert!(payload.contains("\"code_b64\":\"QUJD\""));
     }

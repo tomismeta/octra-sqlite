@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0
+
+- Added explicit public-read database creation with
+  `new DATABASE --read-mode public`.
+- Added public-read routing: public database reads use `octra_circleView`, while
+  sealed database reads keep `octra_circleViewAuth`.
+- Kept writes unchanged: all state-changing SQL still uses owner-signed OSW1
+  calls.
+- Saved read-mode and Circle tuple metadata for new databases and exposed it in
+  manifests, `database list`, `database info`, `status`, `limits --json`, and
+  `commands --json`.
+- Removed redundant public command surfaces: `init`, `quickstart`, command
+  aliases, option aliases, and legacy config aliases.
+- Kept `setup --yes` as the scriptable setup path and `new --sample NAME` as
+  the built-in sample path.
+- Updated README and reference docs around one clean cold-start path and
+  explicit sealed/public read modes.
+
 ## 0.3.4
 
 - Added guided `octra-sqlite new` database creation for interactive first-run

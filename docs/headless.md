@@ -39,7 +39,7 @@ Lock down the file before use:
 
 ```sh
 chmod 600 /secure/path/wallet.json
-octra-sqlite init --wallet /secure/path/wallet.json --network devnet
+octra-sqlite setup --yes --wallet /secure/path/wallet.json --network devnet
 ```
 
 For service users, keep the wallet and config in an explicit service directory
@@ -90,7 +90,7 @@ cargo install --path . --locked
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
 ```
 
 Machine-readable install guidance:

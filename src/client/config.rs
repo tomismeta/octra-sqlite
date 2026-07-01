@@ -1,4 +1,5 @@
 use super::error::{ClientError, ClientErrorKind, Result};
+use crate::protocol::target::{DatabaseTarget, ReadMode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
@@ -15,9 +16,9 @@ pub struct Config {
     pub network: Option<String>,
     #[serde(default)]
     pub networks: BTreeMap<String, NetworkConfig>,
-    #[serde(default, alias = "default_target")]
+    #[serde(default)]
     pub default_database: Option<String>,
-    #[serde(default, alias = "aliases")]
+    #[serde(default)]
     pub databases: BTreeMap<String, String>,
     #[serde(default)]
     pub database_metadata: BTreeMap<String, DatabaseMetadata>,
@@ -34,6 +35,14 @@ pub struct DatabaseMetadata {
     pub uri: String,
     pub network: String,
     pub circle: String,
+    #[serde(default = "default_read_mode")]
+    pub read_mode: ReadMode,
+    #[serde(default = "default_privacy_class")]
+    pub privacy_class: String,
+    #[serde(default = "default_browser_mode")]
+    pub browser_mode: String,
+    #[serde(default = "default_resource_mode")]
+    pub resource_mode: String,
     pub owner: String,
     pub owner_pubkey: String,
     pub db_id: String,
@@ -42,6 +51,22 @@ pub struct DatabaseMetadata {
     pub create_tx: Option<String>,
     #[serde(default)]
     pub program_update_tx: Option<String>,
+}
+
+fn default_privacy_class() -> String {
+    "sealed".to_string()
+}
+
+fn default_read_mode() -> ReadMode {
+    ReadMode::Sealed
+}
+
+fn default_browser_mode() -> String {
+    "native_sealed".to_string()
+}
+
+fn default_resource_mode() -> String {
+    "sealed_read".to_string()
 }
 
 impl Config {
@@ -82,6 +107,20 @@ impl Config {
         if let Some(explorer) = &profile.explorer {
             self.explorer = Some(explorer.clone());
         }
+    }
+
+    pub fn metadata_for_target(
+        &self,
+        requested: &str,
+        target: &DatabaseTarget,
+    ) -> Option<&DatabaseMetadata> {
+        self.database_metadata.get(requested).or_else(|| {
+            self.database_metadata.values().find(|metadata| {
+                metadata.uri == requested
+                    || metadata.uri == target.raw
+                    || (metadata.network == target.network && metadata.circle == target.circle)
+            })
+        })
     }
 }
 
@@ -167,9 +206,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_legacy_names_and_writes_database_names() {
+    fn reads_and_writes_database_names() {
         let config: Config = serde_json::from_str(
-            r#"{"default_target":"organization","aliases":{"organization":"oct://devnet/octABC"}}"#,
+            r#"{"default_database":"organization","databases":{"organization":"oct://devnet/octABC"}}"#,
         )
         .unwrap();
         assert_eq!(config.default_database.as_deref(), Some("organization"));
@@ -182,8 +221,6 @@ mod tests {
         assert!(written.contains("default_database"));
         assert!(written.contains("databases"));
         assert!(written.contains("database_metadata"));
-        assert!(!written.contains("default_target"));
-        assert!(!written.contains("aliases"));
     }
 
     #[test]

@@ -33,10 +33,11 @@ octra-sqlite art "select * from artist;"
 The reference configurable database creation path is:
 
 ```sh
-octra-sqlite quickstart art --sample artists
 octra-sqlite new
 octra-sqlite new DATABASE
+octra-sqlite new DATABASE --sample artists
 octra-sqlite new DATABASE --schema schema.sql --manifest database.json --json
+octra-sqlite new DATABASE --read-mode public --schema public-schema.sql
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
 octra-sqlite restore DATABASE --file dump.sql
@@ -47,12 +48,14 @@ octra-sqlite commands --json
 octra-sqlite install --json
 ```
 
-`quickstart` is a thin opt-in convenience layer over `new`: it creates a new
-database with a named built-in sample, saves the database name, and makes that
-new database the default database. `new` submits a native signed `deploy_circle`
-transaction whose payload includes the bundled audited SQLite WASM, saves an
-`oct://` database URI, and then runs optional initializer SQL through the same
-signed `exec` path as later writes.
+`new` submits a native signed `deploy_circle` transaction whose payload includes
+the bundled audited SQLite WASM, saves an `oct://` database URI, and then runs
+optional initializer SQL through the same signed `exec` path as later writes.
+`new --sample NAME` is the built-in sample path; it is not a separate command.
+`new --read-mode public` creates an explicit public-read Circle tuple
+(`public / gateway_allowed / public_resources`). Public-read SQL queries use
+`octra_circleView`; sealed databases keep `octra_circleViewAuth`. Writes stay
+owner-signed through OSW1 in both modes.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite
@@ -118,7 +121,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.3.4.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.4.0.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

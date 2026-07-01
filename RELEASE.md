@@ -1,5 +1,40 @@
 # Release Notes
 
+## 0.4.0
+
+This is a productization release over the deployed `0.3.3` Circle WASM proof.
+The contract, wire formats, bundled SQLite engine, and devnet proof Circle are
+unchanged.
+
+## Added
+
+- Explicit public-read database creation with `new DATABASE --read-mode public`.
+  Public-read databases deploy the Octra
+  `public / gateway_allowed / public_resources` Circle tuple, use
+  `octra_circleView` for SQL reads, and keep writes owner-signed through OSW1.
+- Public-read metadata in saved database records, deployment manifests,
+  `database list`, `database info`, `status`, `limits --json`, and
+  `commands --json`.
+- Unsigned public-read client routing for explicit public database URIs and
+  auto-detected public Circle tuples.
+
+## Changed
+
+- Removed redundant command and compatibility surfaces: `init`, `quickstart`,
+  `database` command aliases, old option aliases, and legacy config aliases.
+- `setup --yes` is the scriptable setup path; `new --sample NAME` is the
+  sample database path.
+- README, public surface docs, and operations docs now present one clean
+  product path: setup, new, query, status, restore.
+
+## Notes
+
+- No Circle redeploy is required for `0.4.0`.
+- Sealed remains the default read mode. Public-read is explicit and intended
+  only for datasets that should be public.
+- Public-read changes read authentication only. Write authorization is still
+  OSW1 owner write intent.
+
 ## 0.3.4
 
 This is a CLI productization release over the deployed `0.3.3` Circle WASM

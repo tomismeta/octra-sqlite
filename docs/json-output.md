@@ -80,7 +80,13 @@ Produced by `new DATABASE --json`.
     "uri": "oct://devnet/oct...",
     "network": "devnet",
     "circle": "oct...",
-    "rpc": "https://devnet.octrascan.io/rpc"
+    "rpc": "https://devnet.octrascan.io/rpc",
+    "read": {
+      "mode": "sealed",
+      "privacy_class": "sealed",
+      "browser_mode": "native_sealed",
+      "resource_mode": "sealed_read"
+    }
   },
   "program": {
     "runtime": "wasm_v1",
@@ -116,7 +122,8 @@ Produced by read SQL with `--json`.
     "network": "devnet",
     "circle": "oct...",
     "rpc": "https://devnet.octrascan.io/rpc",
-    "wallet": "oct..."
+    "wallet": "oct...",
+    "read_mode": "sealed"
   },
   "columns": ["id", "name"],
   "rows": [[1, "Monet"]],
@@ -262,7 +269,7 @@ Produced by `install --json`.
   },
   "commands": {
     "local": "cargo install --path . --locked",
-    "pinned": "cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked",
+    "pinned": "cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked",
     "setup": "octra-sqlite setup",
     "create": "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"",
     "query": "octra-sqlite art \"select * from artist;\"",
