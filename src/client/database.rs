@@ -259,7 +259,7 @@ pub fn next_nonce(session: &Session) -> Result<i64> {
 #[cfg(feature = "http")]
 pub fn submit_tx(session: &Session, tx: Tx, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
-    super::write::submit_signed_tx_with(&transport, session, tx, no_wait)
+    super::write::sign_and_submit_tx_with(&transport, session, tx, no_wait)
 }
 
 #[cfg(feature = "http")]
@@ -270,7 +270,7 @@ pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::write::submit_signed_tx_with;
+    use super::super::write::sign_and_submit_tx_with;
     use super::*;
     use crate::client::{ClientError, ClientErrorKind};
     use crate::protocol::tx::Tx;
@@ -437,7 +437,7 @@ mod tests {
             signature: String::new(),
             public_key: session.public_key_b64().to_string(),
         };
-        let result = submit_signed_tx_with(&transport, &session, tx, true).unwrap();
+        let result = sign_and_submit_tx_with(&transport, &session, tx, true).unwrap();
         assert_eq!(result["circle"], "octNewCircle");
         assert_eq!(result["tx_hash"], "abc123");
         assert_eq!(calls.lock().unwrap().as_slice(), ["octra_submit"]);

@@ -317,16 +317,26 @@ pub(super) fn submit_signed_write_with<T: Transport>(
     no_wait: bool,
 ) -> Result<Value> {
     ensure_signed_for_session(session, &signed)?;
-    submit_signed_tx_with(transport, session, signed.tx, no_wait)
+    submit_tx_with(transport, session, signed.tx, no_wait)
 }
 
-pub(super) fn submit_signed_tx_with<T: Transport>(
+#[cfg(any(feature = "http", test))]
+pub(super) fn sign_and_submit_tx_with<T: Transport>(
     transport: &T,
     session: &Session,
     mut tx: Tx,
     no_wait: bool,
 ) -> Result<Value> {
     tx.signature = session.sign_transaction_b64(&canonical_tx(&tx));
+    submit_tx_with(transport, session, tx, no_wait)
+}
+
+fn submit_tx_with<T: Transport>(
+    transport: &T,
+    session: &Session,
+    tx: Tx,
+    no_wait: bool,
+) -> Result<Value> {
     let tx_circle = tx.to_.clone();
     let tx_wallet = tx.from.clone();
     let result = rpc_call(transport, session, "octra_submit", json!([tx]))?;
@@ -428,4 +438,96 @@ fn now_timestamp() -> f64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     duration.as_secs() as f64 + f64::from(duration.subsec_millis()) / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::session::{build_session, SessionOptions};
+    use serde_json::Value;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct CaptureTransport {
+        submits: Arc<Mutex<Vec<Value>>>,
+    }
+
+    impl Transport for CaptureTransport {
+        fn call(&self, _rpc: &str, method: &str, params: Value) -> Result<Value> {
+            match method {
+                "octra_submit" => {
+                    self.submits.lock().unwrap().push(params);
+                    Ok(json!({ "tx_hash": "abc123" }))
+                }
+                _ => Err(ClientError::with_kind(
+                    ClientErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
+    fn test_session() -> Session {
+        build_session(&SessionOptions {
+            target: Some("oct://devnet/octABC".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCaller".to_string()),
+            private_key: Some(
+                "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+            ),
+            ..SessionOptions::default()
+        })
+        .unwrap()
+    }
+
+    fn tx_for(session: &Session, signature: &str) -> Tx {
+        Tx {
+            from: session.caller().to_string(),
+            to_: session.target().circle.clone(),
+            amount: "0".to_string(),
+            nonce: 42,
+            ou: "1000".to_string(),
+            timestamp: 1000.0,
+            op_type: "circle_call".to_string(),
+            encrypted_data: "exec".to_string(),
+            message: "[]".to_string(),
+            signature: signature.to_string(),
+            public_key: session.public_key_b64().to_string(),
+        }
+    }
+
+    fn submitted_signature(transport: &CaptureTransport) -> String {
+        transport.submits.lock().unwrap()[0]
+            .as_array()
+            .and_then(|params| params.first())
+            .and_then(|tx| tx.get("signature"))
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn signed_write_submission_preserves_existing_signature() {
+        let transport = CaptureTransport::default();
+        let session = test_session();
+        let tx = tx_for(&session, "pre-signed");
+        let signed = SignedWrite::new(tx, operation_safety(DatabaseOperation::ExecuteNoWait));
+
+        submit_signed_write_with(&transport, &session, signed, true).unwrap();
+
+        assert_eq!(submitted_signature(&transport), "pre-signed");
+    }
+
+    #[test]
+    fn generic_transaction_submission_signs_canonical_tx() {
+        let transport = CaptureTransport::default();
+        let session = test_session();
+        let tx = tx_for(&session, "stale-signature");
+
+        sign_and_submit_tx_with(&transport, &session, tx, true).unwrap();
+
+        let signature = submitted_signature(&transport);
+        assert!(!signature.is_empty());
+        assert_ne!(signature, "stale-signature");
+    }
 }
