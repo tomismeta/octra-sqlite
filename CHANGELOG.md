@@ -6,6 +6,8 @@
   setup.
 - Added `new --schema FILE --manifest FILE --json` for scriptable database
   creation with a machine-readable deployment manifest.
+- Refuse to create a new saved database when the local database name already
+  exists, before any Circle creation or spend.
 - Added `new` to the stable CLI JSON envelope documentation and command
   discovery output.
 - Tightened public docs around database-first ontology and neutral headless

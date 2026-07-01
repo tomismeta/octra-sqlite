@@ -810,9 +810,10 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         .name
         .as_deref()
         .ok_or_else(|| anyhow!("database name is required"))?;
-    let init_sql = collect_initializer_sql(&args)?;
 
     let mut config = load_config().unwrap_or_default();
+    ensure_new_database_name_available(&args, &config, name)?;
+    let init_sql = collect_initializer_sql(&args)?;
     let network = args
         .network
         .clone()
@@ -1160,6 +1161,29 @@ fn save_new_database_alias(
     }
     write_config(config)?;
     Ok(())
+}
+
+fn ensure_new_database_name_available(args: &NewArgs, config: &Config, name: &str) -> Result<()> {
+    if args.no_name {
+        return Ok(());
+    }
+    let Some(existing_uri) = config.databases.get(name) else {
+        return Ok(());
+    };
+    if !args.json {
+        print_field("database", name);
+        print_field("existing", existing_uri);
+        print_field(
+            "status",
+            format!("octra-sqlite status {}", shell_quote(name)),
+        );
+        print_field("open", format!("octra-sqlite open {}", shell_quote(name)));
+        print_field(
+            "remove",
+            format!("octra-sqlite database remove {}", shell_quote(name)),
+        );
+    }
+    bail!("database name '{name}' already exists for database URI {existing_uri}");
 }
 
 fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved: bool) {
@@ -4939,10 +4963,9 @@ COMMIT;",
         );
     }
 
-    #[test]
-    fn new_manifest_uses_database_ontology() {
-        let args = NewArgs {
-            name: Some("art".to_string()),
+    fn test_new_args(name: &str) -> NewArgs {
+        NewArgs {
+            name: Some(name.to_string()),
             build: false,
             wasm: None,
             create_ou: "200000".to_string(),
@@ -4952,8 +4975,8 @@ COMMIT;",
             no_name: false,
             default: false,
             sql: None,
-            read: Some(PathBuf::from("schema.sql")),
-            manifest: Some(PathBuf::from("art.json")),
+            read: None,
+            manifest: None,
             json: true,
             sample: None,
             wallet: None,
@@ -4961,7 +4984,14 @@ COMMIT;",
             private_key_b64: None,
             public_key_b64: None,
             sql_args: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn new_manifest_uses_database_ontology() {
+        let mut args = test_new_args("art");
+        args.read = Some(PathBuf::from("schema.sql"));
+        args.manifest = Some(PathBuf::from("art.json"));
         let created = CreatedCircle {
             circle: "octABC".to_string(),
             owner: "octOwner".to_string(),
@@ -4997,6 +5027,30 @@ COMMIT;",
         assert_eq!(manifest["program"]["runtime"], "wasm_v1");
         assert_eq!(manifest["initializer"]["schema_file"], "schema.sql");
         assert!(manifest.get("app").is_none());
+    }
+
+    #[test]
+    fn new_refuses_to_overwrite_existing_database_name() {
+        let args = test_new_args("art");
+        let mut config = Config::default();
+        config
+            .databases
+            .insert("art".to_string(), "oct://devnet/octABC".to_string());
+        let error = ensure_new_database_name_available(&args, &config, "art").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("already exists"));
+        assert!(message.contains("oct://devnet/octABC"));
+    }
+
+    #[test]
+    fn new_no_name_allows_existing_local_database_name() {
+        let mut args = test_new_args("art");
+        args.no_name = true;
+        let mut config = Config::default();
+        config
+            .databases
+            .insert("art".to_string(), "oct://devnet/octABC".to_string());
+        ensure_new_database_name_available(&args, &config, "art").unwrap();
     }
 
     #[test]
