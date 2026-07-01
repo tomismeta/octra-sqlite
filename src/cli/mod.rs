@@ -74,6 +74,7 @@ Examples:
   octra-sqlite art \".dump\" > art.sql
   octra-sqlite database list
   octra-sqlite database info art
+  octra-sqlite commands --json
 ")]
 struct Cli {
     #[command(subcommand)]
@@ -104,6 +105,9 @@ enum Commands {
     Check(CheckArgs),
     /// Show Octra SQLite limits and operational capabilities.
     Limits(LimitsArgs),
+    /// Show supported CLI commands and JSON envelopes.
+    #[command(name = "commands")]
+    CommandList(CommandsArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
@@ -509,6 +513,13 @@ struct LimitsArgs {
     json: bool,
 }
 
+#[derive(Args)]
+struct CommandsArgs {
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
 struct BackupSummary {
     path: PathBuf,
     bytes: u64,
@@ -543,6 +554,7 @@ pub fn run() -> Result<()> {
         Commands::Restore(args) => cmd_restore(args),
         Commands::Check(args) => cmd_check(args),
         Commands::Limits(args) => cmd_limits(args),
+        Commands::CommandList(args) => cmd_commands(args),
         Commands::Verify(args) => {
             let session = build_session(&args.target)?;
             verify(
@@ -580,6 +592,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "restore",
         "check",
         "limits",
+        "commands",
         "verify",
         "status",
         "config",
@@ -2602,6 +2615,24 @@ fn cmd_limits(args: LimitsArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_commands(args: CommandsArgs) -> Result<()> {
+    let commands = commands_json();
+    if args.json {
+        return print_json(&commands);
+    }
+    for command in commands
+        .get("commands")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let name = command.get("command").and_then(Value::as_str).unwrap_or("");
+        let purpose = command.get("purpose").and_then(Value::as_str).unwrap_or("");
+        print_field(name, purpose);
+    }
+    Ok(())
+}
+
 fn read_sql_file_arg(path: &Path) -> Result<String> {
     if path == Path::new("-") {
         let sql = read_stdin_sql()?.ok_or_else(|| anyhow!("stdin did not contain SQL"))?;
@@ -3049,6 +3080,181 @@ fn limits_json(target: Option<Value>) -> Value {
             "option": "--trace-rpc-json FILE",
             "modes": ["full", "summary", "request_only", "response_meta"],
             "mode_option": "--trace-rpc-json-mode MODE",
+        }
+    })
+}
+
+fn commands_json() -> Value {
+    json!({
+        "ok": true,
+        "type": "commands",
+        "schema": "octra-sqlite.cli.v1",
+        "versions": {
+            "cli": env!("CARGO_PKG_VERSION"),
+            "sqlite": SQLITE_VERSION,
+            "json_schema": "octra-sqlite.cli.v1",
+            "rpc_trace_schema": "octra-sqlite.rpc-trace.v1",
+        },
+        "commands": [
+            {
+                "command": "octra-sqlite setup",
+                "purpose": "interactive wallet, network, RPC, and default database setup",
+                "writes": false,
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite init [OPTIONS]",
+                "purpose": "scriptable local configuration",
+                "writes": false,
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite new DATABASE [SQL]",
+                "purpose": "create a Circle-backed SQLite database and optionally initialize it",
+                "writes": true,
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite quickstart DATABASE --sample NAME",
+                "purpose": "create a database from an explicit sample",
+                "writes": true,
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite DATABASE \"SQL\"",
+                "purpose": "run one SQL statement or script against a database",
+                "writes": "depends_on_sql",
+                "json": true,
+                "envelopes": ["query", "write", "write_script"],
+            },
+            {
+                "command": "octra-sqlite DATABASE --read-only \"SQL\"",
+                "purpose": "run SQL while refusing state-changing statements",
+                "writes": false,
+                "json": true,
+                "envelope": "query",
+            },
+            {
+                "command": "octra-sqlite DATABASE --sql-file FILE",
+                "purpose": "run SQL from a file",
+                "writes": "depends_on_sql",
+                "json": true,
+                "envelopes": ["query", "write_script"],
+            },
+            {
+                "command": "octra-sqlite open DATABASE",
+                "purpose": "open the interactive sqlite> shell",
+                "writes": "depends_on_sql",
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite restore DATABASE --file dump.sql",
+                "purpose": "restore large SQL text with chunked execution",
+                "writes": true,
+                "json": true,
+                "envelope": "restore",
+            },
+            {
+                "command": "octra-sqlite check DATABASE --sql-file dump.sql",
+                "purpose": "check script size and batching without writing",
+                "writes": false,
+                "json": true,
+                "envelope": "check",
+            },
+            {
+                "command": "octra-sqlite limits [DATABASE]",
+                "purpose": "show SQL, restore, transaction, auth, and trace limits",
+                "writes": false,
+                "json": true,
+                "envelope": "limits",
+            },
+            {
+                "command": "octra-sqlite commands",
+                "purpose": "show supported CLI commands and JSON envelopes",
+                "writes": false,
+                "json": true,
+                "envelope": "commands",
+            },
+            {
+                "command": "octra-sqlite status [DATABASE]",
+                "purpose": "check config, wallet, WASM, Circle, auth, storage, and SQLite health",
+                "writes": false,
+                "json": true,
+                "envelope": "status",
+            },
+            {
+                "command": "octra-sqlite verify [DATABASE]",
+                "purpose": "verify live Circle SQLite status and optional integrity/write checks",
+                "writes": "optional",
+                "json": true,
+                "envelope": "verify",
+            },
+            {
+                "command": "octra-sqlite config",
+                "purpose": "show local config, networks, RPC, explorer, and saved databases",
+                "writes": false,
+                "json": true,
+            },
+            {
+                "command": "octra-sqlite database list",
+                "purpose": "list saved database names",
+                "writes": false,
+                "json": true,
+                "envelope": "database_list",
+            },
+            {
+                "command": "octra-sqlite database info [DATABASE]",
+                "purpose": "show database URI, Circle ID, network, and RPC",
+                "writes": false,
+                "json": true,
+                "envelope": "database_info",
+            },
+            {
+                "command": "octra-sqlite database set NAME URI",
+                "purpose": "save an oct:// database URI locally",
+                "writes": "local_config",
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite database use NAME",
+                "purpose": "set the default local database",
+                "writes": "local_config",
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite wallet status [DATABASE]",
+                "purpose": "show wallet path, permissions, caller, and target read/write status",
+                "writes": false,
+                "json": true,
+                "envelope": "wallet_status",
+            },
+            {
+                "command": "octra-sqlite deploy [OPTIONS]",
+                "purpose": "update an existing Circle with Circle WASM",
+                "writes": true,
+                "json": true,
+            },
+        ],
+        "json_envelopes": [
+            "query",
+            "write",
+            "write_script",
+            "restore",
+            "check",
+            "limits",
+            "commands",
+            "status",
+            "wallet_status",
+            "verify",
+            "database_list",
+            "database_info",
+            "error"
+        ],
+        "discovery": {
+            "limits": "octra-sqlite limits DATABASE --json",
+            "status": "octra-sqlite status DATABASE --json",
+            "wallet": "octra-sqlite wallet status DATABASE --json",
+            "json_docs": "docs/json-output.md",
         }
     })
 }
@@ -3900,6 +4106,12 @@ mod tests {
             }
             _ => panic!("expected limits command"),
         }
+
+        let commands = Cli::try_parse_from(["octra-sqlite", "commands", "--json"]).unwrap();
+        match commands.command {
+            Commands::CommandList(args) => assert!(args.json),
+            _ => panic!("expected commands command"),
+        }
     }
 
     #[test]
@@ -4334,6 +4546,35 @@ COMMIT;",
             .as_array()
             .unwrap()
             .contains(&json!("summary")));
+    }
+
+    #[test]
+    fn commands_json_lists_public_cli_surface() {
+        let commands = commands_json();
+        assert_eq!(commands["ok"], true);
+        assert_eq!(commands["type"], "commands");
+        assert_eq!(commands["schema"], "octra-sqlite.cli.v1");
+        assert!(commands["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| {
+                command.get("command").and_then(Value::as_str)
+                    == Some("octra-sqlite DATABASE \"SQL\"")
+                    && command
+                        .get("envelopes")
+                        .and_then(Value::as_array)
+                        .unwrap()
+                        .contains(&json!("query"))
+            }));
+        assert!(commands["json_envelopes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("commands")));
+        assert_eq!(
+            commands["discovery"]["limits"],
+            "octra-sqlite limits DATABASE --json"
+        );
     }
 
     #[test]

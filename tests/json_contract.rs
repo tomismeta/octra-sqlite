@@ -24,6 +24,28 @@ fn limits_json_is_machine_readable_without_wallet() {
 }
 
 #[test]
+fn commands_json_is_machine_readable_without_wallet() {
+    let output = octra_sqlite()
+        .args(["commands", "--json"])
+        .output()
+        .expect("run octra-sqlite commands --json");
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["type"], "commands");
+    assert_eq!(value["schema"], "octra-sqlite.cli.v1");
+    assert!(value["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command["command"] == "octra-sqlite DATABASE \"SQL\""));
+    assert!(value["json_envelopes"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::String("commands".to_string())));
+}
+
+#[test]
 fn json_errors_have_stable_shape_and_exit_code() {
     let output = octra_sqlite()
         .args(["check", "--json"])

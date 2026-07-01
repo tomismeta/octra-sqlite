@@ -74,6 +74,8 @@ Octra JSON-RPC request/response envelope for proof or debugging. Use
 `--trace-rpc-json-mode summary` when hashes and sizes are enough.
 `limits --json` is the supported place to discover SQL limits, result limits,
 auth behavior, restore behavior, trace modes, and JSON schema names.
+`commands --json` lists the supported command surface and JSON envelopes without
+requiring callers to parse human help text.
 
 ## Public
 

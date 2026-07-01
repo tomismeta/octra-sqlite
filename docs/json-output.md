@@ -210,7 +210,7 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `status`, `wallet_status`, `verify`, `database_list`, `database_info`, `limits`
+### `status`, `wallet_status`, `verify`, `database_list`, `database_info`, `limits`, `commands`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
@@ -228,6 +228,10 @@ does not print private keys or raw wallet JSON.
 `limits --json` is the compact capability surface for automation. It includes
 CLI/SQLite/schema versions, SQL byte limits, result row/response limits, restore
 behavior, read/write auth facts, and available trace modes.
+
+`commands --json` lists the supported CLI command surface and the stable JSON
+envelopes each command can emit. Use it when a caller needs command discovery
+without parsing human help text.
 
 ## RPC Trace
 

@@ -84,6 +84,7 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution. |
 | `octra-sqlite check DATABASE --sql-file dump.sql` | Check script size and batching without writing. |
 | `octra-sqlite limits [DATABASE]` | Show SQL, restore, transaction, and auth limits. |
+| `octra-sqlite commands` | Show supported CLI commands and JSON envelopes. |
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, Circle ID, network, and RPC. |
 | `octra-sqlite database set NAME URI` | Save an `oct://` database URI locally. |
