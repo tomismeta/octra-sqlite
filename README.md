@@ -50,12 +50,6 @@ Pinned install:
 cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
 ```
 
-Need machine-readable install guidance:
-
-```sh
-octra-sqlite install --json
-```
-
 Wallet setup:
 
 ```sh
@@ -110,7 +104,6 @@ URI.
 
 | Command | Purpose |
 | --- | --- |
-| `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
 | `octra-sqlite setup` | Configure wallet and network defaults, with guided wallet setup when needed. |
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
 | `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |

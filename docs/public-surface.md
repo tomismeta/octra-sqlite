@@ -52,7 +52,6 @@ octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite limits DATABASE
 octra-sqlite commands --json
-octra-sqlite install --json
 ```
 
 `new` submits a native signed `deploy_circle` transaction whose payload includes

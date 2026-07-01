@@ -103,12 +103,6 @@ Pinned release install:
 cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
 ```
 
-Machine-readable install guidance:
-
-```sh
-octra-sqlite install --json
-```
-
 If installing into a shared path, make the binary executable by the service
 user or group:
 

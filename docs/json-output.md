@@ -255,35 +255,7 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `install`
-
-Produced by `install --json`.
-
-```json
-{
-  "ok": true,
-  "type": "install",
-  "schema": "octra-sqlite.cli.v1",
-  "rust": {
-    "minimum": "1.87",
-    "recommended": "rustup stable"
-  },
-  "commands": {
-    "local": "cargo install --path . --locked",
-    "pinned": "cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked",
-    "setup": "octra-sqlite setup",
-    "create": "octra-sqlite new",
-    "query": "octra-sqlite DATABASE \"select * from sqlite_schema;\"",
-    "ready": "octra-sqlite status DATABASE --ready"
-  },
-  "discovery": {
-    "commands": "octra-sqlite commands --json",
-    "limits": "octra-sqlite limits DATABASE --json"
-  }
-}
-```
-
-### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`, `install`
+### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
@@ -313,10 +285,6 @@ behavior, read/write auth facts, and available trace modes.
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery
 without parsing human help text.
-
-`install --json` reports the minimum Rust version, recommended source and
-pinned install commands, and the next cold-start commands. It is informational:
-it does not install software or write local config.
 
 ## RPC Trace
 

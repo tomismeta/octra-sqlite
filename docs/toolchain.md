@@ -8,8 +8,6 @@ and `octra-sqlite deploy` use that artifact by default.
 
 - Rust/Cargo 1.87 or newer for the CLI. `rustup stable` is recommended; distro
   packages can lag behind the lockfile. Cargo must support lockfile version 4.
-  `octra-sqlite install --json` reports the same minimum version and preferred
-  install commands for automation.
 - The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured

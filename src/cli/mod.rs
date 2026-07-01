@@ -57,14 +57,10 @@ const EXPECTED_WASM_SHA256: &str =
     "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d";
 const EXPECTED_WASM_BYTES: usize = 609_354;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
-const REPO_URL: &str = "https://github.com/tomismeta/octra-sqlite";
-const MIN_RUST_VERSION: &str = "1.87";
 const SQLITE_VERSION: &str = "3.53.2";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
 const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
-const PUBLIC_READ_EXAMPLE_URI: &str =
-    "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public";
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -122,8 +118,6 @@ enum Commands {
     },
     /// Deploy/update a Circle program through native signed RPC.
     Deploy(DeployArgs),
-    /// Print installation instructions for the Rust CLI.
-    Install(InstallArgs),
 }
 
 #[derive(Subcommand)]
@@ -208,13 +202,6 @@ struct SetupArgs {
     /// Use discovered values and defaults without prompting.
     #[arg(long)]
     yes: bool,
-}
-
-#[derive(Args)]
-struct InstallArgs {
-    /// Print stable machine-readable install guidance.
-    #[arg(long)]
-    json: bool,
 }
 
 #[derive(Args)]
@@ -573,55 +560,7 @@ pub fn run_with_exit_code() -> Result<i32> {
         Commands::Config(args) => cmd_config(args).map(|_| 0),
         Commands::Wallet { command } => cmd_wallet(command).map(|_| 0),
         Commands::Deploy(args) => cmd_deploy(args).map(|_| 0),
-        Commands::Install(args) => cmd_install(args).map(|_| 0),
     }
-}
-
-fn cmd_install(args: InstallArgs) -> Result<()> {
-    let tag = format!("v{}", env!("CARGO_PKG_VERSION"));
-    let local_install = "cargo install --path . --locked";
-    let pinned_install = format!("cargo install --git {REPO_URL} --tag {tag} --locked");
-    let read_public =
-        format!("octra-sqlite '{PUBLIC_READ_EXAMPLE_URI}' \"select id, name from artist;\"");
-    let setup = "octra-sqlite setup";
-    let query = "octra-sqlite DATABASE \"select * from sqlite_schema;\"";
-    let ready = "octra-sqlite status DATABASE --ready";
-    if args.json {
-        return print_json(&json!({
-            "ok": true,
-            "type": "install",
-            "schema": "octra-sqlite.cli.v1",
-            "rust": {
-                "minimum": MIN_RUST_VERSION,
-                "recommended": "rustup stable",
-            },
-            "commands": {
-                "local": local_install,
-                "pinned": pinned_install,
-                "read_public": read_public,
-                "setup": setup,
-                "create": CREATE_DATABASE_COMMAND,
-                "query": query,
-                "ready": ready,
-            },
-            "discovery": {
-                "commands": "octra-sqlite commands --json",
-                "limits": "octra-sqlite limits art --json",
-            }
-        }));
-    }
-    print_field(
-        "rust",
-        format!("{MIN_RUST_VERSION}+; rustup stable recommended"),
-    );
-    print_command("local", local_install);
-    print_command("pinned", pinned_install);
-    print_command("read public", read_public);
-    print_command("setup", setup);
-    print_command("create", CREATE_DATABASE_COMMAND);
-    print_command("query", query);
-    print_command("ready", ready);
-    Ok(())
 }
 
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
@@ -639,7 +578,6 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "config",
         "wallet",
         "deploy",
-        "install",
         "help",
         "--help",
         "-h",
@@ -4042,13 +3980,6 @@ fn commands_json() -> Value {
                 "writes": true,
                 "json": true,
             },
-            {
-                "command": "octra-sqlite install",
-                "purpose": "print installation instructions for the Rust CLI",
-                "writes": false,
-                "json": true,
-                "envelope": "install",
-            },
         ],
         "json_envelopes": [
             "query",
@@ -4063,14 +3994,12 @@ fn commands_json() -> Value {
             "wallet_status",
             "wallet_attach",
             "wallet_import",
-            "install",
             "verify",
             "database_list",
             "database_info",
             "error"
         ],
         "discovery": {
-            "install": "octra-sqlite install --json",
             "limits": "octra-sqlite limits DATABASE --json",
             "status": "octra-sqlite status DATABASE --json",
             "wallet": "octra-sqlite wallet status DATABASE --json",
@@ -5275,15 +5204,6 @@ COMMIT;",
     }
 
     #[test]
-    fn install_accepts_json() {
-        let cli = Cli::try_parse_from(["octra-sqlite", "install", "--json"]).unwrap();
-        match cli.command {
-            Commands::Install(args) => assert!(args.json),
-            _ => panic!("expected install command"),
-        }
-    }
-
-    #[test]
     fn new_accepts_sqlite_style_positional_sql() {
         let cli = Cli::try_parse_from([
             "octra-sqlite",
@@ -5443,14 +5363,11 @@ COMMIT;",
             .as_array()
             .unwrap()
             .contains(&json!("new")));
-        assert!(commands["json_envelopes"]
+        assert!(!commands["json_envelopes"]
             .as_array()
             .unwrap()
             .contains(&json!("install")));
-        assert_eq!(
-            commands["discovery"]["install"],
-            "octra-sqlite install --json"
-        );
+        assert!(commands["discovery"].get("install").is_none());
         assert_eq!(
             commands["discovery"]["limits"],
             "octra-sqlite limits DATABASE --json"
