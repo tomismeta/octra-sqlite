@@ -79,6 +79,7 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
 | `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |
+| `octra-sqlite status DATABASE --ready` | Exit nonzero unless the database is operational. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |
 | `octra-sqlite new` | Open the guided database creation flow. |

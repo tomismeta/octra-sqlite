@@ -258,6 +258,10 @@ embedded typed SQLite query result.
 `storage_initialized`, `sqlite_ready`, and `query_ready`. Values are `null`
 when live checks are skipped or not reached.
 
+Use `status DATABASE --ready` as the operational gate. With `--json`, it prints
+the same single status envelope and exits nonzero when any readiness item is not
+`true`.
+
 `wallet status --json` reports wallet path, file permissions, caller
 address, active target, and read/write relationship to the target Circle. It
 does not print private keys or raw wallet JSON.

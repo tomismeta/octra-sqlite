@@ -1,24 +1,28 @@
 fn main() {
-    if let Err(error) = octra_sqlite::run_cli() {
-        let message = format!("{error:#}");
-        if wants_json_error() {
-            eprintln!(
-                "{}",
-                serde_json::json!({
-                    "ok": false,
-                    "type": "error",
-                    "schema": "octra-sqlite.cli.v1",
-                    "exit_code": 1,
-                    "error": {
-                        "code": classify_error(&message),
-                        "message": message,
-                    }
-                })
-            );
-        } else {
-            eprintln!("error: {message}");
+    match octra_sqlite::run_cli_with_exit_code() {
+        Ok(0) => {}
+        Ok(code) => std::process::exit(code),
+        Err(error) => {
+            let message = format!("{error:#}");
+            if wants_json_error() {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "type": "error",
+                        "schema": "octra-sqlite.cli.v1",
+                        "exit_code": 1,
+                        "error": {
+                            "code": classify_error(&message),
+                            "message": message,
+                        }
+                    })
+                );
+            } else {
+                eprintln!("error: {message}");
+            }
+            std::process::exit(1);
         }
-        std::process::exit(1);
     }
 }
 

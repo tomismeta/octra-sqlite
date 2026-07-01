@@ -464,6 +464,9 @@ struct StatusArgs {
     /// Do not call Octra RPC; only inspect local checkout/config/wallet.
     #[arg(long)]
     skip_network: bool,
+    /// Exit nonzero unless live database readiness checks pass.
+    #[arg(long)]
+    ready: bool,
     /// Print a stable JSON summary.
     #[arg(long)]
     json: bool,
@@ -578,11 +581,20 @@ struct BackupSummary {
 }
 
 pub fn run() -> Result<()> {
+    let code = run_with_exit_code()?;
+    if code == 0 {
+        Ok(())
+    } else {
+        bail!("command exited with status {code}")
+    }
+}
+
+pub fn run_with_exit_code() -> Result<i32> {
     let args = normalize_args(env::args().collect());
     let bare_init = args.len() == 2 && args[1] == "init";
     let cli = Cli::parse_from(args);
     match cli.command {
-        Commands::Setup(args) => cmd_setup(args),
+        Commands::Setup(args) => cmd_setup(args).map(|_| 0),
         Commands::Init(args) => {
             if bare_init && io::stdin().is_terminal() {
                 cmd_setup(SetupArgs {
@@ -592,18 +604,19 @@ pub fn run() -> Result<()> {
                     database: None,
                     yes: false,
                 })
+                .map(|_| 0)
             } else {
-                cmd_init(args)
+                cmd_init(args).map(|_| 0)
             }
         }
-        Commands::Quickstart(args) => cmd_quickstart(args),
-        Commands::New(args) => cmd_new(args),
-        Commands::Database { command } => cmd_database(command),
-        Commands::Open(args) => cmd_open(args),
-        Commands::Restore(args) => cmd_restore(args),
-        Commands::Check(args) => cmd_check(args),
-        Commands::Limits(args) => cmd_limits(args),
-        Commands::CommandList(args) => cmd_commands(args),
+        Commands::Quickstart(args) => cmd_quickstart(args).map(|_| 0),
+        Commands::New(args) => cmd_new(args).map(|_| 0),
+        Commands::Database { command } => cmd_database(command).map(|_| 0),
+        Commands::Open(args) => cmd_open(args).map(|_| 0),
+        Commands::Restore(args) => cmd_restore(args).map(|_| 0),
+        Commands::Check(args) => cmd_check(args).map(|_| 0),
+        Commands::Limits(args) => cmd_limits(args).map(|_| 0),
+        Commands::CommandList(args) => cmd_commands(args).map(|_| 0),
         Commands::Verify(args) => {
             let session = build_session(&args.target)?;
             verify(
@@ -613,18 +626,19 @@ pub fn run() -> Result<()> {
                 args.integrity,
                 args.json,
             )
+            .map(|_| 0)
         }
         Commands::Status(args) => cmd_status(args, "status"),
-        Commands::Config(args) => cmd_config(args),
-        Commands::Wallet { command } => cmd_wallet(command),
-        Commands::Deploy(args) => cmd_deploy(args),
+        Commands::Config(args) => cmd_config(args).map(|_| 0),
+        Commands::Wallet { command } => cmd_wallet(command).map(|_| 0),
+        Commands::Deploy(args) => cmd_deploy(args).map(|_| 0),
         Commands::Install => {
             println!("cargo install --path . --locked");
             println!("octra-sqlite setup");
             println!("{CREATE_ART_EXAMPLE}");
             println!("octra-sqlite art \".tables\"");
             println!("octra-sqlite status art");
-            Ok(())
+            Ok(0)
         }
     }
 }
@@ -1502,7 +1516,7 @@ pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
     print!("{}", format_field(label, detail));
 }
 
-fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
+fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
     let mut report = StatusReport::new(label, args.json);
     report.init_database_readiness();
     let config_path = config_path()?;
@@ -1577,7 +1591,7 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
             check_bundled_wasm(&mut report);
         }
     }
-    report.finish(label)
+    report.finish_with_ready(label, args.ready)
 }
 
 fn cmd_config(args: ConfigArgs) -> Result<()> {
@@ -1953,38 +1967,57 @@ impl StatusReport {
     }
 
     fn init_database_readiness(&mut self) {
-        for key in [
-            "circle_reachable",
-            "auth_readable",
-            "owner_write_valid",
-            "storage_initialized",
-            "sqlite_ready",
-            "query_ready",
-        ] {
+        for key in DATABASE_READINESS_KEYS {
             self.readiness.insert(key.to_string(), Value::Null);
         }
     }
 
     fn finish(self, label: &str) -> Result<()> {
+        self.finish_with_ready(label, false).map(|_| ())
+    }
+
+    fn finish_with_ready(self, label: &str, require_ready: bool) -> Result<i32> {
+        let database_ready = self.database_ready();
+        let ok = self.failures == 0 && (!require_ready || database_ready);
         if self.json {
             return print_json(&json!({
-                "ok": self.failures == 0,
+                "ok": ok,
                 "type": self.label,
                 "schema": "octra-sqlite.cli.v1",
+                "ready": database_ready,
                 "failures": self.failures,
                 "warnings": self.warnings,
                 "readiness": self.readiness,
                 "items": self.items,
-            }));
+            }))
+            .map(|_| if ok { 0 } else { 1 });
         }
-        if self.failures == 0 {
-            println!("{} ready", dim(format!("{label}:")));
-            Ok(())
-        } else {
+        if self.failures != 0 {
             bail!("{label} found {} issue(s)", self.failures)
+        } else if require_ready && !database_ready {
+            println!("{}", format_status_line("fail", "ready", "false"));
+            Ok(1)
+        } else {
+            println!("{} ready", dim(format!("{label}:")));
+            Ok(0)
         }
     }
+
+    fn database_ready(&self) -> bool {
+        DATABASE_READINESS_KEYS
+            .iter()
+            .all(|key| self.readiness.get(*key).and_then(Value::as_bool) == Some(true))
+    }
 }
+
+const DATABASE_READINESS_KEYS: &[&str] = &[
+    "circle_reachable",
+    "auth_readable",
+    "owner_write_valid",
+    "storage_initialized",
+    "sqlite_ready",
+    "query_ready",
+];
 
 fn check_bundled_wasm(report: &mut StatusReport) {
     match resolve_wasm_path(false, None) {
@@ -3730,6 +3763,13 @@ fn commands_json() -> Value {
                 "envelope": "status",
             },
             {
+                "command": "octra-sqlite status [DATABASE] --ready",
+                "purpose": "exit nonzero unless live database readiness checks pass",
+                "writes": false,
+                "json": true,
+                "envelope": "status",
+            },
+            {
                 "command": "octra-sqlite verify [DATABASE]",
                 "purpose": "verify live Circle SQLite status and optional integrity/write checks",
                 "writes": "optional",
@@ -5353,6 +5393,33 @@ COMMIT;",
             Commands::Status(args) => assert!(args.skip_network),
             _ => panic!("expected status command"),
         }
+    }
+
+    #[test]
+    fn status_accepts_readiness_gate() {
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "status", "art", "--ready", "--json"]).unwrap();
+        match cli.command {
+            Commands::Status(args) => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert!(args.ready);
+                assert!(args.json);
+            }
+            _ => panic!("expected status command"),
+        }
+    }
+
+    #[test]
+    fn status_readiness_requires_all_database_items() {
+        let mut report = StatusReport::new("status", true);
+        report.init_database_readiness();
+        assert!(!report.database_ready());
+        for key in DATABASE_READINESS_KEYS {
+            report.ready(key, true);
+        }
+        assert!(report.database_ready());
+        report.ready("sqlite_ready", false);
+        assert!(!report.database_ready());
     }
 
     #[test]

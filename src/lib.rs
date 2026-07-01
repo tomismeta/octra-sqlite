@@ -6,7 +6,7 @@ pub mod protocol;
 mod cli_impl;
 
 #[cfg(feature = "cli")]
-pub use cli_impl::run as run_cli;
+pub use cli_impl::{run as run_cli, run_with_exit_code as run_cli_with_exit_code};
 
 #[cfg(feature = "cli")]
 pub mod cli {
