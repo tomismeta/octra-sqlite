@@ -3619,6 +3619,12 @@ fn commands_json() -> Value {
                 "writes": true,
                 "json": true,
             },
+            {
+                "command": "octra-sqlite install",
+                "purpose": "print installation instructions for the Rust CLI",
+                "writes": false,
+                "json": false,
+            },
         ],
         "json_envelopes": [
             "query",
@@ -4371,6 +4377,7 @@ fn wait_for_program_info(session: &Session, expected_hash: &str) -> Result<Value
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn parses_oct_target() {
@@ -4960,6 +4967,27 @@ COMMIT;",
         assert_eq!(
             commands["discovery"]["limits"],
             "octra-sqlite limits DATABASE --json"
+        );
+    }
+
+    #[test]
+    fn commands_json_covers_every_public_top_level_command() {
+        let commands = commands_json();
+        let catalog = commands["commands"].as_array().unwrap();
+        let catalog_names = catalog
+            .iter()
+            .filter_map(|command| command.get("command").and_then(Value::as_str))
+            .filter_map(|command| command.split_whitespace().nth(1))
+            .filter(|name| *name != "DATABASE")
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        let clap_names = <Cli as clap::CommandFactory>::command()
+            .get_subcommands()
+            .map(|command| command.get_name().to_string())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            catalog_names, clap_names,
+            "commands --json must cover every public top-level command"
         );
     }
 
