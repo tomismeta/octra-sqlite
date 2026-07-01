@@ -679,7 +679,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         .or_else(|| config.network.clone())
         .ok_or_else(|| anyhow!("network is required; pass --network"))?;
     let network = if interactive {
-        prompt_default("Network", &network_default)?
+        prompt_network(&network_default)?
     } else {
         network_default
     };
@@ -917,12 +917,11 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
     args.name = Some(name.clone());
 
     if args.network.is_none() {
-        args.network = Some(
-            config
-                .network
-                .clone()
-                .unwrap_or_else(|| "devnet".to_string()),
-        );
+        let network_default = config
+            .network
+            .clone()
+            .unwrap_or_else(|| "devnet".to_string());
+        args.network = Some(prompt_network(&network_default)?);
     }
     args.read_mode = prompt_read_mode(args.read_mode)?;
     if args.wallet.is_none() {
@@ -3911,6 +3910,15 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
         "sealed" => Ok(ReadModeArg::Sealed),
         "public" => Ok(ReadModeArg::Public),
         _ => bail!("read mode must be sealed or public"),
+    }
+}
+
+fn prompt_network(default: &str) -> Result<String> {
+    let value = prompt_default("Network (devnet/mainnet)", default)?;
+    match value.trim().to_ascii_lowercase().as_str() {
+        "devnet" => Ok("devnet".to_string()),
+        "mainnet" => Ok("mainnet".to_string()),
+        _ => bail!("network must be devnet or mainnet"),
     }
 }
 

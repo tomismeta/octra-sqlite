@@ -58,10 +58,10 @@ octra-sqlite new
 octra-sqlite art
 ```
 
-The guided flow asks for an explicit database name, read mode, and
-confirmation. It uses your configured network and detected wallet, makes the
-new database the default, and writes `DATABASE.octra-sqlite.json`. Read mode
-defaults to `sealed`; choose `public` only for data intended to be publicly
+The guided flow asks for an explicit database name, network, read mode, and
+confirmation. It uses your detected wallet, makes the new database the default,
+and writes `DATABASE.octra-sqlite.json`. Network defaults to `devnet`; read mode
+defaults to `sealed`. Choose `public` only for data intended to be publicly
 queryable.
 
 ## Interfaces

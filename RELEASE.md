@@ -34,6 +34,8 @@ devnet proof Circle records the explicit public-read Octra deployment tuple.
   defaults instead of prompting for wallet path, schema file, default selection,
   and manifest path. It saves the new database as the default and writes
   `DATABASE.octra-sqlite.json`.
+- `setup` and interactive `new` both use an explicit `devnet/mainnet` network
+  selector.
 - Human `new` output is shorter and action-oriented. Public-read manifests and
   create output include a shareable `?read_mode=public` read URI.
 - README, public surface docs, and operations docs now present one clean
