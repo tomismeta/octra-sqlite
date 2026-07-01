@@ -655,9 +655,6 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
 
     print_title("Octra SQLite setup");
     let wallet_path = configure_setup_wallet(&args, &mut config, interactive)?;
-    if wallet_path.is_none() {
-        config.wallet = None;
-    }
 
     let network_default = args
         .network
@@ -702,7 +699,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     } else {
         print_command(
             "browse a public database",
-            "octra-sqlite open oct://devnet/CIRCLE?read_mode=public",
+            format!("octra-sqlite open oct://{network}/CIRCLE?read_mode=public"),
         );
         print_command(
             "attach a wallet",
@@ -729,9 +726,13 @@ fn configure_setup_wallet(
     if interactive {
         return match prompt_wallet_onboarding(config)? {
             WalletOnboarding::Configured(path) => Ok(Some(path)),
-            WalletOnboarding::Walletless => Ok(None),
+            WalletOnboarding::Walletless => {
+                config.wallet = None;
+                Ok(None)
+            }
         };
     }
+    config.wallet = None;
     Ok(None)
 }
 
