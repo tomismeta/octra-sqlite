@@ -28,6 +28,18 @@ pub(super) struct WalletFile {
     pub(super) public_key: Option<String>,
     pub(super) public_key_b64: Option<String>,
     pub(super) rpc: Option<String>,
+    #[cfg(feature = "cli")]
+    #[serde(rename = "keyPair")]
+    pub(super) key_pair: Option<WalletKeyPair>,
+}
+
+#[cfg(feature = "cli")]
+#[derive(Deserialize, Default)]
+pub(super) struct WalletKeyPair {
+    #[serde(rename = "secretKey")]
+    pub(super) secret_key: Option<String>,
+    #[serde(rename = "publicKey")]
+    pub(super) public_key: Option<String>,
 }
 
 #[derive(PartialEq, Eq)]
@@ -95,6 +107,7 @@ pub fn wallet_caller(path: Option<&Path>, caller: Option<&str>) -> Result<Option
 #[cfg(feature = "cli")]
 pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
     let wallet = load_wallet(Some(path))?;
+    let key_pair = wallet.key_pair.unwrap_or_default();
     let supplied_address = first_string(&[wallet.addr, wallet.address]).ok_or_else(|| {
         ClientError::with_kind(
             ClientErrorKind::Wallet,
@@ -106,11 +119,15 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
         wallet.priv_,
         wallet.private_key,
         wallet.private_key_b64,
+        key_pair.secret_key,
     ])
     .ok_or_else(|| {
         ClientError::with_kind(
             ClientErrorKind::Wallet,
-            format!("wallet {} is missing private_key_b64/priv", path.display()),
+            format!(
+                "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
+                path.display()
+            ),
         )
     })?;
     let supplied_public_key = first_string(&[
@@ -118,6 +135,7 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
         wallet.pub_,
         wallet.public_key,
         wallet.public_key_b64,
+        key_pair.public_key,
     ]);
     let material = wallet_material_from_private_key(&private_key, supplied_public_key)?;
     private_key.zeroize();
@@ -288,5 +306,46 @@ mod tests {
         )
         .unwrap();
         assert_eq!(material.address.len(), 47);
+    }
+
+    #[test]
+    fn wallet_file_material_accepts_wallet_generator_shape() {
+        let material =
+            wallet_material_from_private_key("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", None)
+                .unwrap();
+        let seed = hex::encode(
+            general_purpose::STANDARD
+                .decode(&material.private_key_b64)
+                .unwrap(),
+        );
+        let public = hex::encode(
+            general_purpose::STANDARD
+                .decode(&material.public_key_b64)
+                .unwrap(),
+        );
+        let wallet = serde_json::json!({
+            "address": material.address.clone(),
+            "mnemonic": ["abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "abandon", "about"],
+            "seed": "00",
+            "entropy": "00",
+            "masterKeyPair": {
+                "publicKey": public.clone(),
+                "secretKey": seed.clone(),
+            },
+            "keyPair": {
+                "publicKey": public.clone(),
+                "secretKey": format!("{seed}{public}"),
+            }
+        });
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-wallet-generator-test-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, serde_json::to_vec(&wallet).unwrap()).unwrap();
+        let loaded = wallet_file_material(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(loaded.address, material.address);
+        assert_eq!(loaded.private_key_b64, material.private_key_b64);
+        assert_eq!(loaded.public_key_b64, material.public_key_b64);
     }
 }

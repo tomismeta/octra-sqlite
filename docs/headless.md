@@ -26,8 +26,8 @@ octra-sqlite wallet attach /secure/path/wallet.json
 
 For a new human-operated setup, `octra-sqlite setup` can guide you to the
 official Octra wallet generator and copy the saved `wallet.json` into the local
-octra-sqlite wallet path. Do not leave the browser-downloaded copy in a synced
-Downloads folder after import.
+octra-sqlite wallet path without rewriting the official file shape. Do not leave
+the browser-downloaded copy in a synced Downloads folder after import.
 
 Or import a private key without putting it in shell history:
 
@@ -39,6 +39,9 @@ The import command strips whitespace, derives the Octra address, writes a
 normalized wallet JSON, and stores the file with restrictive permissions where
 the OS supports it. Interactive setup uses a hidden terminal prompt for private
 key paste; headless setup should use `--stdin` or a pre-provisioned file.
+Pre-provisioned files may use the official Octra wallet-generator shape
+(`address` plus `keyPair.publicKey` / `keyPair.secretKey`) or octra-sqlite's
+minimal normalized shape (`address`, `private_key_b64`, `public_key_b64`).
 WebCLI `.oct` files are encrypted with a PIN; direct encrypted `.oct` import is
 not enabled by default in this release.
 

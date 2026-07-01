@@ -1639,7 +1639,7 @@ fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
     let output = default_wallet_output_path()?;
     let output = absolute_wallet_output_path(&output)?;
     if source != output {
-        write_wallet_json(&output, &material, false)?;
+        copy_wallet_json(&source, &output, false)?;
         config.wallet = Some(output.to_string_lossy().to_string());
         write_config(config)?;
         print_field("wallet", output.display().to_string());
@@ -1918,6 +1918,32 @@ fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Res
     text.zeroize();
     #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+fn copy_wallet_json(source: &Path, output: &Path, force: bool) -> Result<()> {
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut bytes =
+        fs::read(source).with_context(|| format!("reading wallet {}", source.display()))?;
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if force {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(output)
+        .with_context(|| format!("writing wallet {}", output.display()))?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    bytes.zeroize();
+    #[cfg(unix)]
+    fs::set_permissions(output, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 

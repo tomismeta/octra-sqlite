@@ -74,10 +74,11 @@ want Circle-info probing can opt into `?read_mode=auto`. Writes stay
 owner-signed through OSW1 in both modes.
 
 Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
-then local `wallet.json` candidates. `.oct` WebCLI wallets are detected and
-explained but not decrypted by octra-sqlite. Future external signers must be
-paired/authenticated and user-confirming, not blind localhost signing or private
-key export.
+then local `wallet.json` candidates. Wallet JSON may use the official Octra
+wallet-generator shape or octra-sqlite's minimal normalized shape. `.oct` WebCLI
+wallets are detected and explained but not decrypted by octra-sqlite. Future
+external signers must be paired/authenticated and user-confirming, not blind
+localhost signing or private key export.
 
 `deploy` updates existing Circle programs through the same Rust-native signed
 RPC path. The Octra webcli helper is not required for the maintained SQLite

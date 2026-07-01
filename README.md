@@ -48,6 +48,7 @@ printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --outp
 `setup` and guided `new` can also walk you through the safe paths: use
 `wallet.json` from the official Octra wallet generator, attach an existing
 plaintext wallet JSON, or paste a private key into a hidden prompt.
+Official wallet-generator files are accepted directly.
 
 Create directly with inline SQL:
 

@@ -24,6 +24,9 @@
   `wallet.json` from the official Octra wallet generator, attach existing
   plaintext wallet JSON, paste a private key through a hidden terminal prompt,
   or continue without a wallet for public-read queries only.
+- Accepted the official Octra wallet-generator JSON shape
+  (`keyPair.publicKey` / `keyPair.secretKey`) and preserved that file shape when
+  importing through the generator-guided setup path.
 - Added `rpassword` as a CLI-only dependency for no-echo interactive private-key
   import; the protocol/client core and `--no-default-features` build stay
   dependency-light.
