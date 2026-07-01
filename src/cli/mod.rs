@@ -655,6 +655,9 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
 
     print_title("Octra SQLite setup");
     let wallet_path = configure_setup_wallet(&args, &mut config, interactive)?;
+    if wallet_path.is_none() {
+        config.wallet = None;
+    }
 
     let network_default = args
         .network
@@ -682,7 +685,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     println!();
     print_section("Setup complete");
     print_field("wrote", config_path()?.display().to_string());
-    match wallet_path {
+    match &wallet_path {
         Some(path) => print_field("wallet", path.display().to_string()),
         None => print_field("wallet", "not configured"),
     }
@@ -693,13 +696,19 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     }
     println!();
     print_section("Next");
-    print_command("create", CREATE_DATABASE_COMMAND);
-    if config.wallet.is_none() {
+    if wallet_path.is_some() {
+        print_command("create a new database", CREATE_DATABASE_COMMAND);
+        print_command("browse an existing database", "octra-sqlite open DATABASE");
+    } else {
         print_command(
-            "wallet attach",
+            "browse a public database",
+            "octra-sqlite open oct://devnet/CIRCLE?read_mode=public",
+        );
+        print_command(
+            "attach a wallet",
             "octra-sqlite wallet attach /path/to/wallet.json",
         );
-        print_command("wallet import", "octra-sqlite wallet import --stdin");
+        print_command("import a wallet", "octra-sqlite wallet import --stdin");
     }
     Ok(())
 }
@@ -975,10 +984,8 @@ fn ensure_wallet_for_database_creation(args: &NewArgs, config: &mut Config) -> R
             wallet_file_material(&path)?;
             return Ok(());
         }
-        print_field(
-            "warning",
-            format!("configured wallet not found at {}", path.display()),
-        );
+        print_warning(format!("configured wallet not found at {}", path.display()));
+        println!();
     }
     if let Some(path) = discover_wallet_path() {
         reject_encrypted_oct_wallet(&path)?;
@@ -1431,6 +1438,10 @@ fn print_choice(number: usize, label: &str) {
     println!("  {}  {label}", dim(format!("{number}.")));
 }
 
+fn print_warning(detail: impl AsRef<str>) {
+    println!("{} {}", strong("warning:"), dim(detail.as_ref()));
+}
+
 fn print_command(label: &str, command: impl AsRef<str>) {
     println!("{} {}", dim(format!("{label}:")), command.as_ref());
 }
@@ -1598,11 +1609,8 @@ fn configured_or_discovered_wallet(config: &Config) -> Result<Option<PathBuf>> {
             wallet_file_material(&path)?;
             return Ok(Some(path));
         }
-        println!(
-            "{} configured wallet not found at {}",
-            strong("warning:"),
-            path.display()
-        );
+        print_warning(format!("configured wallet not found at {}", path.display()));
+        println!();
     }
     if let Some(path) = discover_wallet_path() {
         reject_encrypted_oct_wallet(&path)?;
@@ -1660,8 +1668,7 @@ fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
         "step",
         "generate a wallet with the official Octra generator, save wallet.json, then paste its local path here.",
     );
-    print_field(
-        "warning",
+    print_warning(
         "only use the official Octra generator; private-key generator URLs are phishing targets.",
     );
     let source = prompt_path_no_default("wallet JSON path")?;
