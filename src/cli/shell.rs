@@ -297,6 +297,11 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
 }
 
 fn print_help() {
+    println!("SQL:");
+    println!("  create table ...;    create tables with SQLite SQL");
+    println!("  select ...;          query rows with SQLite SQL");
+    println!("  insert/update/delete write rows with SQLite SQL");
+    println!();
     println!("SQLite commands:");
     println!("  .backup ?DB? FILE    back up main database to a SQLite file");
     println!("  .save FILE           save main database to a SQLite file");

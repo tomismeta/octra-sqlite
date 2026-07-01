@@ -30,6 +30,10 @@ octra-sqlite art ".tables"
 octra-sqlite art "select * from artist;"
 ```
 
+`setup` configures wallet and network defaults only. It does not ask for or set
+a default database. The first successful `new` saves the created database and
+makes it the default.
+
 The reference configurable database creation path is:
 
 ```sh

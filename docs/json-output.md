@@ -78,6 +78,7 @@ Produced by `new DATABASE --json`.
   "database": {
     "name": "art",
     "uri": "oct://devnet/oct...",
+    "read_uri": "oct://devnet/oct...",
     "network": "devnet",
     "circle": "oct...",
     "rpc": "https://devnet.octrascan.io/rpc",
@@ -271,13 +272,13 @@ Produced by `install --json`.
     "local": "cargo install --path . --locked",
     "pinned": "cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked",
     "setup": "octra-sqlite setup",
-    "create": "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"",
-    "query": "octra-sqlite art \"select * from artist;\"",
-    "ready": "octra-sqlite status art --ready"
+    "create": "octra-sqlite new",
+    "query": "octra-sqlite DATABASE \"select * from sqlite_schema;\"",
+    "ready": "octra-sqlite status DATABASE --ready"
   },
   "discovery": {
     "commands": "octra-sqlite commands --json",
-    "limits": "octra-sqlite limits art --json"
+    "limits": "octra-sqlite limits DATABASE --json"
   }
 }
 ```

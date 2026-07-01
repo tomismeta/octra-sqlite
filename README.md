@@ -85,7 +85,7 @@ let rows = db.query("select * from artist order by name;")?;
 | Command | Purpose |
 | --- | --- |
 | `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
-| `octra-sqlite setup` | Configure wallet, network, RPC, and defaults. |
+| `octra-sqlite setup` | Configure wallet and network defaults. |
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
 | `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |

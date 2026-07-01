@@ -56,8 +56,7 @@ const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
     "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d";
 const EXPECTED_WASM_BYTES: usize = 609_354;
-const CREATE_ART_EXAMPLE: &str =
-    "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
+const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
 const REPO_URL: &str = "https://github.com/tomismeta/octra-sqlite";
 const MIN_RUST_VERSION: &str = "1.87";
 const SQLITE_VERSION: &str = "3.53.2";
@@ -87,7 +86,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Interactive setup wizard for wallet, RPC, and optional sample database.
+    /// Interactive setup for wallet and network defaults.
     Setup(SetupArgs),
     /// Create a new SQLite database on Octra and optionally initialize it with SQL.
     New(NewArgs),
@@ -203,9 +202,6 @@ struct SetupArgs {
     /// Octra network name.
     #[arg(long)]
     network: Option<String>,
-    /// Default database name, Circle ID, or oct:// database URI.
-    #[arg(long)]
-    database: Option<String>,
     /// Use discovered values and defaults without prompting.
     #[arg(long)]
     yes: bool,
@@ -583,8 +579,8 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
     let local_install = "cargo install --path . --locked";
     let pinned_install = format!("cargo install --git {REPO_URL} --tag {tag} --locked");
     let setup = "octra-sqlite setup";
-    let query = "octra-sqlite art \"select * from artist;\"";
-    let ready = "octra-sqlite status art --ready";
+    let query = "octra-sqlite DATABASE \"select * from sqlite_schema;\"";
+    let ready = "octra-sqlite status DATABASE --ready";
     if args.json {
         return print_json(&json!({
             "ok": true,
@@ -598,7 +594,7 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
                 "local": local_install,
                 "pinned": pinned_install,
                 "setup": setup,
-                "create": CREATE_ART_EXAMPLE,
+                "create": CREATE_DATABASE_COMMAND,
                 "query": query,
                 "ready": ready,
             },
@@ -615,7 +611,7 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
     print_command("local", local_install);
     print_command("pinned", pinned_install);
     print_command("setup", setup);
-    print_command("create", CREATE_ART_EXAMPLE);
+    print_command("create", CREATE_DATABASE_COMMAND);
     print_command("query", query);
     print_command("ready", ready);
     Ok(())
@@ -688,36 +684,18 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
         network_default
     };
 
-    let rpc_default = args
+    let rpc = args
         .rpc
         .clone()
         .or_else(|| env::var("OCTRA_RPC_URL").ok())
         .or_else(|| config.rpc_for_network(&network))
         .or_else(|| config.rpc.clone())
         .ok_or_else(|| anyhow!("RPC is required; pass --rpc or set OCTRA_RPC_URL"))?;
-    let rpc = if interactive {
-        prompt_default("RPC", &rpc_default)?
-    } else {
-        rpc_default
-    };
-
-    let database_default = args
-        .database
-        .clone()
-        .or_else(|| config.default_database.clone());
-    let database = if interactive {
-        prompt_optional("Default database", database_default.as_deref())?
-    } else {
-        database_default
-    };
 
     config.wallet = Some(wallet_path.to_string_lossy().to_string());
     config.network = Some(network.clone());
     config.apply_active_network_profile();
     config.rpc = Some(rpc.clone());
-    if let Some(database) = database.filter(|value| !value.trim().is_empty()) {
-        config.default_database = Some(database);
-    }
     write_config(&config)?;
     print_field("wrote", config_path()?.display().to_string());
     print_field("wallet", wallet_path.display().to_string());
@@ -726,55 +704,22 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     if let Some(explorer) = config.explorer_for_network(&network) {
         print_field("explorer", explorer);
     }
-    if let Some(default_database) = &config.default_database {
-        print_field("default database", default_database);
-    }
-
-    if interactive && prompt_yes_no("Create a sample database now?", false)? {
-        let name = prompt_default("Database name", "art")?;
-        let sample = prompt_default("Sample", "artists")?;
-        let read_mode = prompt_read_mode(ReadModeArg::Sealed)?;
-        cmd_new(NewArgs {
-            name: Some(name),
-            build: false,
-            wasm: None,
-            create_ou: "200000".to_string(),
-            rpc: Some(rpc),
-            network: Some(network),
-            read_mode,
-            no_wait: false,
-            no_name: false,
-            default: true,
-            sql: None,
-            read: None,
-            manifest: None,
-            json: false,
-            sample: Some(sample),
-            wallet: Some(wallet_path),
-            caller: None,
-            private_key_b64: None,
-            public_key_b64: None,
-            sql_args: Vec::new(),
-        })?;
-    } else {
-        print_command("create", CREATE_ART_EXAMPLE);
-        print_command("sample", "octra-sqlite new art --sample artists");
-        if !wallet_path.is_file() {
-            print_command(
-                "wallet attach",
-                format!(
-                    "octra-sqlite wallet attach {}",
-                    shell_quote_path(&wallet_path)
-                ),
-            );
-            print_command(
-                "wallet import",
-                format!(
-                    "octra-sqlite wallet import --stdin --output {}",
-                    shell_quote_path(&wallet_path)
-                ),
-            );
-        }
+    print_command("create", CREATE_DATABASE_COMMAND);
+    if !wallet_path.is_file() {
+        print_command(
+            "wallet attach",
+            format!(
+                "octra-sqlite wallet attach {}",
+                shell_quote_path(&wallet_path)
+            ),
+        );
+        print_command(
+            "wallet import",
+            format!(
+                "octra-sqlite wallet import --stdin --output {}",
+                shell_quote_path(&wallet_path)
+            ),
+        );
     }
     Ok(())
 }
@@ -821,38 +766,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     let read_mode = ReadMode::from(args.read_mode);
     let created = create_circle(&control_session, &args, &network, read_mode)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
-    if !args.json {
-        if args.no_name {
-            print_field("database", "(not saved)");
-        } else {
-            print_field("database", name);
-        }
-        print_field("uri", &target_uri);
-        print_field("circle", linked_circle(&network, &created.circle));
-        print_field("wallet", control_session.caller());
-        print_field("read_mode", read_mode.as_str());
-        print_field(
-            "code",
-            format!("{} bytes, hash {}", created.code_bytes, created.code_hash),
-        );
-        print_field("auth", "owner-only writes");
-        if let Some(hash) = &created.tx_hash {
-            print_field("create_tx", linked_tx(&network, hash));
-            if let Some(url) = explorer_tx_url(&network, hash) {
-                print_field("create_tx_url", url);
-            }
-            if let Some(confirmation) = &created.confirmation {
-                print_field(
-                    "create_status",
-                    confirmation
-                        .get("status")
-                        .map(value_to_string)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                );
-            }
-        }
-    }
-
+    let mut default_database = false;
     if !args.no_name {
         if let Err(error) = save_new_database_name(&args, &target_uri, &created, &mut config) {
             if !args.json {
@@ -865,11 +779,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
             }
             return Err(error.context("database name save failed after Circle creation"));
         }
-        if !args.json {
-            print_field("saved", "yes");
-        }
-    } else if !args.json {
-        print_field("saved", "no");
+        default_database = config.default_database.as_deref() == Some(name);
     }
 
     let mut initializer_results = Vec::new();
@@ -969,14 +879,20 @@ fn cmd_new(args: NewArgs) -> Result<()> {
     }
 
     let followup_target = new_followup_target(name, &target_uri, args.no_name);
+    if args.no_name {
+        print_field("created", "(not saved)");
+    } else {
+        print_field("created", name);
+    }
+    print_field("uri", database_read_uri(&target_uri, read_mode));
+    print_field("read_mode", read_mode.as_str());
+    print_field("default", if default_database { "yes" } else { "no" });
     if let Some(path) = manifest_path {
         print_field("manifest", path.display().to_string());
     }
-    print_field("status", format!("octra-sqlite status {followup_target}"));
-    print_field(
-        "tables",
-        format!("octra-sqlite {followup_target} \".tables\""),
-    );
+    if let Some(hash) = &created.tx_hash {
+        print_field("tx", linked_tx(&network, hash));
+    }
     print_field("open", format!("octra-sqlite open {followup_target}"));
     Ok(())
 }
@@ -1030,6 +946,13 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
 
 fn default_new_manifest_path(name: &str) -> PathBuf {
     PathBuf::from(format!("{name}.octra-sqlite.json"))
+}
+
+fn database_read_uri(target_uri: &str, read_mode: ReadMode) -> String {
+    match read_mode {
+        ReadMode::Public => format!("{target_uri}?read_mode=public"),
+        ReadMode::Auto | ReadMode::Sealed => target_uri.to_string(),
+    }
 }
 
 fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
@@ -1255,6 +1178,7 @@ fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
         "database": {
             "name": if args.no_name { Value::Null } else { Value::String(input.name.to_string()) },
             "uri": input.target_uri,
+            "read_uri": database_read_uri(input.target_uri, read_mode),
             "network": input.network,
             "circle": input.created.circle.clone(),
             "circle_url": explorer_circle_url(input.network, &input.created.circle),
@@ -1583,7 +1507,7 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     if !config.databases.is_empty() {
         print_field("next", "octra-sqlite database list");
     } else {
-        print_field("create", CREATE_ART_EXAMPLE);
+        print_field("create", CREATE_DATABASE_COMMAND);
     }
     Ok(())
 }
@@ -2703,7 +2627,7 @@ fn print_database_list(config: &Config, json_mode: bool) -> Result<()> {
     }
     if config.databases.is_empty() {
         println!("{}", dim("no databases"));
-        print_field("create", CREATE_ART_EXAMPLE);
+        print_field("create", CREATE_DATABASE_COMMAND);
         return Ok(());
     }
     println!("{}  name  read_mode  uri", dim("default"));
@@ -3683,7 +3607,7 @@ fn commands_json() -> Value {
         "commands": [
             {
                 "command": "octra-sqlite setup",
-                "purpose": "interactive wallet, network, RPC, and default database setup",
+                "purpose": "interactive wallet and network setup",
                 "writes": false,
                 "json": false,
             },
@@ -3968,26 +3892,6 @@ fn prompt_required(label: &str) -> Result<String> {
         bail!("{label} is required");
     }
     Ok(trimmed.to_string())
-}
-
-fn prompt_optional(label: &str, default: Option<&str>) -> Result<Option<String>> {
-    let rendered = default.unwrap_or("");
-    print!("{label}");
-    if !rendered.is_empty() {
-        print!(" [{rendered}]");
-    }
-    print!(": ");
-    io::stdout().flush()?;
-    let mut value = String::new();
-    io::stdin().read_line(&mut value)?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        Ok(default
-            .map(str::to_string)
-            .filter(|value| !value.is_empty()))
-    } else {
-        Ok(Some(trimmed.to_string()))
-    }
 }
 
 fn prompt_path(label: &str, default: &Path) -> Result<PathBuf> {
@@ -5341,10 +5245,23 @@ COMMIT;",
         assert_eq!(manifest["manifest_version"], "octra-sqlite.database.v1");
         assert_eq!(manifest["database"]["name"], "art");
         assert_eq!(manifest["database"]["uri"], "oct://devnet/octABC");
+        assert_eq!(manifest["database"]["read_uri"], "oct://devnet/octABC");
         assert_eq!(manifest["owner"]["write_auth"], "OSW1 owner write intent");
         assert_eq!(manifest["program"]["runtime"], "wasm_v1");
         assert_eq!(manifest["initializer"]["schema_file"], "schema.sql");
         assert!(manifest.get("app").is_none());
+    }
+
+    #[test]
+    fn public_database_read_uri_is_shareable() {
+        assert_eq!(
+            database_read_uri("oct://devnet/octABC", ReadMode::Public),
+            "oct://devnet/octABC?read_mode=public"
+        );
+        assert_eq!(
+            database_read_uri("oct://devnet/octABC", ReadMode::Sealed),
+            "oct://devnet/octABC"
+        );
     }
 
     #[test]

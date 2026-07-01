@@ -26,12 +26,16 @@ devnet proof Circle records the explicit public-read Octra deployment tuple.
   `database` command aliases, old option aliases, and legacy config aliases.
 - `setup --yes` is the scriptable setup path; `new --sample NAME` is the
   sample database path.
+- `setup` now configures wallet and network only. The first `new` establishes
+  the default database.
 - Raw `oct://` targets without saved metadata or `?read_mode=public` now default
   to sealed reads. This avoids hidden Circle-info probing on the shortest URI.
 - Interactive `new` now asks for an explicit database name and uses configured
   defaults instead of prompting for wallet path, schema file, default selection,
   and manifest path. It saves the new database as the default and writes
   `DATABASE.octra-sqlite.json`.
+- Human `new` output is shorter and action-oriented. Public-read manifests and
+  create output include a shareable `?read_mode=public` read URI.
 - README, public surface docs, and operations docs now present one clean
   product path: setup, new, query, status, restore.
 

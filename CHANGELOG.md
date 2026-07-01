@@ -18,6 +18,10 @@
 - Simplified interactive `new` to the product path: explicit database name,
   read mode, confirmation. Wallet, network, default database, and manifest path
   are resolved from configuration and conventions.
+- Simplified `setup` to wallet and network configuration. Database defaults are
+  established by `new`.
+- Shortened human `new` output and added a manifest `read_uri` field for
+  shareable public-read database URIs.
 - Removed redundant public command surfaces: `init`, `quickstart`, command
   aliases, option aliases, and legacy config aliases.
 - Kept `setup --yes` as the scriptable setup path and `new --sample NAME` as
