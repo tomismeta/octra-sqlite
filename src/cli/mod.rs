@@ -4150,6 +4150,19 @@ fn prompt_default(label: &str, default: &str) -> Result<String> {
     }
 }
 
+fn prompt_choice_default(label: &str, default: &str, choices: &str) -> Result<String> {
+    print!("{} [{}] {}: ", dim(label), default, dim(choices));
+    io::stdout().flush()?;
+    let mut value = String::new();
+    io::stdin().read_line(&mut value)?;
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Ok(default.to_string())
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
 fn prompt_required(label: &str) -> Result<String> {
     print!("{}: ", dim(label));
     io::stdout().flush()?;
@@ -4171,7 +4184,7 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
         ReadModeArg::Sealed => "sealed",
         ReadModeArg::Public => "public",
     };
-    let value = prompt_default("read mode (sealed/public)", default_text)?;
+    let value = prompt_choice_default("read mode", default_text, "(sealed/public)")?;
     match value.trim().to_ascii_lowercase().as_str() {
         "sealed" => Ok(ReadModeArg::Sealed),
         "public" => Ok(ReadModeArg::Public),
@@ -4180,7 +4193,7 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
 }
 
 fn prompt_network(default: &str) -> Result<String> {
-    let value = prompt_default("network", default)?;
+    let value = prompt_choice_default("network", default, "(devnet/mainnet)")?;
     match value.trim().to_ascii_lowercase().as_str() {
         "devnet" => Ok("devnet".to_string()),
         "mainnet" => Ok("mainnet".to_string()),
