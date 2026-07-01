@@ -729,6 +729,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     } else {
         wallet_default
     };
+    reject_encrypted_oct_wallet(&wallet_path)?;
     if !wallet_path.is_file() {
         println!(
             "{} wallet not found at {}; writes need a funded wallet",
@@ -814,6 +815,22 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             "example",
             "octra-sqlite quickstart my_collections --sample remilia",
         );
+        if !wallet_path.is_file() {
+            print_command(
+                "wallet attach",
+                format!(
+                    "octra-sqlite wallet attach {}",
+                    shell_quote_path(&wallet_path)
+                ),
+            );
+            print_command(
+                "wallet import",
+                format!(
+                    "octra-sqlite wallet import --stdin --output {}",
+                    shell_quote_path(&wallet_path)
+                ),
+            );
+        }
     }
     Ok(())
 }
@@ -1492,6 +1509,10 @@ fn shell_quote(value: &str) -> String {
     }
 }
 
+fn shell_quote_path(path: &Path) -> String {
+    shell_quote(&path.display().to_string())
+}
+
 fn dot_arg_quote(value: &str) -> String {
     if !value.is_empty()
         && value
@@ -1514,6 +1535,10 @@ fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) ->
 
 pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
     print!("{}", format_field(label, detail));
+}
+
+fn print_command(label: &str, command: impl AsRef<str>) {
+    println!("{} {}", dim(format!("{label}:")), command.as_ref());
 }
 
 fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
@@ -1820,7 +1845,11 @@ fn cmd_wallet_status(args: WalletStatusArgs) -> Result<()> {
 }
 
 fn reject_encrypted_oct_wallet(path: &Path) -> Result<()> {
-    if path.extension().and_then(|ext| ext.to_str()) == Some("oct") {
+    if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("oct"))
+    {
         bail!(
             "webcli .oct wallets are encrypted and need PIN-based decryption; export/import the private key with `octra-sqlite wallet import --stdin` or attach a plaintext wallet JSON"
         );
@@ -5384,6 +5413,18 @@ COMMIT;",
             Commands::Setup(args) => assert!(args.yes),
             _ => panic!("expected setup command"),
         }
+    }
+
+    #[test]
+    fn setup_rejects_encrypted_oct_wallet_path() {
+        let error = reject_encrypted_oct_wallet(Path::new("wallet.oct")).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("webcli .oct wallets are encrypted"));
+        let error = reject_encrypted_oct_wallet(Path::new("wallet.OCT")).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("webcli .oct wallets are encrypted"));
     }
 
     #[test]
