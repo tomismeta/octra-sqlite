@@ -99,7 +99,7 @@ Happy path for a mirror/backfill:
 
 If restore fails, inspect the reported batch or statement range. A multi-batch
 restore can partially apply, so retry by rerunning idempotent SQL after fixing
-the cause. There is no persisted resume checkpoint in 0.3.x.
+the cause. There is no persisted resume checkpoint in the current release line.
 
 On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
 transient `429`, `503`, timeout, and non-JSON gateway responses. It does not

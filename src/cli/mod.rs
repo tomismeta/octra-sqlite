@@ -58,6 +58,8 @@ const EXPECTED_WASM_SHA256: &str =
 const EXPECTED_WASM_BYTES: usize = 609_354;
 const CREATE_ART_EXAMPLE: &str =
     "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"";
+const REPO_URL: &str = "https://github.com/tomismeta/octra-sqlite";
+const MIN_RUST_VERSION: &str = "1.87";
 const SQLITE_VERSION: &str = "3.53.2";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
@@ -124,7 +126,7 @@ enum Commands {
     /// Deploy/update a Circle program through native signed RPC.
     Deploy(DeployArgs),
     /// Print installation instructions for the Rust CLI.
-    Install,
+    Install(InstallArgs),
 }
 
 #[derive(Subcommand)]
@@ -229,6 +231,13 @@ struct SetupArgs {
     /// Use discovered values and defaults without prompting.
     #[arg(long)]
     yes: bool,
+}
+
+#[derive(Args)]
+struct InstallArgs {
+    /// Print stable machine-readable install guidance.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args)]
@@ -632,15 +641,51 @@ pub fn run_with_exit_code() -> Result<i32> {
         Commands::Config(args) => cmd_config(args).map(|_| 0),
         Commands::Wallet { command } => cmd_wallet(command).map(|_| 0),
         Commands::Deploy(args) => cmd_deploy(args).map(|_| 0),
-        Commands::Install => {
-            println!("cargo install --path . --locked");
-            println!("octra-sqlite setup");
-            println!("{CREATE_ART_EXAMPLE}");
-            println!("octra-sqlite art \".tables\"");
-            println!("octra-sqlite status art");
-            Ok(0)
-        }
+        Commands::Install(args) => cmd_install(args).map(|_| 0),
     }
+}
+
+fn cmd_install(args: InstallArgs) -> Result<()> {
+    let tag = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let local_install = "cargo install --path . --locked";
+    let pinned_install = format!("cargo install --git {REPO_URL} --tag {tag} --locked");
+    let setup = "octra-sqlite setup";
+    let query = "octra-sqlite art \"select * from artist;\"";
+    let ready = "octra-sqlite status art --ready";
+    if args.json {
+        return print_json(&json!({
+            "ok": true,
+            "type": "install",
+            "schema": "octra-sqlite.cli.v1",
+            "rust": {
+                "minimum": MIN_RUST_VERSION,
+                "recommended": "rustup stable",
+            },
+            "commands": {
+                "local": local_install,
+                "pinned": pinned_install,
+                "setup": setup,
+                "create": CREATE_ART_EXAMPLE,
+                "query": query,
+                "ready": ready,
+            },
+            "discovery": {
+                "commands": "octra-sqlite commands --json",
+                "limits": "octra-sqlite limits art --json",
+            }
+        }));
+    }
+    print_field(
+        "rust",
+        format!("{MIN_RUST_VERSION}+; rustup stable recommended"),
+    );
+    print_command("local", local_install);
+    print_command("pinned", pinned_install);
+    print_command("setup", setup);
+    print_command("create", CREATE_ART_EXAMPLE);
+    print_command("query", query);
+    print_command("ready", ready);
+    Ok(())
 }
 
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
@@ -792,8 +837,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     }
 
     if interactive && prompt_yes_no("Create a sample database now?", false)? {
-        let name = prompt_default("Database name", "my_collections")?;
-        let sample = prompt_default("Sample", "remilia")?;
+        let name = prompt_default("Database name", "art")?;
+        let sample = prompt_default("Sample", "artists")?;
         cmd_quickstart(QuickstartArgs {
             name,
             sample,
@@ -810,11 +855,8 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
             public_key_b64: None,
         })?;
     } else {
-        print_field("create", CREATE_ART_EXAMPLE);
-        print_field(
-            "example",
-            "octra-sqlite quickstart my_collections --sample remilia",
-        );
+        print_command("create", CREATE_ART_EXAMPLE);
+        print_command("example", "octra-sqlite quickstart art --sample artists");
         if !wallet_path.is_file() {
             print_command(
                 "wallet attach",
@@ -846,6 +888,7 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
             .or_else(|| config.rpc.clone())
     });
     let name = args.name.clone();
+    let sample = args.sample.clone();
     cmd_new(NewArgs {
         name: Some(args.name),
         build: args.build,
@@ -860,7 +903,7 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
         read: None,
         manifest: None,
         json: false,
-        sample: Some(args.sample),
+        sample: Some(sample.clone()),
         wallet: args.wallet,
         caller: args.caller,
         private_key_b64: args.private_key_b64,
@@ -868,9 +911,9 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
         sql_args: Vec::new(),
     })?;
     println!("next:");
-    println!("  octra-sqlite {name} \".tables\"");
-    println!("  octra-sqlite {name} \"select name, launched_month from collection order by launched_month;\"");
-    println!("  octra-sqlite {name}");
+    for command in sample_next_commands(&name, &sample) {
+        println!("  {command}");
+    }
     Ok(())
 }
 
@@ -3868,7 +3911,8 @@ fn commands_json() -> Value {
                 "command": "octra-sqlite install",
                 "purpose": "print installation instructions for the Rust CLI",
                 "writes": false,
-                "json": false,
+                "json": true,
+                "envelope": "install",
             },
         ],
         "json_envelopes": [
@@ -3884,12 +3928,14 @@ fn commands_json() -> Value {
             "wallet_status",
             "wallet_attach",
             "wallet_import",
+            "install",
             "verify",
             "database_list",
             "database_info",
             "error"
         ],
         "discovery": {
+            "install": "octra-sqlite install --json",
             "limits": "octra-sqlite limits DATABASE --json",
             "status": "octra-sqlite status DATABASE --json",
             "wallet": "octra-sqlite wallet status DATABASE --json",
@@ -3957,8 +4003,26 @@ fn build_control_session(args: &TargetArgs, network: &str) -> Result<Session> {
 
 fn sample_sql(name: &str) -> Result<String> {
     match name {
+        "artists" => Ok(include_str!("../../examples/artists.sql").to_string()),
         "remilia" => Ok(include_str!("../../examples/remilia-collections.sql").to_string()),
-        _ => bail!("unknown sample {name}; available samples: remilia"),
+        _ => bail!("unknown sample {name}; available samples: artists, remilia"),
+    }
+}
+
+fn sample_next_commands(database: &str, sample: &str) -> Vec<String> {
+    match sample {
+        "remilia" => vec![
+            format!("octra-sqlite {database} \".tables\""),
+            format!(
+                "octra-sqlite {database} \"select name, launched_month from collection order by launched_month;\""
+            ),
+            format!("octra-sqlite {database}"),
+        ],
+        _ => vec![
+            format!("octra-sqlite {database} \".tables\""),
+            format!("octra-sqlite {database} \"select * from artist order by name;\""),
+            format!("octra-sqlite {database}"),
+        ],
     }
 }
 
@@ -5056,6 +5120,15 @@ COMMIT;",
     }
 
     #[test]
+    fn install_accepts_json() {
+        let cli = Cli::try_parse_from(["octra-sqlite", "install", "--json"]).unwrap();
+        match cli.command {
+            Commands::Install(args) => assert!(args.json),
+            _ => panic!("expected install command"),
+        }
+    }
+
+    #[test]
     fn new_accepts_sqlite_style_positional_sql() {
         let cli = Cli::try_parse_from([
             "octra-sqlite",
@@ -5211,6 +5284,14 @@ COMMIT;",
             .as_array()
             .unwrap()
             .contains(&json!("new")));
+        assert!(commands["json_envelopes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("install")));
+        assert_eq!(
+            commands["discovery"]["install"],
+            "octra-sqlite install --json"
+        );
         assert_eq!(
             commands["discovery"]["limits"],
             "octra-sqlite limits DATABASE --json"
@@ -5331,11 +5412,11 @@ COMMIT;",
     #[test]
     fn new_accepts_builtin_sample() {
         let cli =
-            Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--sample", "remilia"]).unwrap();
+            Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--sample", "artists"]).unwrap();
         match cli.command {
             Commands::New(args) => {
                 assert_eq!(args.name.as_deref(), Some("my-db"));
-                assert_eq!(args.sample.as_deref(), Some("remilia"));
+                assert_eq!(args.sample.as_deref(), Some("artists"));
             }
             _ => panic!("expected new command"),
         }
@@ -5394,12 +5475,12 @@ COMMIT;",
         assert!(Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db"]).is_err());
 
         let cli =
-            Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db", "--sample", "remilia"])
+            Cli::try_parse_from(["octra-sqlite", "quickstart", "my-db", "--sample", "artists"])
                 .unwrap();
         match cli.command {
             Commands::Quickstart(args) => {
                 assert_eq!(args.name, "my-db");
-                assert_eq!(args.sample, "remilia");
+                assert_eq!(args.sample, "artists");
                 assert!(!args.no_default);
             }
             _ => panic!("expected quickstart command"),
@@ -5535,6 +5616,10 @@ COMMIT;",
 
     #[test]
     fn remilia_sample_creates_expected_table() {
+        let sql = sample_sql("artists").unwrap();
+        assert!(sql.contains("create table artist"));
+        assert!(sql.contains("Basquiat"));
+
         let sql = sample_sql("remilia").unwrap();
         assert!(sql.contains("create table collection"));
         assert!(sql.contains("Milady Maker"));

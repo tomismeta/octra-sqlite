@@ -12,9 +12,8 @@ wallet, and gives you a SQLite-shaped interface over live Circle state.
 
 ## Cold Start
 
-You need Rust/Cargo 1.87+ and an Octra wallet. Writes and new databases need a
-funded wallet. The Circle WASM is bundled; you do not need to compile it to
-start.
+You need Rust/Cargo 1.87+ and a funded Octra wallet for writes. The Circle WASM
+is bundled; you do not need to compile it to start.
 
 ```sh
 git clone https://github.com/tomismeta/octra-sqlite.git
@@ -22,58 +21,64 @@ cd octra-sqlite
 cargo install --path . --locked
 
 octra-sqlite setup
-octra-sqlite status
+octra-sqlite new art < examples/artists.sql
+octra-sqlite status art --ready
+octra-sqlite art "select * from artist order by name;"
 ```
 
-Pinned release install:
+Pinned install:
 
 ```sh
 cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked
 ```
 
-Create a new Circle-backed SQLite database:
+Need machine-readable install guidance:
+
+```sh
+octra-sqlite install --json
+```
+
+Already have a wallet:
+
+```sh
+octra-sqlite wallet attach ./wallet.json
+printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
+```
+
+Create directly with inline SQL:
+
+```sh
+octra-sqlite new art "create table artist(id integer primary key, name text not null);"
+```
+
+Or use the guided flow:
 
 ```sh
 octra-sqlite new
-```
-
-Or create one directly:
-
-```sh
-octra-sqlite new art "
-create table artist(
-  id integer primary key,
-  name text not null
-);
-
-insert into artist(name) values ('Monet'), ('Picasso'), ('Rembrandt'), ('Basquiat');
-"
-```
-
-Query it:
-
-```sh
-octra-sqlite art "select * from artist;"
-octra-sqlite art ".tables"
-octra-sqlite art ".schema artist"
-```
-
-Open the interactive shell:
-
-```sh
 octra-sqlite art
 ```
 
-For scriptable setup:
+## Interfaces
 
-```sh
-octra-sqlite init --wallet ./wallet.json
+- Human CLI: `octra-sqlite setup`, `octra-sqlite new`, `octra-sqlite DATABASE`,
+  and the `sqlite>` shell.
+- Machine CLI: use `--json`, `--json-summary`, full `oct://NETWORK/<circle>`
+  URIs, `status --ready`, `commands --json`, and `limits --json`.
+- Rust client: use the same reference client without shelling out.
+
+```rust
+use octra_sqlite::client::OctraSqlite;
+
+let client = OctraSqlite::from_default_config()?;
+let db = client.database("art")?;
+let rows = db.query("select * from artist order by name;")?;
 ```
 
 ## CLI Commands
 
 | Command | Purpose |
 | --- | --- |
+| `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
 | `octra-sqlite setup` | Configure wallet, network, RPC, and defaults. |
 | `octra-sqlite init [OPTIONS]` | Scriptable setup. |
 | `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |

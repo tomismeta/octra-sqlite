@@ -10,9 +10,9 @@ Use `--json` for stable machine-readable output. Every envelope has:
 }
 ```
 
-The 0.3.x contract is additive: consumers should require `ok`, `type`, and
+The CLI JSON contract is additive: consumers should require `ok`, `type`, and
 `schema`, then read command-specific fields. New fields may be added, but the
-documented meanings below should not change inside the 0.3 line.
+documented meanings below should not change inside a stable release line.
 
 Errors use the same schema on stderr:
 
@@ -247,7 +247,35 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`
+### `install`
+
+Produced by `install --json`.
+
+```json
+{
+  "ok": true,
+  "type": "install",
+  "schema": "octra-sqlite.cli.v1",
+  "rust": {
+    "minimum": "1.87",
+    "recommended": "rustup stable"
+  },
+  "commands": {
+    "local": "cargo install --path . --locked",
+    "pinned": "cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked",
+    "setup": "octra-sqlite setup",
+    "create": "octra-sqlite new art \"create table artist(id integer primary key, name text not null);\"",
+    "query": "octra-sqlite art \"select * from artist;\"",
+    "ready": "octra-sqlite status art --ready"
+  },
+  "discovery": {
+    "commands": "octra-sqlite commands --json",
+    "limits": "octra-sqlite limits art --json"
+  }
+}
+```
+
+### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`, `install`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
@@ -277,6 +305,10 @@ behavior, read/write auth facts, and available trace modes.
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery
 without parsing human help text.
+
+`install --json` reports the minimum Rust version, recommended source and
+pinned install commands, and the next cold-start commands. It is informational:
+it does not install software or write local config.
 
 ## RPC Trace
 

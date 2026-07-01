@@ -9,8 +9,16 @@ The smallest example mirrors the top-level README.
 
 ```sh
 octra-sqlite new art < examples/artists.sql
+octra-sqlite status art --ready
 octra-sqlite art "select * from artist order by name;"
 octra-sqlite art ".schema artist"
+```
+
+Machine-readable creation:
+
+```sh
+octra-sqlite new art --schema examples/artists.sql --manifest art.octra-sqlite.json --json
+octra-sqlite status art --ready --json
 ```
 
 ## Remilia Collections

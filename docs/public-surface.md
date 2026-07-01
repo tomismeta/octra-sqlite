@@ -10,6 +10,11 @@ Keep routine workflows behind the Rust CLI first. The Rust client library is
 the reusable reference client for code and agents. Lower-level scripts are only
 for building and auditing the bundled WASM.
 
+There is no separate agent command set. Humans use the readable CLI and
+`sqlite>` shell. Automation, agents, and services use the same commands with
+`--json`, `--json-summary`, `status --ready`, `commands --json`, and
+`limits --json`. Rust applications can use the client library directly.
+
 Runtime defaults live in `config/defaults.json`. The bundled defaults keep
 devnet active and preload devnet and mainnet URL profiles; user config overlays
 them. No database names are bundled by default.
@@ -19,8 +24,8 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
-octra-sqlite new
-octra-sqlite new art "create table artist(id integer primary key, name text not null);"
+octra-sqlite new art < examples/artists.sql
+octra-sqlite status art --ready
 octra-sqlite art ".tables"
 octra-sqlite art "select * from artist;"
 ```
@@ -28,7 +33,7 @@ octra-sqlite art "select * from artist;"
 The reference configurable database creation path is:
 
 ```sh
-octra-sqlite quickstart my_collections --sample remilia
+octra-sqlite quickstart art --sample artists
 octra-sqlite new
 octra-sqlite new DATABASE
 octra-sqlite new DATABASE --schema schema.sql --manifest database.json --json
@@ -38,6 +43,8 @@ octra-sqlite restore DATABASE --file dump.sql
 octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite limits DATABASE
+octra-sqlite commands --json
+octra-sqlite install --json
 ```
 
 `quickstart` is a thin opt-in convenience layer over `new`: it creates a new
