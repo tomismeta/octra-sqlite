@@ -28,6 +28,20 @@ still empty.
 - `restore --bootstrap-owner` for the exact empty-storage cache case: the first
   restore batch is OSW1 owner-signed from saved bootstrap metadata, then the CLI
   immediately returns to normal `auth_info` verification.
+- Idempotent bootstrap restore retries: once `auth_info` is readable,
+  `restore --bootstrap-owner` reports `already_bootstrapped` and continues
+  normally.
+- Bounded RPC retry/backoff for read/view/receipt polling under rate limits,
+  transient gateway failures, timeouts, and non-JSON RPC bodies. Write
+  submissions are not silently replayed.
+- `status --json` readiness booleans for Circle reachability, auth, owner
+  writes, storage, SQLite, and query readiness.
+- `wallet status` for headless wallet path, file permissions, caller, and
+  target read/write relationship without printing wallet secrets.
+- Cached owner-auth metadata during restore/backfill runs to reduce repeated
+  `auth_info` calls while keeping each write OSW1-signed.
+- Compact restore batch failure output by default, with full SQL text available
+  only through `--verbose-sql`.
 - Local creation metadata for newly saved databases, including owner wallet,
   owner public key, database id, bundled code hash, code bytes, and create
   transaction.
@@ -48,6 +62,9 @@ still empty.
 - `restore --bootstrap-owner` is deliberately narrow: full `oct://` URI only,
   exact missing empty-storage cache failure only, bundled owner-personalized
   WASM hash match required, and first batch only.
+- Normal command output and JSON do not print private keys or raw wallet JSON.
+  Opt-in RPC trace files can include request signatures and should be handled as
+  sensitive proof/debug logs.
 
 ## 0.3.2
 

@@ -20,6 +20,9 @@ pub trait Transport {
 }
 
 #[cfg(feature = "http")]
+const MAX_RPC_ATTEMPTS: usize = 4;
+
+#[cfg(feature = "http")]
 #[derive(Clone)]
 pub struct HttpTransport {
     client: reqwest::blocking::Client,
@@ -166,51 +169,184 @@ impl Transport for HttpTransport {
             "method": method,
             "params": params,
         });
-        let response = match self.client.post(rpc).json(&body).send() {
-            Ok(response) => response,
-            Err(error) => {
-                let message = format!("calling {method}: {error}");
-                self.trace_rpc(rpc, method, &body, None, None, Some(&message));
+        let retryable = method != "octra_submit";
+        for attempt in 1..=MAX_RPC_ATTEMPTS {
+            let response = match self.client.post(rpc).json(&body).send() {
+                Ok(response) => response,
+                Err(error) => {
+                    let message = format!("calling {method}: {error}");
+                    self.trace_rpc(rpc, method, &body, None, None, Some(&message));
+                    if should_retry_transport(attempt, retryable) {
+                        sleep_before_retry(attempt, None);
+                        continue;
+                    }
+                    return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+                }
+            };
+            let status = response.status();
+            let status_code = status.as_u16();
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(parse_retry_after);
+            let text = match response.text() {
+                Ok(text) => text,
+                Err(error) => {
+                    let message = format!("reading {method} response body: {error}");
+                    self.trace_rpc(rpc, method, &body, None, Some(status_code), Some(&message));
+                    if should_retry_http(attempt, retryable, status_code) {
+                        sleep_before_retry(attempt, retry_after);
+                        continue;
+                    }
+                    return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+                }
+            };
+            let payload: Value = match serde_json::from_str(&text) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    let message = format!(
+                        "decoding {method} non-JSON response from HTTP {status}: {error}; body: {}",
+                        preview_text(&text, 512)
+                    );
+                    self.trace_rpc(rpc, method, &body, None, Some(status_code), Some(&message));
+                    if should_retry_http(attempt, retryable, status_code)
+                        || should_retry_non_json(attempt, retryable, &text)
+                    {
+                        sleep_before_retry(attempt, retry_after);
+                        continue;
+                    }
+                    return Err(ClientError::with_kind(ClientErrorKind::Decode, message));
+                }
+            };
+            if !status.is_success() {
+                let message = format!(
+                    "{method} failed with HTTP {status}: {}",
+                    preview_value(&payload, 1024)
+                );
+                self.trace_rpc(
+                    rpc,
+                    method,
+                    &body,
+                    Some(&payload),
+                    Some(status_code),
+                    Some(&message),
+                );
+                if should_retry_http(attempt, retryable, status_code) {
+                    sleep_before_retry(attempt, retry_after);
+                    continue;
+                }
                 return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
             }
-        };
-        let status = response.status();
-        let status_code = status.as_u16();
-        let payload: Value = match response.json() {
-            Ok(payload) => payload,
-            Err(error) => {
-                let message = format!("decoding {method} response: {error}");
-                self.trace_rpc(rpc, method, &body, None, Some(status_code), Some(&message));
-                return Err(ClientError::with_kind(ClientErrorKind::Decode, message));
+            if let Some(error) = payload.get("error") {
+                let message = format!("{method} failed: {}", preview_value(error, 1024));
+                self.trace_rpc(
+                    rpc,
+                    method,
+                    &body,
+                    Some(&payload),
+                    Some(status_code),
+                    Some(&message),
+                );
+                if should_retry_rpc_error(attempt, retryable, error) {
+                    sleep_before_retry(attempt, retry_after);
+                    continue;
+                }
+                return Err(ClientError::with_kind(ClientErrorKind::Rpc, message));
             }
-        };
-        if !status.is_success() {
-            let message = format!("{method} failed with HTTP {status}: {payload}");
-            self.trace_rpc(
-                rpc,
-                method,
-                &body,
-                Some(&payload),
-                Some(status_code),
-                Some(&message),
-            );
-            return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+            self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None);
+            return Ok(payload.get("result").cloned().unwrap_or(Value::Null));
         }
-        if let Some(error) = payload.get("error") {
-            let message = format!("{method} failed: {error}");
-            self.trace_rpc(
-                rpc,
-                method,
-                &body,
-                Some(&payload),
-                Some(status_code),
-                Some(&message),
-            );
-            return Err(ClientError::with_kind(ClientErrorKind::Rpc, message));
-        }
-        self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None);
-        Ok(payload.get("result").cloned().unwrap_or(Value::Null))
+        Err(ClientError::with_kind(
+            ClientErrorKind::Transport,
+            format!("{method} failed after retry attempts"),
+        ))
     }
+}
+
+#[cfg(feature = "http")]
+fn should_retry_transport(attempt: usize, retryable: bool) -> bool {
+    retryable && attempt < MAX_RPC_ATTEMPTS
+}
+
+#[cfg(feature = "http")]
+fn should_retry_http(attempt: usize, retryable: bool, status_code: u16) -> bool {
+    should_retry_transport(attempt, retryable)
+        && matches!(status_code, 408 | 425 | 429 | 500 | 502 | 503 | 504)
+}
+
+#[cfg(feature = "http")]
+fn should_retry_non_json(attempt: usize, retryable: bool, text: &str) -> bool {
+    let first = text.trim_start().chars().next();
+    should_retry_transport(attempt, retryable) && matches!(first, Some('<' | '\u{feff}'))
+}
+
+#[cfg(feature = "http")]
+fn should_retry_rpc_error(attempt: usize, retryable: bool, error: &Value) -> bool {
+    if !should_retry_transport(attempt, retryable) {
+        return false;
+    }
+    let code = error.get("code").and_then(Value::as_i64);
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(code, Some(429) | Some(-32029))
+        || message.contains("too many requests")
+        || message.contains("rate limit")
+        || message.contains("temporarily unavailable")
+}
+
+#[cfg(feature = "http")]
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    let seconds = value.trim().parse::<u64>().ok()?;
+    Some(Duration::from_secs(seconds.min(30)))
+}
+
+#[cfg(feature = "http")]
+fn sleep_before_retry(attempt: usize, retry_after: Option<Duration>) {
+    std::thread::sleep(retry_after.unwrap_or_else(|| {
+        let millis = 500_u64.saturating_mul(2_u64.saturating_pow((attempt - 1) as u32));
+        Duration::from_millis(millis.min(5_000))
+    }));
+}
+
+#[cfg(feature = "http")]
+fn preview_value(value: &Value, limit: usize) -> String {
+    preview_text(
+        &serde_json::to_string(value).unwrap_or_else(|_| value.to_string()),
+        limit,
+    )
+}
+
+#[cfg(feature = "http")]
+fn preview_text(text: &str, limit: usize) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.len() <= limit {
+        compact
+    } else {
+        format!(
+            "{}...<truncated {} bytes>",
+            truncate_to_char_boundary(&compact, limit),
+            compact.len()
+        )
+    }
+}
+
+#[cfg(feature = "http")]
+fn truncate_to_char_boundary(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut end = 0usize;
+    for (index, _) in text.char_indices() {
+        if index > limit {
+            break;
+        }
+        end = index;
+    }
+    &text[..end]
 }
 
 #[cfg(feature = "http")]
@@ -356,5 +492,38 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn retry_policy_is_mainnet_safe() {
+        assert!(should_retry_http(1, true, 429));
+        assert!(should_retry_http(1, true, 503));
+        assert!(!should_retry_http(MAX_RPC_ATTEMPTS, true, 429));
+        assert!(!should_retry_http(1, false, 429));
+        assert!(should_retry_rpc_error(
+            1,
+            true,
+            &json!({"code":429,"message":"Too Many Requests"})
+        ));
+        assert!(should_retry_rpc_error(
+            1,
+            true,
+            &json!({"message":"temporarily unavailable"})
+        ));
+        assert!(!should_retry_rpc_error(
+            1,
+            true,
+            &json!({"code":-32000,"message":"wasm export returned 1"})
+        ));
+    }
+
+    #[test]
+    fn response_previews_are_compact_and_utf8_safe() {
+        let text = "αβγδε ζηθικ λμνξο";
+        let preview = preview_text(text, 7);
+        assert!(preview.contains("<truncated"));
+        assert!(preview.is_char_boundary(preview.len()));
+        assert!(preview_text("<html> too many requests </html>", 512).contains("<html>"));
+        assert!(should_retry_non_json(1, true, "  <html>429</html>"));
     }
 }

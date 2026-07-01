@@ -25,12 +25,39 @@ chmod 600 /secure/path/wallet.json
 octra-sqlite init --wallet /secure/path/wallet.json --network devnet
 ```
 
+For service users, keep the wallet and config in an explicit application
+directory with restrictive group access:
+
+```sh
+sudo install -d -m 0750 -o root -g octra-sqlite /etc/octra-sqlite
+sudo install -m 0640 -o root -g octra-sqlite wallet.json /etc/octra-sqlite/wallet.json
+```
+
 ## Config Path
 
 By default, config lives at `~/.octra/sqlite.json`. Override it per process:
 
 ```sh
 OCTRA_SQLITE_CONFIG=/secure/path/sqlite.json octra-sqlite status
+```
+
+Example service config:
+
+```json
+{
+  "network": "mainnet",
+  "wallet": "/etc/octra-sqlite/wallet.json",
+  "databases": {
+    "app": "oct://mainnet/oct..."
+  }
+}
+```
+
+Lock it down the same way:
+
+```sh
+sudo install -m 0640 -o root -g octra-sqlite config.json /etc/octra-sqlite/config.json
+OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status app
 ```
 
 ## Server Checklist
@@ -58,6 +85,7 @@ sudo install -m 0755 ~/.cargo/bin/octra-sqlite /opt/octra-sqlite/bin/octra-sqlit
 
 ```sh
 octra-sqlite config
+octra-sqlite wallet status DATABASE
 octra-sqlite database list
 octra-sqlite database info DATABASE
 octra-sqlite verify DATABASE
@@ -93,3 +121,7 @@ octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary
 Trace files can include SQL text, Circle IDs, wallet addresses, signatures, and
 query responses. They do not include private keys, but store them like sensitive
 logs: use restrictive permissions and do not commit them.
+
+Normal command output and JSON do not print private keys or raw wallet JSON.
+Opt-in RPC trace files can include request signatures because they are exact
+debug/proof traces.

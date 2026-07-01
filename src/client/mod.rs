@@ -22,7 +22,7 @@ pub use write::{PreparedOwnerWrite, PreparedWrite, SignedWrite};
 
 pub mod low_level {
     #[cfg(feature = "http")]
-    pub(crate) use super::database::exec_sql_bootstrap_owner;
+    pub(crate) use super::database::exec_sql_with_owner_auth;
     #[cfg(feature = "http")]
     pub use super::database::{
         auth_info, exec_sql, next_nonce, program_info, query_typed, query_typed_traced, submit_tx,

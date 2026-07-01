@@ -53,6 +53,10 @@ only the first restore batch as an OSW1 owner-signed write using the saved
 metadata, then immediately returns to normal `auth_info` verification for any
 remaining batches.
 
+If `auth_info` is already readable, `restore --bootstrap-owner` reports
+`already_bootstrapped` and runs the normal restore path. That makes retries safe
+after a successful bootstrap.
+
 If the first write is submitted but post-write `auth_info` still fails,
 `restore --bootstrap-owner --json-summary` emits `ok:false`, the first write
 transaction summary, and `post_auth_info.error`, then exits nonzero. Do not
@@ -82,6 +86,9 @@ octra-sqlite restore art --file dump.sql --json-summary
 
 The JSON summary includes statement counts, batch counts, transaction hashes,
 and failed batches only. Use `--json` when a caller needs every batch receipt.
+Restore errors are compact by default: batch number, statement range, SQL hash,
+and a short SQL preview. Use `--verbose-sql` only when full SQL text is needed
+in local debugging logs.
 
 Happy path for a mirror/backfill:
 
@@ -93,6 +100,10 @@ Happy path for a mirror/backfill:
 If restore fails, inspect the reported batch or statement range. A multi-batch
 restore can partially apply, so retry by rerunning idempotent SQL after fixing
 the cause. There is no persisted resume checkpoint in 0.3.x.
+
+On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
+transient `429`, `503`, timeout, and non-JSON gateway responses. It does not
+silently replay accepted write submissions.
 
 ## Limits
 

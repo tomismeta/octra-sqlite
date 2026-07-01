@@ -31,7 +31,29 @@ fn is_json_error_arg(arg: &str) -> bool {
 }
 
 fn classify_error(message: &str) -> &'static str {
-    if message.contains("Octra SQLite accepts at most")
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("http 429")
+        || lower.contains("too many requests")
+        || lower.contains("rate limit")
+        || lower.contains("rate-limited")
+    {
+        "rpc_rate_limited"
+    } else if lower.contains("non-json") || lower.contains("html") {
+        "rpc_non_json"
+    } else if message.contains("bootstrap first write was submitted")
+        && message.contains("post-write auth_info")
+    {
+        "bootstrap_unverified"
+    } else if lower.contains("already_bootstrapped")
+        || lower.contains("already bootstrapped")
+        || lower.contains("auth_info is already readable")
+    {
+        "bootstrap_already_done"
+    } else if lower.contains("missing storage cache") || lower.contains("storage_uninitialized") {
+        "storage_uninitialized"
+    } else if lower.contains("auth_uninitialized") || lower.contains("auth_info") {
+        "auth_uninitialized"
+    } else if message.contains("Octra SQLite accepts at most")
         || message.contains("SQL payload")
         || message.contains("SQL statement")
     {
@@ -55,10 +77,6 @@ fn classify_error(message: &str) -> &'static str {
         || message.contains("receipt")
     {
         "circle_write_failed"
-    } else if message.contains("bootstrap first write was submitted")
-        && message.contains("post-write auth_info")
-    {
-        "bootstrap_unverified"
     } else if message.contains("sqlite_") || message.contains("database error") {
         "sql_rejected"
     } else if message.contains("wallet") {
@@ -118,6 +136,18 @@ mod tests {
         assert_eq!(
             classify_error("calling octra_circleViewAuth: connection refused"),
             "rpc_unavailable"
+        );
+        assert_eq!(
+            classify_error("octra_circleViewAuth failed with HTTP 429 Too Many Requests"),
+            "rpc_rate_limited"
+        );
+        assert_eq!(
+            classify_error("decoding octra_circleViewAuth non-JSON response from HTTP 503"),
+            "rpc_non_json"
+        );
+        assert_eq!(
+            classify_error("octra_circleViewAuth failed: missing storage cache: octABC:0000"),
+            "storage_uninitialized"
         );
         assert_eq!(
             classify_error(

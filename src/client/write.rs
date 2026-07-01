@@ -205,7 +205,7 @@ pub(super) fn prepare_write_with<T: Transport>(
 }
 
 #[cfg(feature = "http")]
-pub(super) fn prepare_write_with_bootstrap_owner<T: Transport>(
+pub(super) fn prepare_write_with_owner_auth<T: Transport>(
     transport: &T,
     session: &Session,
     sql: &str,

@@ -1,5 +1,5 @@
 #[cfg(feature = "http")]
-use super::write::prepare_write_with_bootstrap_owner;
+use super::write::prepare_write_with_owner_auth;
 use super::{
     error::Result,
     results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx},
@@ -231,14 +231,14 @@ pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
 }
 
 #[cfg(feature = "http")]
-pub fn exec_sql_bootstrap_owner(
+pub(crate) fn exec_sql_with_owner_auth(
     session: &Session,
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
 ) -> Result<Value> {
     let transport = HttpTransport::default();
-    let prepared = prepare_write_with_bootstrap_owner(
+    let prepared = prepare_write_with_owner_auth(
         &transport,
         session,
         sql,

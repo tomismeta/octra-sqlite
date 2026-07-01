@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::low_level::{auth_info, exec_sql, exec_sql_bootstrap_owner, view, Session};
+use crate::client::low_level::{auth_info, exec_sql, exec_sql_with_owner_auth, view, Session};
 
 use super::BackupSummary;
 
@@ -352,7 +352,25 @@ pub(super) fn execute_sql_script_with_progress(
     no_wait: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_submitter(session, sql, no_wait, &mut progress)
+    execute_sql_script_with_submitter(session, sql, no_wait, false, &mut progress)
+}
+
+pub(super) fn execute_sql_script_with_owner_auth_progress(
+    session: &Session,
+    sql: &str,
+    db_id: &str,
+    owner_pubkey: &str,
+    verbose_sql: bool,
+    mut progress: impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_owner_auth_submitter(
+        session,
+        sql,
+        db_id,
+        owner_pubkey,
+        verbose_sql,
+        &mut progress,
+    )
 }
 
 pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
@@ -360,6 +378,7 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    verbose_sql: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<BootstrapOwnerSqlScriptExecution> {
     execute_sql_script_with_bootstrap_owner_submitter(
@@ -367,6 +386,7 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
         sql,
         db_id,
         owner_pubkey,
+        verbose_sql,
         &mut progress,
     )
 }
@@ -375,6 +395,7 @@ fn execute_sql_script_with_submitter(
     session: &Session,
     sql: &str,
     no_wait: bool,
+    verbose_sql: bool,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
     let statements = planned_statements(sql)?;
@@ -399,15 +420,50 @@ fn execute_sql_script_with_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event.clone());
-        let result = exec_sql(session, &batch.sql, no_wait).with_context(|| {
-            format!(
-                "executing SQL script batch {} of {}; statements {}..{}",
-                offset + 1,
-                total_batches,
-                batch.start_statement,
-                batch.end_statement
-            )
-        })?;
+        let result = exec_sql(session, &batch.sql, no_wait)
+            .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
+        results.push(result);
+        executed += batch.statements;
+    }
+    Ok(SqlScriptExecution {
+        statements: executed,
+        batches: total_batches,
+        results,
+    })
+}
+
+fn execute_sql_script_with_owner_auth_submitter(
+    session: &Session,
+    sql: &str,
+    db_id: &str,
+    owner_pubkey: &str,
+    verbose_sql: bool,
+    progress: &mut impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    let statements = planned_statements(sql)?;
+    let batches = script_batches(&statements)?;
+    if batches.is_empty() {
+        return Ok(SqlScriptExecution {
+            statements: 0,
+            batches: 0,
+            results: Vec::new(),
+        });
+    }
+    let mut results = Vec::new();
+    let total_batches = batches.len();
+    let mut executed = 0usize;
+    for (offset, batch) in batches.iter().enumerate() {
+        let progress_event = SqlBatchProgress {
+            batch_index: offset + 1,
+            total_batches,
+            start_statement: batch.start_statement,
+            end_statement: batch.end_statement,
+            statements: batch.statements,
+            bytes: batch.bytes,
+        };
+        progress(progress_event);
+        let result = exec_sql_with_owner_auth(session, &batch.sql, db_id, owner_pubkey)
+            .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
     }
@@ -423,6 +479,7 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    verbose_sql: bool,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<BootstrapOwnerSqlScriptExecution> {
     let statements = planned_statements(sql)?;
@@ -451,20 +508,8 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event);
-        let result = if offset == 0 {
-            exec_sql_bootstrap_owner(session, &batch.sql, db_id, owner_pubkey)
-        } else {
-            exec_sql(session, &batch.sql, false)
-        }
-        .with_context(|| {
-            format!(
-                "executing SQL script batch {} of {}; statements {}..{}",
-                offset + 1,
-                total_batches,
-                batch.start_statement,
-                batch.end_statement
-            )
-        })?;
+        let result = exec_sql_with_owner_auth(session, &batch.sql, db_id, owner_pubkey)
+            .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
         if offset == 0 {
@@ -488,6 +533,55 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
         },
         post_auth_error: None,
     })
+}
+
+fn batch_context(
+    offset: usize,
+    total_batches: usize,
+    batch: &ScriptBatch,
+    verbose_sql: bool,
+) -> String {
+    let hash = hex::encode(Sha256::digest(batch.sql.as_bytes()));
+    let preview = sql_preview(&batch.sql, 160);
+    let mut message = format!(
+        "executing SQL script batch {} of {}; statements {}..{}; sql_sha256={hash}; preview={preview}",
+        offset + 1,
+        total_batches,
+        batch.start_statement,
+        batch.end_statement
+    );
+    if verbose_sql {
+        message.push_str("; sql=");
+        message.push_str(&batch.sql);
+    }
+    message
+}
+
+fn sql_preview(sql: &str, limit: usize) -> String {
+    let compact = sql.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.len() <= limit {
+        compact
+    } else {
+        format!(
+            "{}...<truncated {} bytes>",
+            truncate_to_char_boundary(&compact, limit),
+            compact.len()
+        )
+    }
+}
+
+fn truncate_to_char_boundary(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut end = 0usize;
+    for (index, _) in text.char_indices() {
+        if index > limit {
+            break;
+        }
+        end = index;
+    }
+    &text[..end]
 }
 
 fn ensure_sql_statement_size(statement: &str) -> Result<()> {

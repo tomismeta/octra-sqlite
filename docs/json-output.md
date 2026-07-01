@@ -49,10 +49,15 @@ Stable error classifications:
 | `auth_failed` | Wallet/signature/owner authorization failed. |
 | `circle_write_failed` | A submitted Circle write was rejected or failed. |
 | `bootstrap_unverified` | A bootstrap first write was submitted, but post-write `auth_info` still failed. |
+| `bootstrap_already_done` | Bootstrap was requested after `auth_info` was already readable. |
+| `auth_uninitialized` | Auth inspection is not yet readable. |
+| `storage_uninitialized` | Circle storage is not yet readable or initialized. |
 | `wallet_error` | Wallet config or key loading failed. |
 | `target_error` | Database name, URI, network, or Circle target failed. |
 | `timeout` | Receipt or transaction wait timed out. |
 | `decode_error` | RPC or contract response could not be decoded. |
+| `rpc_rate_limited` | Octra RPC returned or implied rate limiting. |
+| `rpc_non_json` | Octra RPC returned a non-JSON response body. |
 | `rpc_unavailable` | HTTP transport failed. |
 | `rpc_error` | Octra RPC returned an error envelope. |
 | `config_error` | Local config could not be loaded or resolved. |
@@ -205,11 +210,20 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `status`, `verify`, `database_list`, `database_info`, `limits`
+### `status`, `wallet_status`, `verify`, `database_list`, `database_info`, `limits`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
 embedded typed SQLite query result.
+
+`status --json` includes readiness booleans for automation:
+`circle_reachable`, `auth_readable`, `owner_write_valid`,
+`storage_initialized`, `sqlite_ready`, and `query_ready`. Values are `null`
+when live checks are skipped or not reached.
+
+`wallet status --json` reports wallet path, file permissions, caller
+address, active target, and read/write relationship to the target Circle. It
+does not print private keys or raw wallet JSON.
 
 `limits --json` is the compact capability surface for automation. It includes
 CLI/SQLite/schema versions, SQL byte limits, result row/response limits, restore

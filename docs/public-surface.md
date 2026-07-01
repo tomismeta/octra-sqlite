@@ -65,6 +65,8 @@ addition to the default SQL hash event.
 They should stay expressive enough that users do not need to inspect
 `~/.octra/sqlite.json`, transaction JSON, or explorer pages for the common path.
 `config` shows the active RPC/explorer plus all bundled network profiles.
+`wallet status` shows wallet path, permissions, derived caller, and target
+read/write relationship without printing wallet secrets.
 For automation, use `--json` on non-interactive commands and prefer full
 `oct://NETWORK/<circle>` URIs over local database names.
 Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the

@@ -20,6 +20,17 @@
 - Added `restore --bootstrap-owner` for the exact empty-storage cache bootstrap
   case: first restore batch only, full `oct://` URI required, OSW1 signed, then
   normal `auth_info` verification resumes.
+- Made `restore --bootstrap-owner` idempotent after bootstrap: if `auth_info`
+  is already readable, restore continues through the normal owner-auth path.
+- Added bounded retry/backoff for transient RPC read/view/receipt failures,
+  including rate limits and non-JSON gateway responses, without replaying write
+  submissions.
+- Added `status --json` readiness booleans and `wallet status` for headless
+  wallet path, permissions, caller, and target read/write checks.
+- Reduced restore/backfill RPC pressure by reusing verified owner-auth metadata
+  during a restore run while still signing every write.
+- Made restore batch failures compact by default, with SQL hash and preview;
+  full SQL text is available with `--verbose-sql`.
 - Persisted local creation metadata for new saved databases: owner wallet,
   owner public key, database id, code hash, code bytes, create transaction, and
   bootstrap program update transaction.

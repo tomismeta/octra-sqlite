@@ -29,9 +29,10 @@ use output::{
 };
 use portability::{
     backup_database, ensure_sql_text_fits, execute_sql_script,
-    execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_progress,
-    plan_sql_script, run_local_sqlite_integrity, submit_sql_script_no_wait, SqlBatchProgress,
-    SqlScriptExecution, SqlScriptPlan, MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
+    execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_owner_auth_progress,
+    execute_sql_script_with_progress, plan_sql_script, run_local_sqlite_integrity,
+    submit_sql_script_no_wait, SqlBatchProgress, SqlScriptExecution, SqlScriptPlan,
+    MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
 };
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -39,6 +40,8 @@ use shell::{run_dot_command, run_shell};
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -107,6 +110,11 @@ enum Commands {
     Status(StatusArgs),
     /// Show local wallet, RPC, network, and database configuration.
     Config(ConfigArgs),
+    /// Inspect wallet path, permissions, caller, and target read/write status.
+    Wallet {
+        #[command(subcommand)]
+        command: WalletCommand,
+    },
     /// Deploy/update a Circle program through native signed RPC.
     Deploy(DeployArgs),
     /// Print installation instructions for the Rust CLI.
@@ -148,6 +156,12 @@ enum DatabaseCommand {
     /// Remove a saved database name.
     #[command(alias = "rm")]
     Remove { name: String },
+}
+
+#[derive(Subcommand)]
+enum WalletCommand {
+    /// Show wallet path, caller, permissions, and target status.
+    Status(WalletStatusArgs),
 }
 
 #[derive(Args, Clone)]
@@ -442,6 +456,15 @@ struct ConfigArgs {
 }
 
 #[derive(Args)]
+struct WalletStatusArgs {
+    #[command(flatten)]
+    target: TargetArgs,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
 struct RestoreArgs {
     #[command(flatten)]
     target: TargetArgs,
@@ -457,6 +480,9 @@ struct RestoreArgs {
     /// Submit only the first restore batch with saved owner bootstrap metadata.
     #[arg(long)]
     bootstrap_owner: bool,
+    /// Include full SQL text in restore batch errors. Off by default.
+    #[arg(long)]
+    verbose_sql: bool,
 }
 
 #[derive(Args)]
@@ -529,6 +555,7 @@ pub fn run() -> Result<()> {
         }
         Commands::Status(args) => cmd_status(args, "status"),
         Commands::Config(args) => cmd_config(args),
+        Commands::Wallet { command } => cmd_wallet(command),
         Commands::Deploy(args) => cmd_deploy(args),
         Commands::Install => {
             println!("cargo install --path . --locked");
@@ -556,6 +583,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "verify",
         "status",
         "config",
+        "wallet",
         "deploy",
         "install",
         "help",
@@ -1040,6 +1068,7 @@ pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
 
 fn cmd_status(args: StatusArgs, label: &str) -> Result<()> {
     let mut report = StatusReport::new(label, args.json);
+    report.init_database_readiness();
     let config_path = config_path()?;
     match load_config() {
         Ok(config) => {
@@ -1172,12 +1201,120 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_wallet(command: WalletCommand) -> Result<()> {
+    match command {
+        WalletCommand::Status(args) => cmd_wallet_status(args),
+    }
+}
+
+fn cmd_wallet_status(args: WalletStatusArgs) -> Result<()> {
+    let mut report = StatusReport::new("wallet_status", args.json);
+    let config = load_config().unwrap_or_default();
+    let wallet_path = resolve_wallet_path(&args.target, &config);
+    match wallet_path.as_deref() {
+        Some(path) => {
+            if path.exists() {
+                report.ok("wallet", path.display().to_string());
+                report_wallet_permissions(&mut report, path);
+            } else {
+                report.fail("wallet", format!("not found at {}", path.display()));
+            }
+        }
+        None => report.warn(
+            "wallet",
+            "not configured; pass --wallet or set wallet in config",
+        ),
+    }
+    match wallet_caller(wallet_path.as_deref(), args.target.caller.as_deref()) {
+        Ok(Some(caller)) => report.ok("caller", caller),
+        Ok(None) => report.warn("caller", "not found in wallet/env"),
+        Err(error) => report.fail("caller", error.to_string()),
+    }
+    match build_session(&args.target) {
+        Ok(session) => {
+            report.ok("network", &session.target().network);
+            report.ok("rpc", session.rpc());
+            report.ok("database", canonical_database_uri(session.target()));
+            match program_info(&session) {
+                Ok(info) => {
+                    if let Some(owner) = program_owner(&info) {
+                        report.ok("circle owner", owner);
+                        if owner == session.caller() {
+                            report.ok("circle owner wallet", "current wallet");
+                        } else {
+                            report.warn(
+                                "circle owner wallet",
+                                "current wallet is not the Circle owner",
+                            );
+                        }
+                    }
+                }
+                Err(error) => report.warn("circle owner", format!("unavailable: {error:#}")),
+            }
+            match auth_info(&session) {
+                Ok(auth) if auth.configured => match auth.owner_pubkey.as_deref() {
+                    Some(owner_pubkey) => match session.intent_public_key() {
+                        Ok(wallet_pubkey) if hex::encode(wallet_pubkey) == owner_pubkey => {
+                            report.ok("write wallet", "current wallet can write")
+                        }
+                        Ok(_) => report.warn("write wallet", "current wallet is read-only"),
+                        Err(error) => report.warn(
+                            "write wallet",
+                            format!("could not derive wallet public key: {error:#}"),
+                        ),
+                    },
+                    None => report.warn("write wallet", "auth_info missing owner public key"),
+                },
+                Ok(_) => report.warn("write wallet", "database is not owner-personalized"),
+                Err(error) => {
+                    report.warn("write wallet", format!("auth_info unavailable: {error:#}"))
+                }
+            }
+        }
+        Err(error) => report.warn(
+            "target",
+            format!("skipped target checks; could not build session: {error:#}"),
+        ),
+    }
+    report.finish("wallet")
+}
+
+fn report_wallet_permissions(report: &mut StatusReport, path: &Path) {
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            #[cfg(unix)]
+            {
+                let mode = metadata.permissions().mode() & 0o777;
+                let rendered = format!("{mode:04o}");
+                if mode & 0o077 == 0 {
+                    report.ok("wallet permissions", rendered);
+                } else {
+                    report.warn(
+                        "wallet permissions",
+                        format!("{rendered}; recommended 0600 or 0640"),
+                    );
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let readonly = metadata.permissions().readonly();
+                report.ok(
+                    "wallet permissions",
+                    if readonly { "readonly" } else { "writable" },
+                );
+            }
+        }
+        Err(error) => report.warn("wallet permissions", error.to_string()),
+    }
+}
+
 struct StatusReport {
     label: String,
     json: bool,
     failures: usize,
     warnings: usize,
     items: Vec<Value>,
+    readiness: Map<String, Value>,
 }
 
 impl StatusReport {
@@ -1188,6 +1325,7 @@ impl StatusReport {
             failures: 0,
             warnings: 0,
             items: Vec::new(),
+            readiness: Map::new(),
         }
     }
 
@@ -1217,6 +1355,23 @@ impl StatusReport {
         }
     }
 
+    fn ready(&mut self, key: &str, ready: bool) {
+        self.readiness.insert(key.to_string(), Value::Bool(ready));
+    }
+
+    fn init_database_readiness(&mut self) {
+        for key in [
+            "circle_reachable",
+            "auth_readable",
+            "owner_write_valid",
+            "storage_initialized",
+            "sqlite_ready",
+            "query_ready",
+        ] {
+            self.readiness.insert(key.to_string(), Value::Null);
+        }
+    }
+
     fn finish(self, label: &str) -> Result<()> {
         if self.json {
             return print_json(&json!({
@@ -1225,6 +1380,7 @@ impl StatusReport {
                 "schema": "octra-sqlite.cli.v1",
                 "failures": self.failures,
                 "warnings": self.warnings,
+                "readiness": self.readiness,
                 "items": self.items,
             }));
         }
@@ -1335,6 +1491,7 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
     }
     match program_info(session) {
         Ok(info) => {
+            report.ready("circle_reachable", true);
             report.ok(
                 "circle",
                 linked_circle(&session.target().network, &session.target().circle),
@@ -1391,36 +1548,54 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                 );
             }
         }
-        Err(error) => report.fail("program info", error.to_string()),
+        Err(error) => {
+            report.ready("circle_reachable", false);
+            report.fail("program info", error.to_string());
+        }
     }
     match view(session, "storage_info", vec![]) {
-        Ok(storage) => report.ok(
-            "storage",
-            format!(
-                "{} pages, {} bytes",
-                storage
-                    .get("page_count")
-                    .map(value_to_string)
-                    .unwrap_or_else(|| "?".to_string()),
-                storage
-                    .get("file_bytes")
-                    .map(value_to_string)
-                    .unwrap_or_else(|| "?".to_string())
-            ),
-        ),
-        Err(error) => report.fail("storage", error.to_string()),
+        Ok(storage) => {
+            let page_count = storage
+                .get("page_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            report.ready("storage_initialized", page_count > 0);
+            report.ok(
+                "storage",
+                format!(
+                    "{} pages, {} bytes",
+                    storage
+                        .get("page_count")
+                        .map(value_to_string)
+                        .unwrap_or_else(|| "?".to_string()),
+                    storage
+                        .get("file_bytes")
+                        .map(value_to_string)
+                        .unwrap_or_else(|| "?".to_string())
+                ),
+            );
+        }
+        Err(error) => {
+            report.ready("storage_initialized", false);
+            report.fail("storage", error.to_string());
+        }
     }
     match auth_info(session) {
         Ok(auth) => {
+            report.ready("auth_readable", true);
             if auth.configured {
                 report.ok("auth", "OSW1 owner write intent");
                 if let Some(owner_pubkey) = auth.owner_pubkey.as_deref() {
                     report.ok("auth owner pubkey", owner_pubkey);
                     match session.intent_public_key() {
                         Ok(wallet_pubkey) if hex::encode(wallet_pubkey) == owner_pubkey => {
+                            report.ready("owner_write_valid", true);
                             report.ok("auth owner wallet", "current wallet can write")
                         }
-                        Ok(_) => report.warn("auth owner wallet", "current wallet is read-only"),
+                        Ok(_) => {
+                            report.ready("owner_write_valid", false);
+                            report.warn("auth owner wallet", "current wallet is read-only")
+                        }
                         Err(error) => report.warn(
                             "auth owner wallet",
                             format!("could not derive wallet public key: {error:#}"),
@@ -1432,17 +1607,30 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                     report.ok("auth sequence", sequence.to_string());
                 }
             } else {
+                report.ready("owner_write_valid", false);
                 report.warn("auth", "unconfigured bundled WASM; writes are unsigned");
             }
         }
-        Err(error) => report.fail("auth info", error.to_string()),
+        Err(error) => {
+            report.ready("auth_readable", false);
+            report.ready("owner_write_valid", false);
+            report.fail("auth info", error.to_string());
+        }
     }
     match query_typed(session, "select sqlite_version() as sqlite_version;") {
-        Ok(result) => report.ok(
-            "sqlite version",
-            first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
-        ),
-        Err(error) => report.fail("sqlite version", error.to_string()),
+        Ok(result) => {
+            report.ready("sqlite_ready", true);
+            report.ready("query_ready", true);
+            report.ok(
+                "sqlite version",
+                first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
+            );
+        }
+        Err(error) => {
+            report.ready("sqlite_ready", false);
+            report.ready("query_ready", false);
+            report.fail("sqlite version", error.to_string());
+        }
     }
 }
 
@@ -2038,7 +2226,7 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
 fn cmd_restore(args: RestoreArgs) -> Result<()> {
     let session = build_session(&args.target)?;
     let bootstrap_owner = if args.bootstrap_owner {
-        Some(resolve_bootstrap_owner_metadata(&args.target, &session)?)
+        Some(resolve_bootstrap_owner_mode(&args.target, &session)?)
     } else {
         None
     };
@@ -2064,18 +2252,28 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
                 "each batch is atomic; the full restore can partially apply",
             );
         }
-        if bootstrap_owner.is_some() {
-            print_field("bootstrap owner", "first batch only; OSW1 signed");
+        match &bootstrap_owner {
+            Some(BootstrapOwnerMode::FirstWrite(_)) => {
+                print_field("bootstrap owner", "first batch only; OSW1 signed");
+            }
+            Some(BootstrapOwnerMode::AlreadyBootstrapped) => {
+                print_field(
+                    "bootstrap owner",
+                    "already bootstrapped; running normal restore",
+                );
+            }
+            None => {}
         }
     }
     let mut progress_events = Vec::new();
     let mut post_auth_error = None;
-    let mut execution = if let Some(metadata) = &bootstrap_owner {
+    let mut execution = if let Some(BootstrapOwnerMode::FirstWrite(metadata)) = &bootstrap_owner {
         let outcome = execute_sql_script_with_bootstrap_owner_progress(
             &session,
             &sql,
             &metadata.db_id,
             &metadata.owner_pubkey,
+            args.verbose_sql,
             |progress| {
                 if !json_output {
                     print_field("restore", format_progress(&progress));
@@ -2088,14 +2286,26 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
         post_auth_error = outcome.post_auth_error;
         outcome.execution
     } else {
-        execute_sql_script_with_progress(&session, &sql, false, |progress| {
-            if !json_output {
-                print_field("restore", format_progress(&progress));
-            }
-            if args.json {
-                progress_events.push(progress);
-            }
-        })?
+        let auth = auth_info(&session).context("reading owner auth for restore")?;
+        let owner_pubkey = auth
+            .owner_pubkey
+            .as_deref()
+            .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?;
+        execute_sql_script_with_owner_auth_progress(
+            &session,
+            &sql,
+            &auth.db_id,
+            owner_pubkey,
+            args.verbose_sql,
+            |progress| {
+                if !json_output {
+                    print_field("restore", format_progress(&progress));
+                }
+                if args.json {
+                    progress_events.push(progress);
+                }
+            },
+        )?
     };
     for result in &mut execution.results {
         let raw = std::mem::take(result);
@@ -2107,7 +2317,7 @@ fn cmd_restore(args: RestoreArgs) -> Result<()> {
             plan: &plan,
             execution: &execution,
             progress: &progress_events,
-            metadata: bootstrap_owner.as_ref(),
+            mode: bootstrap_owner.as_ref(),
             json_summary: args.json_summary,
             json_full: args.json,
             post_auth_error: &error,
@@ -2140,7 +2350,7 @@ struct BootstrapPostAuthReport<'a> {
     plan: &'a SqlScriptPlan,
     execution: &'a SqlScriptExecution,
     progress: &'a [SqlBatchProgress],
-    metadata: Option<&'a BootstrapOwnerMetadata>,
+    mode: Option<&'a BootstrapOwnerMode>,
     json_summary: bool,
     json_full: bool,
     post_auth_error: &'a str,
@@ -2164,7 +2374,7 @@ fn report_bootstrap_post_auth_failure(report: BootstrapPostAuthReport<'_>) -> Re
                 report.progress,
             )
         };
-        let mut envelope = add_bootstrap_owner_json(base, report.metadata);
+        let mut envelope = add_bootstrap_owner_json(base, report.mode);
         if let Some(object) = envelope.as_object_mut() {
             object.insert("ok".to_string(), Value::Bool(false));
             object.insert(
@@ -2194,6 +2404,12 @@ fn report_bootstrap_post_auth_failure(report: BootstrapPostAuthReport<'_>) -> Re
 }
 
 #[derive(Clone, Debug)]
+enum BootstrapOwnerMode {
+    FirstWrite(BootstrapOwnerMetadata),
+    AlreadyBootstrapped,
+}
+
+#[derive(Clone, Debug)]
 struct BootstrapOwnerMetadata {
     uri: String,
     owner: String,
@@ -2202,10 +2418,10 @@ struct BootstrapOwnerMetadata {
     code_hash: String,
 }
 
-fn resolve_bootstrap_owner_metadata(
+fn resolve_bootstrap_owner_mode(
     target_args: &TargetArgs,
     session: &Session,
-) -> Result<BootstrapOwnerMetadata> {
+) -> Result<BootstrapOwnerMode> {
     let requested = target_args.target.as_deref().ok_or_else(|| {
         anyhow!("--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI")
     })?;
@@ -2214,7 +2430,7 @@ fn resolve_bootstrap_owner_metadata(
     }
 
     match auth_info(session) {
-        Ok(_) => bail!("--bootstrap-owner refused because auth_info is already readable"),
+        Ok(_) => return Ok(BootstrapOwnerMode::AlreadyBootstrapped),
         Err(error) if is_empty_storage_cache_error(&error.to_string()) => {}
         Err(error) => bail!(
             "--bootstrap-owner only handles empty storage-cache auth_info failures; auth_info failed with: {error:#}"
@@ -2260,7 +2476,7 @@ fn resolve_bootstrap_owner_metadata(
         );
     }
 
-    Ok(metadata)
+    Ok(BootstrapOwnerMode::FirstWrite(metadata))
 }
 
 fn find_bootstrap_owner_metadata(session: &Session) -> Result<BootstrapOwnerMetadata> {
@@ -2303,15 +2519,14 @@ fn is_empty_storage_cache_error(text: &str) -> bool {
     text.contains("missing storage cache") && text.contains(ZERO_ROOT)
 }
 
-fn add_bootstrap_owner_json(mut value: Value, metadata: Option<&BootstrapOwnerMetadata>) -> Value {
-    let Some(metadata) = metadata else {
+fn add_bootstrap_owner_json(mut value: Value, mode: Option<&BootstrapOwnerMode>) -> Value {
+    let Some(mode) = mode else {
         return value;
     };
     if let Some(object) = value.as_object_mut() {
         object.insert("bootstrap_owner".to_string(), Value::Bool(true));
-        object.insert(
-            "bootstrap".to_string(),
-            json!({
+        let bootstrap = match mode {
+            BootstrapOwnerMode::FirstWrite(metadata) => json!({
                 "mode": "owner_first_write",
                 "reason": "empty_storage_cache",
                 "uri": metadata.uri,
@@ -2320,7 +2535,12 @@ fn add_bootstrap_owner_json(mut value: Value, metadata: Option<&BootstrapOwnerMe
                 "db_id": metadata.db_id,
                 "code_hash": metadata.code_hash,
             }),
-        );
+            BootstrapOwnerMode::AlreadyBootstrapped => json!({
+                "mode": "normal_restore",
+                "reason": "already_bootstrapped",
+            }),
+        };
+        object.insert("bootstrap".to_string(), bootstrap);
     }
     value
 }
@@ -3917,6 +4137,7 @@ COMMIT;",
             "--file",
             "schema.sql",
             "--bootstrap-owner",
+            "--verbose-sql",
             "--json-summary",
         ])
         .unwrap();
@@ -3925,6 +4146,7 @@ COMMIT;",
                 assert_eq!(args.target.target.as_deref(), Some("oct://mainnet/octABC"));
                 assert_eq!(args.file, Some(PathBuf::from("schema.sql")));
                 assert!(args.bootstrap_owner);
+                assert!(args.verbose_sql);
                 assert!(args.json_summary);
             }
             _ => panic!("expected restore command"),
@@ -3954,11 +4176,21 @@ COMMIT;",
             db_id: "bb".repeat(32),
             code_hash: "cc".repeat(32),
         };
-        let value = add_bootstrap_owner_json(json!({"ok": true}), Some(&metadata));
+        let mode = BootstrapOwnerMode::FirstWrite(metadata);
+        let value = add_bootstrap_owner_json(json!({"ok": true}), Some(&mode));
         assert_eq!(value["bootstrap_owner"], true);
         assert_eq!(value["bootstrap"]["mode"], "owner_first_write");
         assert_eq!(value["bootstrap"]["reason"], "empty_storage_cache");
         assert_eq!(value["bootstrap"]["uri"], "oct://mainnet/octABC");
+    }
+
+    #[test]
+    fn bootstrap_owner_json_marks_already_bootstrapped_restore() {
+        let mode = BootstrapOwnerMode::AlreadyBootstrapped;
+        let value = add_bootstrap_owner_json(json!({"ok": true}), Some(&mode));
+        assert_eq!(value["bootstrap_owner"], true);
+        assert_eq!(value["bootstrap"]["mode"], "normal_restore");
+        assert_eq!(value["bootstrap"]["reason"], "already_bootstrapped");
     }
 
     #[test]
@@ -4175,6 +4407,31 @@ COMMIT;",
             Commands::Status(args) => assert!(args.skip_network),
             _ => panic!("expected status command"),
         }
+    }
+
+    #[test]
+    fn wallet_status_accepts_target_and_json() {
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "wallet", "status", "art", "--json"]).unwrap();
+        match cli.command {
+            Commands::Wallet {
+                command: WalletCommand::Status(args),
+            } => {
+                assert_eq!(args.target.target.as_deref(), Some("art"));
+                assert!(args.json);
+            }
+            _ => panic!("expected wallet status command"),
+        }
+    }
+
+    #[test]
+    fn wallet_is_not_treated_as_database_shorthand() {
+        let args = normalize_args(vec![
+            "octra-sqlite".to_string(),
+            "wallet".to_string(),
+            "status".to_string(),
+        ]);
+        assert_eq!(args, vec!["octra-sqlite", "wallet", "status"]);
     }
 
     #[test]
