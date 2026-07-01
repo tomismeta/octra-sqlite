@@ -50,17 +50,38 @@ Pinned install:
 cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
 ```
 
-Wallet setup:
+Guided wallet setup:
+
+```sh
+octra-sqlite setup
+```
+
+The setup flow is the first door. It finds an existing configured wallet when
+possible; otherwise it offers four safe paths:
+
+```text
+1. Import wallet.json from the official Octra wallet generator
+2. Attach an existing plaintext wallet.json
+3. Paste a private key into a hidden prompt
+4. Continue without a wallet for public-read databases
+```
+
+Generator imports accept the downloaded Octra `wallet.json` from
+[wallet.octra.org](https://wallet.octra.org) directly, copy it to the configured
+wallet path with restricted permissions where supported, and tell you to remove
+the downloaded copy. Secure paste never echoes the key. Sealed reads and all
+writes require a wallet; public-read queries do not.
+
+For scripts and servers:
 
 ```sh
 octra-sqlite wallet attach ./wallet.json
 printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
 ```
 
-`setup` and guided `new` can also walk you through the safe paths: use
-`wallet.json` from the official Octra wallet generator, attach an existing
-plaintext wallet JSON, or paste a private key into a hidden prompt.
-Official wallet-generator files are accepted directly.
+WebCLI `.oct` files are encrypted/PIN-protected and are not imported directly;
+use the official `wallet.json`, attach plaintext wallet JSON, or paste/import
+the private key.
 
 Create directly with inline SQL:
 
