@@ -253,23 +253,23 @@ devnet.
 - Bit-for-bit reproducible builds across arbitrary host toolchains.
 - A stable public package API beyond the starter CLI and documented scripts.
 
-## Prior Live Devnet Proof
+## Live Devnet Proof
 
-The latest deployed devnet proof is from `0.3.2`. The `0.3.3` Circle WASM is
-rebuilt for empty-storage bootstrap and needs a fresh live proof before tagging.
+The `0.3.3` Circle WASM is deployed to the public devnet proof Circle.
 
 ```text
 circle: octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
-version: 2
-personalized_code_hash: 2e8fae91e2372293f4554fed164ff31c07df3e423bd36eba31e1b8e40a760e9f
-bundled_wasm_hash: 39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b
-code_bytes: 609404
+version: 3
+personalized_code_hash: 195bbc6dde80edc764041c45faa55f67db16a3352f7a83dd50f86f5882393f6f
+bundled_wasm_hash: 36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d
+code_bytes: 609354
 circle_create_tx: 318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed
 initializer_tx: 971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
-program_update_tx: 3d1a3e308f2a29b4c7748745b269841b4025ebb777fe51629e066139c6446fd7
-non_owner_denied_tx: 567559d31f4c8fa3a0f5eff42f8ea8b417ee2269ab1a0b5c404241de5ff6b6a1
-backup_sha256: 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
+program_update_tx: efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb
+write_smoke_tx: aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b
+non_owner_denied_tx: fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148
+backup_sha256: 7eac9d276c6ddefeb72ae112635a82262e5a62c969ba0394c4cfaa7e502e2ab7
 backup_integrity: ok
-manifest: release/octra-sqlite-0.3.2.json
+manifest: release/octra-sqlite-0.3.3.json
 proof: docs/proofs/devnet.md
 ```

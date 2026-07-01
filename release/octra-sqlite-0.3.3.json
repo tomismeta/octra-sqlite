@@ -1,12 +1,12 @@
 {
   "name": "octra-sqlite",
   "release": "0.3.3",
-  "circle_program_version": "pending",
+  "circle_program_version": "3",
   "network": "devnet",
-  "public_circle": null,
-  "circle_create_tx": null,
-  "initializer_tx": null,
-  "program_update_tx": null,
+  "public_circle": "octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+  "circle_create_tx": "318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed",
+  "initializer_tx": "971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0",
+  "program_update_tx": "efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb",
   "wasm": {
     "path": "circle/wasm/octra_sqlite_circle.wasm",
     "bytes": 609354,
@@ -64,26 +64,46 @@
     "spec": "docs/spec/osw1.md"
   },
   "public_deployment": {
-    "status": "pending",
-    "deployment_kind": "not_deployed",
-    "personalized_sha256": null,
-    "owner_pubkey": null,
-    "db_id": null,
-    "owner_pubkey_offset": null,
-    "db_id_offset": null,
-    "non_owner_denied_tx": null
+    "status": "deployed",
+    "deployment_kind": "program_update",
+    "personalized_sha256": "195bbc6dde80edc764041c45faa55f67db16a3352f7a83dd50f86f5882393f6f",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "2b2ce4c282bba87be3a113a571a334129bd49d329a247ca170dbd8bf502c8682",
+    "owner_pubkey_offset": 603090,
+    "db_id_offset": 603122,
+    "non_owner_denied_tx": "fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148"
   },
   "explorer_urls": {
-    "circle": null,
-    "circle_create": null,
-    "initializer": null,
-    "program_update": null,
-    "non_owner_denied": null
+    "circle": "https://devnet.octrascan.io/address.html?addr=octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+    "circle_create": "https://devnet.octrascan.io/tx.html?hash=318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed",
+    "initializer": "https://devnet.octrascan.io/tx.html?hash=971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0",
+    "program_update": "https://devnet.octrascan.io/tx.html?hash=efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb",
+    "non_owner_denied": "https://devnet.octrascan.io/tx.html?hash=fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148"
   },
-  "live_portability_proof": null,
+  "live_portability_proof": {
+    "database_uri": "oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+    "backup": {
+      "bytes": 16384,
+      "pages": 4,
+      "generation": 2,
+      "sha256": "7eac9d276c6ddefeb72ae112635a82262e5a62c969ba0394c4cfaa7e502e2ab7",
+      "integrity_check": "ok"
+    },
+    "write_smoke": {
+      "tx": "aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b",
+      "statements": 3,
+      "status": "confirmed"
+    },
+    "owner_lock": {
+      "non_owner_wallet": "oct6NBfpTfR9zHdDy5UftWk3FstMYpjp47gDgcTQF5EAxvY",
+      "read_query_ok": true,
+      "write_rejected_tx": "fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148",
+      "rejection": "wasm export returned 403"
+    }
+  },
   "client_release": {
     "notes": "Automation contract hardening release: stable JSON envelope polish, compact read tracing, storage-independent auth_info for empty database bootstrap, and an explicit owner bootstrap deploy recovery path.",
     "read_only_api_example": "examples/remilia-read-api"
   },
-  "status": "draft manifest; live proof pending"
+  "status": "deployed devnet proof"
 }

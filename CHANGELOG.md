@@ -34,6 +34,9 @@
 - Persisted local creation metadata for new saved databases: owner wallet,
   owner public key, database id, code hash, code bytes, create transaction, and
   bootstrap program update transaction.
+- Published a refreshed devnet proof for the rebuilt 0.3.3 Circle WASM,
+  including write-smoke, backup integrity, and non-owner write rejection
+  evidence.
 - Documented Rust/Cargo 1.87+, pinned source installs, read/write auth,
   restore/backfill happy path, result limits, and compact trace usage.
 - Added `.claude/` to `.gitignore` so local agent settings cannot be committed

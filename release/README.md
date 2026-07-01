@@ -11,4 +11,4 @@ network-specific artifacts.
 `octra-sqlite-0.3.1.json` record earlier blessed Circle WASM artifacts. The
 `0.3.2` release keeps the `0.3.1` Circle WASM and hardens automation output
 around it. The `0.3.3` manifest records the rebuilt empty-bootstrap Circle
-WASM; live deployment proof is filled when the release is deployed.
+WASM and its deployed devnet proof.

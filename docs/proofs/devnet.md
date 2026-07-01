@@ -6,16 +6,16 @@ Current public devnet portability proof Circle:
 octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 ```
 
-Published `v0.3.1` proof snapshot:
+Published `v0.3.3` proof snapshot:
 
 ```text
 database: oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 circle: octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 circle url: https://devnet.octrascan.io/address.html?addr=octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
-program: version 2, bytes 609404, personalized hash 2e8fae91e2372293f4554fed164ff31c07df3e423bd36eba31e1b8e40a760e9f
-bundled wasm hash: 39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b
-storage: 3 pages, 12288 bytes
-backup: 12288 bytes, generation 1, sha256 5134da2b7c0e03c99a139e165469f35d824f0ede7a5a4f3433625b0d1021cb42
+program: version 3, bytes 609354, personalized hash 195bbc6dde80edc764041c45faa55f67db16a3352f7a83dd50f86f5882393f6f
+bundled wasm hash: 36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d
+storage: 4 pages, 16384 bytes
+backup: 16384 bytes, generation 2, sha256 7eac9d276c6ddefeb72ae112635a82262e5a62c969ba0394c4cfaa7e502e2ab7
 backup integrity: sqlite3 pragma integrity_check = ok
 auth owner pubkey: 2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb
 auth database id: 2b2ce4c282bba87be3a113a571a334129bd49d329a247ca170dbd8bf502c8682
@@ -23,10 +23,12 @@ circle create tx: 318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73
 circle create: https://devnet.octrascan.io/tx.html?hash=318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed
 initializer tx: 971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
 initializer: https://devnet.octrascan.io/tx.html?hash=971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0
-program update tx: 3d1a3e308f2a29b4c7748745b269841b4025ebb777fe51629e066139c6446fd7
-program update: https://devnet.octrascan.io/tx.html?hash=3d1a3e308f2a29b4c7748745b269841b4025ebb777fe51629e066139c6446fd7
-non-owner denied tx: 567559d31f4c8fa3a0f5eff42f8ea8b417ee2269ab1a0b5c404241de5ff6b6a1
-non-owner denied: https://devnet.octrascan.io/tx.html?hash=567559d31f4c8fa3a0f5eff42f8ea8b417ee2269ab1a0b5c404241de5ff6b6a1
+program update tx: efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb
+program update: https://devnet.octrascan.io/tx.html?hash=efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb
+write smoke tx: aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b
+write smoke: https://devnet.octrascan.io/tx.html?hash=aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b
+non-owner denied tx: fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148
+non-owner denied: https://devnet.octrascan.io/tx.html?hash=fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148
 full restore circle: octqdTL8vFxiLmJw7JbUYoqiJNaTDTmNT4pjWHWdLUjoRWq
 full restore create tx: a7483e37ab12bb1f74d4c43e9f7659accca996638982c54c58a0d6d43eeb1d73
 full restore create: https://devnet.octrascan.io/tx.html?hash=a7483e37ab12bb1f74d4c43e9f7659accca996638982c54c58a0d6d43eeb1d73
