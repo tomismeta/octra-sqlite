@@ -1634,24 +1634,25 @@ fn configure_explicit_wallet(config: &mut Config, path: &Path) -> Result<PathBuf
 fn prompt_wallet_onboarding(config: &mut Config) -> Result<WalletOnboarding> {
     print_section("Wallet");
     print_field("status", "not configured");
-    println!("{}", dim("Choose how octra-sqlite should find a signer."));
-    print_choice(1, "Use wallet.json from Octra wallet generator");
+    println!("{}", dim("Choose a wallet source."));
+    print_choice(1, "Import wallet.json from Octra wallet generator");
     print_choice(2, "Attach existing wallet.json");
     print_choice(3, "Paste private key securely");
-    print_choice(4, "Continue without wallet");
+    print_choice(4, "Skip wallet for now (public-read only)");
     print_choice(5, "Cancel");
     println!();
     loop {
-        let choice = prompt_default("wallet setup", "1")?;
+        let choice = prompt_default("wallet", "1")?;
         match choice.trim() {
             "1" => return import_wallet_from_generator(config).map(WalletOnboarding::Configured),
             "2" => return attach_wallet_interactive(config).map(WalletOnboarding::Configured),
             "3" => return paste_wallet_interactive(config).map(WalletOnboarding::Configured),
             "4" => {
                 print_field(
-                    "note",
-                    "walletless mode only works for public-read databases. Sealed reads and all writes require a wallet.",
+                    "wallet",
+                    "skipped; sealed reads and writes require a wallet",
                 );
+                println!();
                 return Ok(WalletOnboarding::Walletless);
             }
             "5" => bail!("wallet setup cancelled"),
@@ -4179,7 +4180,7 @@ fn prompt_read_mode(default: ReadModeArg) -> Result<ReadModeArg> {
 }
 
 fn prompt_network(default: &str) -> Result<String> {
-    let value = prompt_default("network (devnet/mainnet)", default)?;
+    let value = prompt_default("network", default)?;
     match value.trim().to_ascii_lowercase().as_str() {
         "devnet" => Ok("devnet".to_string()),
         "mainnet" => Ok("mainnet".to_string()),
