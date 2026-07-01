@@ -41,6 +41,8 @@
   the built-in sample path.
 - Updated README and reference docs around one clean cold-start path and
   explicit sealed/public read modes.
+- Made walletless public-read the first cold-start path in README and
+  `install` guidance.
 
 ## 0.3.4
 

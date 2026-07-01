@@ -12,14 +12,25 @@ wallet, and gives you a SQLite-shaped interface over live Circle state.
 
 ## Cold Start
 
-You need Rust/Cargo 1.87+ and a funded Octra wallet for writes. The Circle WASM
-is bundled; you do not need to compile it to start.
+You need Rust/Cargo 1.87+. The Circle WASM is bundled; you do not need to
+compile it to start.
 
 ```sh
 git clone https://github.com/tomismeta/octra-sqlite.git
 cd octra-sqlite
 cargo install --path . --locked
+```
 
+Read a public database immediately, no wallet required:
+
+```sh
+octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public' \
+  "select id, name from artist order by id;"
+```
+
+Create a database when you have a funded Octra wallet:
+
+```sh
 octra-sqlite setup
 octra-sqlite new art < examples/artists.sql
 octra-sqlite status art --ready

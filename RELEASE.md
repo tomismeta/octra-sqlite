@@ -40,6 +40,8 @@ devnet proof Circle records the explicit public-read Octra deployment tuple.
   create output include a shareable `?read_mode=public` read URI.
 - README, public surface docs, and operations docs now present one clean
   product path: setup, new, query, status, restore.
+- README and `install` guidance now lead with a walletless public-read command
+  so a cold-start user can query a live database before importing a wallet.
 
 ## Notes
 

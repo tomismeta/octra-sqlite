@@ -63,6 +63,8 @@ const SQLITE_VERSION: &str = "3.53.2";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
 const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
+const PUBLIC_READ_EXAMPLE_URI: &str =
+    "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public";
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -579,6 +581,8 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
     let tag = format!("v{}", env!("CARGO_PKG_VERSION"));
     let local_install = "cargo install --path . --locked";
     let pinned_install = format!("cargo install --git {REPO_URL} --tag {tag} --locked");
+    let read_public =
+        format!("octra-sqlite '{PUBLIC_READ_EXAMPLE_URI}' \"select id, name from artist;\"");
     let setup = "octra-sqlite setup";
     let query = "octra-sqlite DATABASE \"select * from sqlite_schema;\"";
     let ready = "octra-sqlite status DATABASE --ready";
@@ -594,6 +598,7 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
             "commands": {
                 "local": local_install,
                 "pinned": pinned_install,
+                "read_public": read_public,
                 "setup": setup,
                 "create": CREATE_DATABASE_COMMAND,
                 "query": query,
@@ -611,6 +616,7 @@ fn cmd_install(args: InstallArgs) -> Result<()> {
     );
     print_command("local", local_install);
     print_command("pinned", pinned_install);
+    print_command("read public", read_public);
     print_command("setup", setup);
     print_command("create", CREATE_DATABASE_COMMAND);
     print_command("query", query);
