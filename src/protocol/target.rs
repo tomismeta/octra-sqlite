@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadMode {
-    #[default]
     Auto,
+    #[default]
     Sealed,
     Public,
 }
@@ -82,7 +82,7 @@ pub fn parse_database_target(
                 .to_string(),
             circle: value.to_string(),
             rpc: default_rpc,
-            read_mode: ReadMode::Auto,
+            read_mode: ReadMode::Sealed,
         });
     }
     Err(ProtocolError::new(format!(
@@ -92,7 +92,7 @@ pub fn parse_database_target(
 
 fn read_mode_from_query(rest: &str) -> Result<ReadMode> {
     let Some((_, query)) = rest.split_once('?') else {
-        return Ok(ReadMode::Auto);
+        return Ok(ReadMode::Sealed);
     };
     for pair in query.split('&') {
         let Some((key, value)) = pair.split_once('=') else {
@@ -109,7 +109,7 @@ fn read_mode_from_query(rest: &str) -> Result<ReadMode> {
             };
         }
     }
-    Ok(ReadMode::Auto)
+    Ok(ReadMode::Sealed)
 }
 
 #[cfg(test)]
@@ -123,7 +123,7 @@ mod tests {
         assert_eq!(target.network, "devnet");
         assert_eq!(target.circle, "octABC");
         assert_eq!(target.rpc, "http://rpc");
-        assert_eq!(target.read_mode, ReadMode::Auto);
+        assert_eq!(target.read_mode, ReadMode::Sealed);
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         let target = parse_database_target("octABC", Some("devnet"), None).unwrap();
         assert_eq!(target.network, "devnet");
         assert_eq!(target.circle, "octABC");
-        assert_eq!(target.read_mode, ReadMode::Auto);
+        assert_eq!(target.read_mode, ReadMode::Sealed);
     }
 
     #[test]

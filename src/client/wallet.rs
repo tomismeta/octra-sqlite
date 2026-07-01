@@ -7,6 +7,7 @@ use serde::Deserialize;
 #[cfg(feature = "cli")]
 use sha2::{Digest, Sha256};
 use std::env;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
@@ -28,12 +29,23 @@ pub(super) struct WalletFile {
     pub(super) rpc: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 #[cfg(feature = "cli")]
 pub(crate) struct WalletMaterial {
     pub(crate) address: String,
     pub(crate) private_key_b64: String,
     pub(crate) public_key_b64: String,
+}
+
+#[cfg(feature = "cli")]
+impl fmt::Debug for WalletMaterial {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WalletMaterial")
+            .field("address", &self.address)
+            .field("private_key_b64", &"<redacted>")
+            .field("public_key_b64", &self.public_key_b64)
+            .finish()
+    }
 }
 
 #[cfg(feature = "cli")]

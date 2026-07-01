@@ -449,7 +449,7 @@ mod tests {
         let calls = transport.calls.clone();
         let db = Database::open_with_transport(
             SessionOptions {
-                target: Some("oct://devnet/octABC".to_string()),
+                target: Some("oct://devnet/octABC?read_mode=auto".to_string()),
                 rpc: Some("mock://rpc".to_string()),
                 ..SessionOptions::default()
             },
