@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.3.3-111827)](./release/octra-sqlite-0.3.3.json)
+[![version](https://img.shields.io/badge/version-v0.3.4-111827)](./release/octra-sqlite-0.3.4.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -28,7 +28,7 @@ octra-sqlite status
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.3 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked
 ```
 
 Create a new Circle-backed SQLite database:

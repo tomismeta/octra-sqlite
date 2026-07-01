@@ -1,15 +1,16 @@
 # Changelog
 
-## 0.3.4 Unreleased
+## 0.3.4
 
 - Added guided `octra-sqlite new` database creation for interactive first-run
   setup.
 - Added `new --schema FILE --manifest FILE --json` for scriptable database
   creation with a machine-readable deployment manifest.
+- Added `commands --json` for machine-readable command and JSON-envelope
+  discovery.
 - Refuse to create a new saved database when the local database name already
   exists, before any Circle creation or spend.
-- Added `new` to the stable CLI JSON envelope documentation and command
-  discovery output.
+- Added `new` to the stable CLI JSON envelope documentation.
 - Tightened public docs around database-first ontology and neutral headless
   setup examples.
 

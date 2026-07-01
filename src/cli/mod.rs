@@ -47,7 +47,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.3.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.3.4.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =

@@ -73,7 +73,7 @@ cargo install --path . --locked
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.3 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.4 --locked
 ```
 
 If installing into a shared path, make the binary executable by the service

@@ -21,7 +21,7 @@ octra-sqlite status oct://devnet/oct... --json
 
 ## Empty Circle Bootstrap Recovery
 
-New `0.3.3` databases expose `auth_info` before any SQLite pages exist, so the
+New `0.3.3+` databases expose `auth_info` before any SQLite pages exist, so the
 first owner-signed initializer write can run normally.
 
 If an older empty database Circle was created but cannot expose `auth_info`

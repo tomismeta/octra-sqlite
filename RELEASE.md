@@ -1,5 +1,33 @@
 # Release Notes
 
+## 0.3.4
+
+This is a CLI productization release over the deployed `0.3.3` Circle WASM
+proof. The contract, wire formats, bundled SQLite engine, and devnet proof
+Circle are unchanged.
+
+## Added
+
+- `commands --json` for machine-readable command and JSON-envelope discovery.
+- Guided `octra-sqlite new` database creation for interactive first-run setup.
+- `new DATABASE --schema FILE --manifest FILE --json` for scriptable database
+  creation with a machine-readable deployment manifest.
+- Release manifest `release/octra-sqlite-0.3.4.json`, explicitly marked as a
+  client-only release over the deployed `0.3.3` Circle WASM proof.
+
+## Changed
+
+- `new` refuses to overwrite an existing local database name before reading SQL,
+  touching RPC, creating a Circle, or spending.
+- `commands --json` is covered by a completeness test against the public Clap
+  command surface.
+
+## Notes
+
+- No Circle redeploy is required for `0.3.4`.
+- The database manifest emitted by `new --manifest` contains public deployment
+  data only. It does not contain private keys or raw wallet JSON.
+
 ## 0.3.3
 
 This is an automation contract hardening release over `0.3.2`. The bundled
@@ -270,6 +298,6 @@ write_smoke_tx: aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b
 non_owner_denied_tx: fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148
 backup_sha256: 7eac9d276c6ddefeb72ae112635a82262e5a62c969ba0394c4cfaa7e502e2ab7
 backup_integrity: ok
-manifest: release/octra-sqlite-0.3.3.json
+manifest: release/octra-sqlite-0.3.4.json
 proof: docs/proofs/devnet.md
 ```

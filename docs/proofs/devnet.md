@@ -6,7 +6,8 @@ Current public devnet portability proof Circle:
 octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 ```
 
-Published `v0.3.3` proof snapshot:
+Published `v0.3.3` proof snapshot, reused by the client-only `v0.3.4` CLI
+release:
 
 ```text
 database: oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
