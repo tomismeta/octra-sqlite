@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.4 Unreleased
+
+- Added guided `octra-sqlite new` database creation for interactive first-run
+  setup.
+- Added `new --schema FILE --manifest FILE --json` for scriptable database
+  creation with a machine-readable deployment manifest.
+- Added `new` to the stable CLI JSON envelope documentation and command
+  discovery output.
+- Tightened public docs around database-first ontology and neutral headless
+  setup examples.
+
 ## 0.3.3
 
 - Added compact RPC trace modes: `full`, `summary`, `request_only`, and
@@ -39,8 +50,8 @@
   evidence.
 - Documented Rust/Cargo 1.87+, pinned source installs, read/write auth,
   restore/backfill happy path, result limits, and compact trace usage.
-- Added `.claude/` to `.gitignore` so local agent settings cannot be committed
-  accidentally.
+- Added local tool settings to `.gitignore` so machine-specific files cannot be
+  committed accidentally.
 
 ## 0.3.2
 

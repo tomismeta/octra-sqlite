@@ -25,8 +25,8 @@ chmod 600 /secure/path/wallet.json
 octra-sqlite init --wallet /secure/path/wallet.json --network devnet
 ```
 
-For service users, keep the wallet and config in an explicit application
-directory with restrictive group access:
+For service users, keep the wallet and config in an explicit service directory
+with restrictive group access:
 
 ```sh
 sudo install -d -m 0750 -o root -g octra-sqlite /etc/octra-sqlite
@@ -48,7 +48,7 @@ Example service config:
   "network": "mainnet",
   "wallet": "/etc/octra-sqlite/wallet.json",
   "databases": {
-    "app": "oct://mainnet/oct..."
+    "main": "oct://mainnet/oct..."
   }
 }
 ```
@@ -57,7 +57,7 @@ Lock it down the same way:
 
 ```sh
 sudo install -m 0640 -o root -g octra-sqlite config.json /etc/octra-sqlite/config.json
-OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status app
+OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status main
 ```
 
 ## Server Checklist

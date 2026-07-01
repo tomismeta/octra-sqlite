@@ -65,6 +65,43 @@ Stable error classifications:
 
 ## Envelopes
 
+### `new`
+
+Produced by `new DATABASE --json`.
+
+```json
+{
+  "ok": true,
+  "type": "new",
+  "schema": "octra-sqlite.cli.v1",
+  "manifest_version": "octra-sqlite.database.v1",
+  "database": {
+    "name": "art",
+    "uri": "oct://devnet/oct...",
+    "network": "devnet",
+    "circle": "oct...",
+    "rpc": "https://devnet.octrascan.io/rpc"
+  },
+  "program": {
+    "runtime": "wasm_v1",
+    "wasm_hash": "hex...",
+    "wasm_bytes": 609354
+  },
+  "initializer": {
+    "present": true,
+    "sha256": "hex...",
+    "statements": 2,
+    "batches": 1,
+    "writes": []
+  },
+  "readiness": {},
+  "next": {}
+}
+```
+
+If `--manifest FILE` is supplied, the same database manifest is written to
+disk and the JSON envelope includes `manifest_path`.
+
 ### `query`
 
 Produced by read SQL with `--json`.

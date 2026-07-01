@@ -28,11 +28,10 @@ use output::{
     OutputMode,
 };
 use portability::{
-    backup_database, ensure_sql_text_fits, execute_sql_script,
-    execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_owner_auth_progress,
-    execute_sql_script_with_progress, plan_sql_script, run_local_sqlite_integrity,
-    submit_sql_script_no_wait, SqlBatchProgress, SqlScriptExecution, SqlScriptPlan,
-    MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
+    backup_database, ensure_sql_text_fits, execute_sql_script_with_bootstrap_owner_progress,
+    execute_sql_script_with_owner_auth_progress, execute_sql_script_with_progress, plan_sql_script,
+    run_local_sqlite_integrity, submit_sql_script_no_wait, SqlBatchProgress, SqlScriptExecution,
+    SqlScriptPlan, MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
 };
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -286,7 +285,7 @@ struct SqlArgs {
 #[derive(Args)]
 struct NewArgs {
     /// Local database name for the new database.
-    name: String,
+    name: Option<String>,
     /// Rebuild the bundled WASM before deploying.
     #[arg(long)]
     build: bool,
@@ -314,9 +313,20 @@ struct NewArgs {
     /// SQL to run after creating the database.
     #[arg(long)]
     sql: Option<String>,
-    /// SQL file to run after creating the database.
-    #[arg(long, alias = "sql-file")]
+    /// Schema SQL file to run after creating the database.
+    #[arg(
+        long = "schema",
+        visible_alias = "read",
+        alias = "sql-file",
+        value_name = "FILE"
+    )]
     read: Option<PathBuf>,
+    /// Write a database deployment manifest.
+    #[arg(long, value_name = "FILE")]
+    manifest: Option<PathBuf>,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
     /// Initialize with a built-in sample schema and rows.
     #[arg(long, value_name = "NAME")]
     sample: Option<String>,
@@ -767,7 +777,7 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
     });
     let name = args.name.clone();
     cmd_new(NewArgs {
-        name: args.name,
+        name: Some(args.name),
         build: args.build,
         wasm: args.wasm,
         create_ou: args.create_ou,
@@ -778,6 +788,8 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
         default: !args.no_default,
         sql: None,
         read: None,
+        manifest: None,
+        json: false,
         sample: Some(args.sample),
         wallet: args.wallet,
         caller: args.caller,
@@ -793,6 +805,11 @@ fn cmd_quickstart(args: QuickstartArgs) -> Result<()> {
 }
 
 fn cmd_new(args: NewArgs) -> Result<()> {
+    let args = resolve_new_args(args)?;
+    let name = args
+        .name
+        .as_deref()
+        .ok_or_else(|| anyhow!("database name is required"))?;
     let init_sql = collect_initializer_sql(&args)?;
 
     let mut config = load_config().unwrap_or_default();
@@ -822,53 +839,62 @@ fn cmd_new(args: NewArgs) -> Result<()> {
             args.create_ou
         )
     };
-    print_field("funding", funding_detail);
+    if !args.json {
+        print_field("funding", funding_detail);
+    }
     let created = create_circle(&control_session, &args, &network)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
-    if args.no_name {
-        print_field("database", "(not saved)");
-    } else {
-        print_field("database", &args.name);
-    }
-    print_field("uri", &target_uri);
-    print_field("circle", linked_circle(&network, &created.circle));
-    print_field("wallet", control_session.caller());
-    print_field(
-        "code",
-        format!("{} bytes, hash {}", created.code_bytes, created.code_hash),
-    );
-    print_field("auth", "owner-only writes");
-    if let Some(hash) = &created.tx_hash {
-        print_field("create_tx", linked_tx(&network, hash));
-        if let Some(url) = explorer_tx_url(&network, hash) {
-            print_field("create_tx_url", url);
+    if !args.json {
+        if args.no_name {
+            print_field("database", "(not saved)");
+        } else {
+            print_field("database", name);
         }
-        if let Some(confirmation) = &created.confirmation {
-            print_field(
-                "create_status",
-                confirmation
-                    .get("status")
-                    .map(value_to_string)
-                    .unwrap_or_else(|| "unknown".to_string()),
-            );
+        print_field("uri", &target_uri);
+        print_field("circle", linked_circle(&network, &created.circle));
+        print_field("wallet", control_session.caller());
+        print_field(
+            "code",
+            format!("{} bytes, hash {}", created.code_bytes, created.code_hash),
+        );
+        print_field("auth", "owner-only writes");
+        if let Some(hash) = &created.tx_hash {
+            print_field("create_tx", linked_tx(&network, hash));
+            if let Some(url) = explorer_tx_url(&network, hash) {
+                print_field("create_tx_url", url);
+            }
+            if let Some(confirmation) = &created.confirmation {
+                print_field(
+                    "create_status",
+                    confirmation
+                        .get("status")
+                        .map(value_to_string)
+                        .unwrap_or_else(|| "unknown".to_string()),
+                );
+            }
         }
     }
 
     if !args.no_name {
         if let Err(error) = save_new_database_alias(&args, &target_uri, &created, &mut config) {
-            print_circle_recovery(
-                &args,
-                &target_uri,
-                "database alias was not saved after Circle creation",
-                false,
-            );
+            if !args.json {
+                print_circle_recovery(
+                    &args,
+                    &target_uri,
+                    "database alias was not saved after Circle creation",
+                    false,
+                );
+            }
             return Err(error.context("database alias save failed after Circle creation"));
         }
-        print_field("saved", "yes");
-    } else {
+        if !args.json {
+            print_field("saved", "yes");
+        }
+    } else if !args.json {
         print_field("saved", "no");
     }
 
+    let mut initializer_results = Vec::new();
     if !init_sql.is_empty() {
         let session_args = TargetArgs {
             target: Some(target_uri.clone()),
@@ -881,34 +907,158 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         let session = match build_session(&session_args) {
             Ok(session) => session,
             Err(error) => {
-                print_circle_recovery(
-                    &args,
-                    &target_uri,
-                    "initializer session failed after Circle creation",
-                    !args.no_name,
-                );
+                if !args.json {
+                    print_circle_recovery(
+                        &args,
+                        &target_uri,
+                        "initializer session failed after Circle creation",
+                        !args.no_name,
+                    );
+                }
                 return Err(error.context("initializer session failed after Circle creation"));
             }
         };
-        if let Err(error) = run_initializer_sql(&session, &args, &init_sql) {
-            print_circle_recovery(
-                &args,
-                &target_uri,
-                "initializer failed after Circle creation",
-                !args.no_name,
-            );
-            return Err(error.context("initializer failed after Circle creation"));
-        }
+        initializer_results = match run_initializer_sql(&session, &args, &init_sql) {
+            Ok(results) => results,
+            Err(error) => {
+                if !args.json {
+                    print_circle_recovery(
+                        &args,
+                        &target_uri,
+                        "initializer failed after Circle creation",
+                        !args.no_name,
+                    );
+                }
+                return Err(error.context("initializer failed after Circle creation"));
+            }
+        };
     }
 
-    let followup_target = new_followup_target(&args.name, &target_uri, args.no_name);
-    if args.no_name {
-        print_field("open", format!("octra-sqlite open {target_uri}"));
+    let readiness = if args.no_wait {
+        new_readiness_skipped_json()
     } else {
-        print_field("open", format!("octra-sqlite open {}", args.name));
+        let session_args = TargetArgs {
+            target: Some(target_uri.clone()),
+            wallet: args.wallet.clone(),
+            rpc: Some(control_session.rpc().to_string()),
+            caller: args.caller.clone(),
+            private_key_b64: args.private_key_b64.clone(),
+            public_key_b64: args.public_key_b64.clone(),
+        };
+        match build_session(&session_args) {
+            Ok(session) => new_readiness_json(&session),
+            Err(error) => json!({
+                "checked": false,
+                "error": format!("{error:#}"),
+            }),
+        }
+    };
+    let manifest_value = new_manifest_json(NewManifestInput {
+        args: &args,
+        name,
+        target_uri: &target_uri,
+        network: &network,
+        created: &created,
+        owner: control_session.caller(),
+        rpc: control_session.rpc(),
+        init_sql: &init_sql,
+        initializer_results: &initializer_results,
+        readiness: readiness.clone(),
+    });
+    let manifest_path = if let Some(path) = &args.manifest {
+        write_new_manifest(path, &manifest_value)?;
+        Some(path.clone())
+    } else {
+        None
+    };
+    if args.json {
+        let mut envelope = manifest_value;
+        if let Some(object) = envelope.as_object_mut() {
+            object.insert("ok".to_string(), Value::Bool(true));
+            object.insert("type".to_string(), Value::String("new".to_string()));
+            object.insert(
+                "schema".to_string(),
+                Value::String("octra-sqlite.cli.v1".to_string()),
+            );
+            if let Some(path) = &manifest_path {
+                object.insert(
+                    "manifest_path".to_string(),
+                    Value::String(path.display().to_string()),
+                );
+            }
+        }
+        return print_json(&envelope);
+    }
+
+    let followup_target = new_followup_target(name, &target_uri, args.no_name);
+    if let Some(path) = manifest_path {
+        print_field("manifest", path.display().to_string());
     }
     print_field("status", format!("octra-sqlite status {followup_target}"));
+    print_field(
+        "tables",
+        format!("octra-sqlite {followup_target} \".tables\""),
+    );
+    print_field("open", format!("octra-sqlite open {followup_target}"));
     Ok(())
+}
+
+fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
+    if args.name.is_some() {
+        return Ok(args);
+    }
+    if args.json {
+        bail!("database name is required with --json");
+    }
+    if !io::stdin().is_terminal() {
+        bail!("database name is required; pass DATABASE or run octra-sqlite new in a terminal");
+    }
+
+    let config = load_config().unwrap_or_default();
+    println!("{}", strong("Create an Octra SQLite database"));
+    let name = prompt_default("Database name", "art")?;
+    if name.trim().is_empty() {
+        bail!("database name is required");
+    }
+    args.name = Some(name.clone());
+
+    if args.network.is_none() {
+        let default_network = config.network.as_deref().unwrap_or("devnet");
+        args.network = Some(prompt_default("Network", default_network)?);
+    }
+    if args.wallet.is_none() {
+        let wallet_default = config
+            .wallet
+            .as_ref()
+            .map(PathBuf::from)
+            .or_else(discover_wallet_path)
+            .unwrap_or_else(|| PathBuf::from("./wallet.json"));
+        args.wallet = Some(prompt_path("Wallet path", &wallet_default)?);
+    }
+    if args.read.is_none()
+        && args.sql.is_none()
+        && args.sample.is_none()
+        && args.sql_args.is_empty()
+    {
+        if let Some(schema) = prompt_optional("Schema file", None)? {
+            args.read = Some(PathBuf::from(schema));
+        }
+    }
+    if !args.no_name && !args.default {
+        let default_choice = config.default_database.is_none();
+        args.default = prompt_yes_no("Make default database?", default_choice)?;
+    }
+    if args.manifest.is_none() && prompt_yes_no("Save deployment manifest?", true)? {
+        let default_manifest = format!("{name}.octra-sqlite.json");
+        args.manifest = Some(PathBuf::from(prompt_default(
+            "Manifest path",
+            &default_manifest,
+        )?));
+    }
+    if !prompt_yes_no("Create database?", true)? {
+        bail!("cancelled");
+    }
+    Ok(args)
 }
 
 fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
@@ -933,24 +1083,41 @@ fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
     Ok(init_sql)
 }
 
-fn run_initializer_sql(session: &Session, args: &NewArgs, init_sql: &[String]) -> Result<()> {
+fn run_initializer_sql(
+    session: &Session,
+    args: &NewArgs,
+    init_sql: &[String],
+) -> Result<Vec<SqlScriptExecution>> {
+    let mut executions = Vec::new();
     for sql in init_sql {
-        if args.no_wait {
-            let execution = submit_sql_script_no_wait(session, sql)?;
-            for result in execution.results {
-                let result = with_explorer(result, session);
-                print_exec_result(&result)?;
-            }
-            print_field(
-                "initializer",
-                format!("{} statements submitted", execution.statements),
-            );
+        let mut execution = if args.no_wait {
+            submit_sql_script_no_wait(session, sql)?
         } else {
-            let statements = execute_sql_script(session, sql)?;
-            print_field("initializer", format!("{statements} statements"));
+            execute_sql_script_with_progress(session, sql, false, |_| {})?
+        };
+        for result in &mut execution.results {
+            let raw = std::mem::take(result);
+            *result = with_explorer(raw, session);
         }
+        if !args.json {
+            if args.no_wait {
+                for result in &execution.results {
+                    print_exec_result(result)?;
+                }
+                print_field(
+                    "initializer",
+                    format!("{} statements submitted", execution.statements),
+                );
+            } else {
+                print_field(
+                    "initializer",
+                    format!("{} statements", execution.statements),
+                );
+            }
+        }
+        executions.push(execution);
     }
-    Ok(())
+    Ok(executions)
 }
 
 fn save_new_database_alias(
@@ -959,11 +1126,15 @@ fn save_new_database_alias(
     created: &CreatedCircle,
     config: &mut Config,
 ) -> Result<()> {
+    let name = args
+        .name
+        .as_deref()
+        .ok_or_else(|| anyhow!("database name is required"))?;
     config
         .databases
-        .insert(args.name.clone(), target_uri.to_string());
+        .insert(name.to_string(), target_uri.to_string());
     config.database_metadata.insert(
-        args.name.clone(),
+        name.to_string(),
         DatabaseMetadata {
             uri: target_uri.to_string(),
             network: target_uri
@@ -985,7 +1156,7 @@ fn save_new_database_alias(
         },
     );
     if args.default || config.default_database.is_none() {
-        config.default_database = Some(args.name.clone());
+        config.default_database = Some(name.to_string());
     }
     write_config(config)?;
     Ok(())
@@ -1006,13 +1177,13 @@ fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved:
             "recover",
             format!(
                 "octra-sqlite database set {} {}",
-                shell_quote(&args.name),
+                shell_quote(args.name.as_deref().unwrap_or("database")),
                 shell_quote(target_uri)
             ),
         );
     }
     let followup_target = if saved {
-        args.name.as_str()
+        args.name.as_deref().unwrap_or(target_uri)
     } else {
         target_uri
     };
@@ -1040,6 +1211,195 @@ fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved:
             "inspect first, then rerun the initializer SQL against the saved database",
         );
     }
+}
+
+struct NewManifestInput<'a> {
+    args: &'a NewArgs,
+    name: &'a str,
+    target_uri: &'a str,
+    network: &'a str,
+    created: &'a CreatedCircle,
+    owner: &'a str,
+    rpc: &'a str,
+    init_sql: &'a [String],
+    initializer_results: &'a [SqlScriptExecution],
+    readiness: Value,
+}
+
+fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
+    let args = input.args;
+    let initializer_plans = input
+        .init_sql
+        .iter()
+        .filter_map(|sql| {
+            plan_sql_script(sql)
+                .ok()
+                .map(|plan| script_plan_json(&plan))
+        })
+        .collect::<Vec<_>>();
+    let initializer_writes = input
+        .initializer_results
+        .iter()
+        .flat_map(|execution| execution.results.iter().map(write_result_summary))
+        .collect::<Vec<_>>();
+    let initializer_sql = if input.init_sql.is_empty() {
+        None
+    } else {
+        Some(input.init_sql.join("\n"))
+    };
+    let initializer_sha256 = initializer_sql
+        .as_deref()
+        .map(|sql| sha256_hex(sql.as_bytes()));
+    json!({
+        "manifest_version": "octra-sqlite.database.v1",
+        "database": {
+            "name": if args.no_name { Value::Null } else { Value::String(input.name.to_string()) },
+            "uri": input.target_uri,
+            "network": input.network,
+            "circle": input.created.circle.clone(),
+            "circle_url": explorer_circle_url(input.network, &input.created.circle),
+            "rpc": input.rpc,
+        },
+        "owner": {
+            "wallet": input.owner,
+            "write_auth": "OSW1 owner write intent",
+            "owner_pubkey": input.created.auth_patch.owner_pubkey_hex.clone(),
+            "db_id": input.created.auth_patch.db_id_hex.clone(),
+        },
+        "program": {
+            "runtime": "wasm_v1",
+            "wasm_hash": input.created.code_hash.clone(),
+            "wasm_bytes": input.created.code_bytes,
+            "source": "bundled",
+        },
+        "create": {
+            "tx_hash": input.created.tx_hash.clone(),
+            "tx_url": input.created.tx_hash.as_deref().and_then(|hash| explorer_tx_url(input.network, hash)),
+            "confirmation": input.created.confirmation.clone(),
+        },
+        "initializer": {
+            "present": !input.init_sql.is_empty(),
+            "schema_file": args.read.as_ref().map(|path| path.display().to_string()),
+            "source_count": input.init_sql.len(),
+            "source_bytes": input.init_sql.iter().map(|sql| sql.len()).sum::<usize>(),
+            "sha256": initializer_sha256,
+            "plans": initializer_plans,
+            "statements": input.initializer_results.iter().map(|execution| execution.statements).sum::<usize>(),
+            "batches": input.initializer_results.iter().map(|execution| execution.batches).sum::<usize>(),
+            "writes": initializer_writes,
+        },
+        "readiness": input.readiness,
+        "next": {
+            "status": format!("octra-sqlite status {}", if args.no_name { input.target_uri } else { input.name }),
+            "tables": format!("octra-sqlite {} \".tables\"", if args.no_name { input.target_uri } else { input.name }),
+            "open": format!("octra-sqlite open {}", if args.no_name { input.target_uri } else { input.name }),
+        }
+    })
+}
+
+fn write_new_manifest(path: &Path, value: &Value) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(path, format_json(value)? + "\n")
+        .with_context(|| format!("writing {}", path.display()))
+}
+
+fn new_readiness_skipped_json() -> Value {
+    json!({
+        "checked": false,
+        "reason": "no_wait",
+    })
+}
+
+fn new_readiness_json(session: &Session) -> Value {
+    let mut readiness = Map::new();
+    let mut errors = Map::new();
+
+    match program_info(session) {
+        Ok(_) => {
+            readiness.insert("circle_reachable".to_string(), Value::Bool(true));
+        }
+        Err(error) => {
+            readiness.insert("circle_reachable".to_string(), Value::Bool(false));
+            errors.insert(
+                "circle_reachable".to_string(),
+                Value::String(format!("{error:#}")),
+            );
+        }
+    }
+    match auth_info(session) {
+        Ok(auth) => {
+            readiness.insert("auth_readable".to_string(), Value::Bool(true));
+            readiness.insert(
+                "owner_write_configured".to_string(),
+                Value::Bool(auth.configured),
+            );
+        }
+        Err(error) => {
+            readiness.insert("auth_readable".to_string(), Value::Bool(false));
+            readiness.insert("owner_write_configured".to_string(), Value::Bool(false));
+            errors.insert(
+                "auth_readable".to_string(),
+                Value::String(format!("{error:#}")),
+            );
+        }
+    }
+    match view(session, "storage_info", vec![]) {
+        Ok(storage) => {
+            let initialized = storage
+                .get("page_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0)
+                > 0;
+            readiness.insert("storage_initialized".to_string(), Value::Bool(initialized));
+        }
+        Err(error) => {
+            readiness.insert("storage_initialized".to_string(), Value::Bool(false));
+            errors.insert(
+                "storage_initialized".to_string(),
+                Value::String(format!("{error:#}")),
+            );
+        }
+    }
+    match query_typed(session, "select sqlite_version() as sqlite_version;") {
+        Ok(result) => {
+            readiness.insert("sqlite_ready".to_string(), Value::Bool(true));
+            readiness.insert("query_ready".to_string(), Value::Bool(true));
+            readiness.insert(
+                "sqlite_version".to_string(),
+                first_result_cell(&result)
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+        }
+        Err(error) => {
+            readiness.insert("sqlite_ready".to_string(), Value::Bool(false));
+            readiness.insert("query_ready".to_string(), Value::Bool(false));
+            errors.insert(
+                "sqlite_ready".to_string(),
+                Value::String(format!("{error:#}")),
+            );
+        }
+    }
+    let ready = [
+        "circle_reachable",
+        "auth_readable",
+        "sqlite_ready",
+        "query_ready",
+    ]
+    .into_iter()
+    .all(|key| readiness.get(key).and_then(Value::as_bool) == Some(true));
+
+    json!({
+        "checked": true,
+        "ready": ready,
+        "items": readiness,
+        "errors": errors,
+    })
 }
 
 fn shell_quote(value: &str) -> String {
@@ -3109,10 +3469,11 @@ fn commands_json() -> Value {
                 "json": false,
             },
             {
-                "command": "octra-sqlite new DATABASE [SQL]",
-                "purpose": "create a Circle-backed SQLite database and optionally initialize it",
+                "command": "octra-sqlite new [DATABASE] [SQL]",
+                "purpose": "create a Circle-backed SQLite database; prompts when DATABASE is omitted in a terminal",
                 "writes": true,
-                "json": false,
+                "json": true,
+                "envelope": "new",
             },
             {
                 "command": "octra-sqlite quickstart DATABASE --sample NAME",
@@ -3237,6 +3598,7 @@ fn commands_json() -> Value {
         ],
         "json_envelopes": [
             "query",
+            "new",
             "write",
             "write_script",
             "restore",
@@ -4427,7 +4789,7 @@ COMMIT;",
         .unwrap();
         match cli.command {
             Commands::New(args) => {
-                assert_eq!(args.name, "my-db");
+                assert_eq!(args.name.as_deref(), Some("my-db"));
                 assert_eq!(
                     args.sql_args,
                     vec![
@@ -4570,11 +4932,71 @@ COMMIT;",
         assert!(commands["json_envelopes"]
             .as_array()
             .unwrap()
-            .contains(&json!("commands")));
+            .contains(&json!("new")));
         assert_eq!(
             commands["discovery"]["limits"],
             "octra-sqlite limits DATABASE --json"
         );
+    }
+
+    #[test]
+    fn new_manifest_uses_database_ontology() {
+        let args = NewArgs {
+            name: Some("art".to_string()),
+            build: false,
+            wasm: None,
+            create_ou: "200000".to_string(),
+            rpc: None,
+            network: Some("devnet".to_string()),
+            no_wait: false,
+            no_name: false,
+            default: false,
+            sql: None,
+            read: Some(PathBuf::from("schema.sql")),
+            manifest: Some(PathBuf::from("art.json")),
+            json: true,
+            sample: None,
+            wallet: None,
+            caller: None,
+            private_key_b64: None,
+            public_key_b64: None,
+            sql_args: Vec::new(),
+        };
+        let created = CreatedCircle {
+            circle: "octABC".to_string(),
+            owner: "octOwner".to_string(),
+            code_hash: "hash".to_string(),
+            code_bytes: 123,
+            auth_patch: AuthPatch {
+                owner_pubkey_hex: "ownerpub".to_string(),
+                db_id_hex: "dbid".to_string(),
+                owner_pubkey_offset: 1,
+                db_id_offset: 2,
+            },
+            tx_hash: Some("tx".to_string()),
+            confirmation: None,
+        };
+        let init_sql = vec!["create table artist(id integer);".to_string()];
+        let initializer_results = Vec::new();
+        let manifest = new_manifest_json(NewManifestInput {
+            args: &args,
+            name: "art",
+            target_uri: "oct://devnet/octABC",
+            network: "devnet",
+            created: &created,
+            owner: "octOwner",
+            rpc: "https://devnet.octrascan.io/rpc",
+            init_sql: &init_sql,
+            initializer_results: &initializer_results,
+            readiness: json!({"checked": true, "ready": true}),
+        });
+        assert_eq!(manifest["manifest_version"], "octra-sqlite.database.v1");
+        assert_eq!(manifest["database"]["name"], "art");
+        assert_eq!(manifest["database"]["uri"], "oct://devnet/octABC");
+        assert_eq!(manifest["owner"]["write_auth"], "OSW1 owner write intent");
+        assert_eq!(manifest["program"]["runtime"], "wasm_v1");
+        assert_eq!(manifest["initializer"]["schema_file"], "schema.sql");
+        assert!(manifest.get("app").is_none());
     }
 
     #[test]
@@ -4583,8 +5005,31 @@ COMMIT;",
             Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--sample", "remilia"]).unwrap();
         match cli.command {
             Commands::New(args) => {
-                assert_eq!(args.name, "my-db");
+                assert_eq!(args.name.as_deref(), Some("my-db"));
                 assert_eq!(args.sample.as_deref(), Some("remilia"));
+            }
+            _ => panic!("expected new command"),
+        }
+    }
+
+    #[test]
+    fn new_accepts_wizard_mode_json_schema_and_manifest() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "new",
+            "--schema",
+            "schema.sql",
+            "--manifest",
+            "database.json",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::New(args) => {
+                assert!(args.name.is_none());
+                assert_eq!(args.read.as_deref(), Some(Path::new("schema.sql")));
+                assert_eq!(args.manifest.as_deref(), Some(Path::new("database.json")));
+                assert!(args.json);
             }
             _ => panic!("expected new command"),
         }

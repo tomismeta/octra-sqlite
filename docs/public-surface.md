@@ -19,6 +19,7 @@ The reference first-run path is:
 ```sh
 octra-sqlite setup
 octra-sqlite status
+octra-sqlite new
 octra-sqlite new art "create table artist(id integer primary key, name text not null);"
 octra-sqlite art ".tables"
 octra-sqlite art "select * from artist;"
@@ -28,7 +29,9 @@ The reference configurable database creation path is:
 
 ```sh
 octra-sqlite quickstart my_collections --sample remilia
+octra-sqlite new
 octra-sqlite new DATABASE
+octra-sqlite new DATABASE --schema schema.sql --manifest database.json --json
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
 octra-sqlite restore DATABASE --file dump.sql

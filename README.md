@@ -34,6 +34,12 @@ cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.3.3 --loc
 Create a new Circle-backed SQLite database:
 
 ```sh
+octra-sqlite new
+```
+
+Or create one directly:
+
+```sh
 octra-sqlite new art "
 create table artist(
   id integer primary key,
@@ -73,6 +79,8 @@ octra-sqlite init --wallet ./wallet.json
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |
+| `octra-sqlite new` | Open the guided database creation flow. |
+| `octra-sqlite new DATABASE --schema FILE --manifest FILE --json` | Create from a SQL file and emit machine-readable output. |
 | `octra-sqlite quickstart DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
 | `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
 | `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
