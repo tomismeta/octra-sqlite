@@ -1652,6 +1652,7 @@ fn import_wallet_from_generator(config: &mut Config) -> Result<PathBuf> {
         return Ok(output);
     }
     config.wallet = Some(source.to_string_lossy().to_string());
+    restrict_wallet_permissions_if_possible(&source)?;
     write_config(config)?;
     print_field("wallet", source.display().to_string());
     print_field("address", &material.address);
@@ -1955,6 +1956,15 @@ fn warn_wallet_permissions_if_needed(path: &Path) {
         strong("warning:"),
         path.display()
     );
+}
+
+fn restrict_wallet_permissions_if_possible(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("restricting wallet permissions for {}", path.display()))?;
+    #[cfg(not(unix))]
+    warn_wallet_permissions_if_needed(path);
+    Ok(())
 }
 
 fn report_wallet_permissions(report: &mut StatusReport, path: &Path) {
@@ -5689,6 +5699,21 @@ COMMIT;",
             }
             _ => panic!("expected wallet import command"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn wallet_permission_restriction_sets_owner_only_mode() {
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-wallet-perms-test-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        restrict_wallet_permissions_if_possible(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(mode, 0o600);
     }
 
     #[test]
