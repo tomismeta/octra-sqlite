@@ -1001,43 +1001,35 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
     args.name = Some(name.clone());
 
     if args.network.is_none() {
-        let default_network = config.network.as_deref().unwrap_or("devnet");
-        args.network = Some(prompt_default("Network", default_network)?);
+        args.network = Some(
+            config
+                .network
+                .clone()
+                .unwrap_or_else(|| "devnet".to_string()),
+        );
     }
     args.read_mode = prompt_read_mode(args.read_mode)?;
     if args.wallet.is_none() {
-        let wallet_default = config
+        args.wallet = config
             .wallet
             .as_ref()
             .map(PathBuf::from)
-            .or_else(discover_wallet_path)
-            .unwrap_or_else(|| PathBuf::from("./wallet.json"));
-        args.wallet = Some(prompt_path("Wallet path", &wallet_default)?);
-    }
-    if args.read.is_none()
-        && args.sql.is_none()
-        && args.sample.is_none()
-        && args.sql_args.is_empty()
-    {
-        if let Some(schema) = prompt_optional("Schema file", None)? {
-            args.read = Some(PathBuf::from(schema));
-        }
+            .or_else(discover_wallet_path);
     }
     if !args.no_name && !args.default {
-        let default_choice = config.default_database.is_none();
-        args.default = prompt_yes_no("Make default database?", default_choice)?;
+        args.default = true;
     }
-    if args.manifest.is_none() && prompt_yes_no("Save deployment manifest?", true)? {
-        let default_manifest = format!("{name}.octra-sqlite.json");
-        args.manifest = Some(PathBuf::from(prompt_default(
-            "Manifest path",
-            &default_manifest,
-        )?));
+    if args.manifest.is_none() {
+        args.manifest = Some(default_new_manifest_path(&name));
     }
     if !prompt_yes_no("Create database?", true)? {
         bail!("cancelled");
     }
     Ok(args)
+}
+
+fn default_new_manifest_path(name: &str) -> PathBuf {
+    PathBuf::from(format!("{name}.octra-sqlite.json"))
 }
 
 fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {

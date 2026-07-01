@@ -58,9 +58,10 @@ octra-sqlite new
 octra-sqlite art
 ```
 
-The guided flow asks for the database name, network, read mode, wallet, schema,
-manifest path, and confirmation. Read mode defaults to `sealed`; choose
-`public` only for data intended to be publicly queryable.
+The guided flow asks for the database name, read mode, and confirmation. It
+uses your configured network and detected wallet, makes the new database the
+default, and writes `DATABASE.octra-sqlite.json`. Read mode defaults to
+`sealed`; choose `public` only for data intended to be publicly queryable.
 
 ## Interfaces
 
