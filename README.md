@@ -7,8 +7,9 @@
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
-The Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls with your
-wallet, and gives you a SQLite-shaped interface over live Circle state.
+The Rust CLI deploys the bundled Circle WASM, signs Octra RPC calls when a
+wallet is needed, and gives you a SQLite-shaped interface over live Circle
+state.
 
 ## Cold Start
 
@@ -26,6 +27,12 @@ Read a public database immediately, no wallet required:
 ```sh
 octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public' \
   "select id, name from artist order by id;"
+```
+
+Or open it in the interactive `sqlite>` shell:
+
+```sh
+octra-sqlite open 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public'
 ```
 
 Create a database when you have a funded Octra wallet:
@@ -98,6 +105,9 @@ let rows = db.query("select * from artist order by name;")?;
 
 ## CLI Commands
 
+In commands below, `DATABASE` can be a saved database name or a raw `oct://`
+URI.
+
 | Command | Purpose |
 | --- | --- |
 | `octra-sqlite install [--json]` | Show recommended install and first-run commands. |
@@ -112,8 +122,8 @@ let rows = db.query("select * from artist order by name;")?;
 | `octra-sqlite new DATABASE --schema FILE --manifest FILE --json` | Create from a SQL file and emit machine-readable output. |
 | `octra-sqlite new DATABASE --sample NAME` | Create from an explicit built-in sample. |
 | `octra-sqlite new DATABASE --read-mode public` | Create a public-read database; writes remain owner-signed. |
-| `octra-sqlite DATABASE "SQL"` | Run SQL against a saved database. |
-| `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file against a saved database. |
+| `octra-sqlite DATABASE "SQL"` | Run SQL. |
+| `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file. |
 | `octra-sqlite DATABASE --trace-rpc-json trace.jsonl "SQL"` | Trace read JSON-RPC envelopes. |
 | `octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary "SQL"` | Trace compact read proof metadata. |
 | `octra-sqlite DATABASE --read-only "SQL"` | Refuse to submit writes from this command. |
@@ -152,7 +162,7 @@ octra-sqlite 'oct://devnet/oct...?read_mode=public' "select * from artist;"
 
 ## `sqlite>` Shell
 
-Run `octra-sqlite DATABASE` to enter the shell.
+Run `octra-sqlite DATABASE` or `octra-sqlite open DATABASE` to enter the shell.
 
 ```sql
 sqlite> select id, name
