@@ -1,3 +1,5 @@
+#[cfg(feature = "cli")]
+pub(crate) mod base58;
 pub mod error;
 pub mod osr1;
 pub mod osw1;

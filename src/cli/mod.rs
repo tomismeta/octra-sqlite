@@ -12,12 +12,14 @@ use crate::{
             build_session as client_build_session, discover_wallet_path, exec_sql, next_nonce,
             program_info, query_typed, query_typed_traced,
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
-            wait_for_transaction, wallet_caller, Session,
+            wait_for_transaction, wallet_caller, wallet_file_material,
+            wallet_material_from_private_key, Session, WalletMaterial,
         },
         write_config, AuthInfo, ClientError, ClientErrorKind, Config, DatabaseMetadata,
         RpcTraceMode, SessionOptions,
     },
     protocol::{
+        base58,
         target::{parse_database_target, DatabaseTarget as Target},
         tx::Tx,
     },
@@ -37,13 +39,14 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Read, Write};
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
@@ -165,6 +168,10 @@ enum DatabaseCommand {
 enum WalletCommand {
     /// Show wallet path, caller, permissions, and target status.
     Status(WalletStatusArgs),
+    /// Point config at an existing plaintext wallet JSON file.
+    Attach(WalletAttachArgs),
+    /// Import a private key into a normalized wallet JSON file.
+    Import(WalletImportArgs),
 }
 
 #[derive(Args, Clone)]
@@ -473,6 +480,38 @@ struct ConfigArgs {
 struct WalletStatusArgs {
     #[command(flatten)]
     target: TargetArgs,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct WalletAttachArgs {
+    /// Existing plaintext wallet JSON path.
+    #[arg(value_name = "PATH")]
+    path: PathBuf,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct WalletImportArgs {
+    /// Plain wallet JSON to normalize, or omit with --stdin to read a private key.
+    #[arg(value_name = "PATH")]
+    source: Option<PathBuf>,
+    /// Read a private key from stdin.
+    #[arg(long)]
+    stdin: bool,
+    /// Destination wallet JSON path. Defaults to the configured wallet path or ~/.octra/wallet.json.
+    #[arg(long, value_name = "PATH")]
+    output: Option<PathBuf>,
+    /// Do not make the imported wallet active in config.
+    #[arg(long)]
+    no_use: bool,
+    /// Overwrite the destination wallet file if it exists.
+    #[arg(long)]
+    force: bool,
     /// Print a stable JSON summary.
     #[arg(long)]
     json: bool,
@@ -1601,7 +1640,97 @@ fn cmd_config(args: ConfigArgs) -> Result<()> {
 fn cmd_wallet(command: WalletCommand) -> Result<()> {
     match command {
         WalletCommand::Status(args) => cmd_wallet_status(args),
+        WalletCommand::Attach(args) => cmd_wallet_attach(args),
+        WalletCommand::Import(args) => cmd_wallet_import(args),
     }
+}
+
+fn cmd_wallet_attach(args: WalletAttachArgs) -> Result<()> {
+    reject_encrypted_oct_wallet(&args.path)?;
+    let path = canonical_existing_wallet_path(&args.path)?;
+    let material = wallet_file_material(&path)?;
+    let mut config = load_config().unwrap_or_default();
+    config.wallet = Some(path.to_string_lossy().to_string());
+    write_config(&config)?;
+    let config_path = config_path()?;
+    if args.json {
+        print_json(&json!({
+            "ok": true,
+            "type": "wallet_attach",
+            "schema": "octra-sqlite.cli.v1",
+            "wallet": {
+                "path": path.display().to_string(),
+                "address": material.address,
+            },
+            "config": {
+                "path": config_path.display().to_string(),
+                "active_wallet": path.display().to_string(),
+            },
+        }))?;
+        return Ok(());
+    }
+    print_field("wallet", path.display().to_string());
+    print_field("address", &material.address);
+    print_field("wrote", config_path.display().to_string());
+    print_field("next", "octra-sqlite wallet status");
+    Ok(())
+}
+
+fn cmd_wallet_import(args: WalletImportArgs) -> Result<()> {
+    let mut config = load_config().unwrap_or_default();
+    let output = args
+        .output
+        .clone()
+        .or_else(|| config.wallet.as_ref().map(PathBuf::from))
+        .unwrap_or(default_wallet_output_path()?);
+    let output = absolute_wallet_output_path(&output)?;
+    let material = if args.stdin {
+        if args.source.is_some() {
+            bail!("wallet import accepts either PATH or --stdin, not both");
+        }
+        let mut private_key =
+            read_stdin_secret("wallet import --stdin requires a private key on stdin")?;
+        let material = wallet_material_from_private_key(&private_key, None)?;
+        private_key.zeroize();
+        material
+    } else if let Some(source) = args.source.as_deref() {
+        reject_encrypted_oct_wallet(source)?;
+        let source = canonical_existing_wallet_path(source)?;
+        wallet_file_material(&source)?
+    } else {
+        bail!("wallet import requires a plaintext wallet PATH or --stdin");
+    };
+    write_wallet_json(&output, &material, args.force)?;
+    if !args.no_use {
+        config.wallet = Some(output.to_string_lossy().to_string());
+        write_config(&config)?;
+    }
+    let config_path = config_path()?;
+    if args.json {
+        print_json(&json!({
+            "ok": true,
+            "type": "wallet_import",
+            "schema": "octra-sqlite.cli.v1",
+            "wallet": {
+                "path": output.display().to_string(),
+                "address": material.address,
+            },
+            "config": {
+                "path": config_path.display().to_string(),
+                "active_wallet": if args.no_use { Value::Null } else { Value::String(output.display().to_string()) },
+            },
+        }))?;
+        return Ok(());
+    }
+    print_field("wallet", output.display().to_string());
+    print_field("address", &material.address);
+    if args.no_use {
+        print_field("config", "unchanged");
+    } else {
+        print_field("wrote", config_path.display().to_string());
+    }
+    print_field("next", "octra-sqlite wallet status");
+    Ok(())
 }
 
 fn cmd_wallet_status(args: WalletStatusArgs) -> Result<()> {
@@ -1674,6 +1803,73 @@ fn cmd_wallet_status(args: WalletStatusArgs) -> Result<()> {
         ),
     }
     report.finish("wallet")
+}
+
+fn reject_encrypted_oct_wallet(path: &Path) -> Result<()> {
+    if path.extension().and_then(|ext| ext.to_str()) == Some("oct") {
+        bail!(
+            "webcli .oct wallets are encrypted and need PIN-based decryption; export/import the private key with `octra-sqlite wallet import --stdin` or attach a plaintext wallet JSON"
+        );
+    }
+    Ok(())
+}
+
+fn canonical_existing_wallet_path(path: &Path) -> Result<PathBuf> {
+    fs::canonicalize(path).with_context(|| format!("wallet not found at {}", path.display()))
+}
+
+fn default_wallet_output_path() -> Result<PathBuf> {
+    Ok(config_path()?
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("wallet.json"))
+}
+
+fn absolute_wallet_output_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    Ok(env::current_dir()?.join(path))
+}
+
+fn read_stdin_secret(error: &str) -> Result<String> {
+    if io::stdin().is_terminal() {
+        bail!("{error}");
+    }
+    let mut secret = String::new();
+    io::stdin().read_to_string(&mut secret)?;
+    Ok(secret)
+}
+
+fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let payload = json!({
+        "address": &material.address,
+        "private_key_b64": &material.private_key_b64,
+        "public_key_b64": &material.public_key_b64,
+    });
+    let mut text = serde_json::to_string_pretty(&payload)? + "\n";
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if force {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("writing wallet {}", path.display()))?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    text.zeroize();
+    #[cfg(unix)]
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
 }
 
 fn report_wallet_permissions(report: &mut StatusReport, path: &Path) {
@@ -2385,7 +2581,7 @@ fn circle_id_of_deploy(deployer: &str, nonce: u64, payload_json: &str) -> String
         "octra:circle_deploy_id:v1",
         &[deployer.as_bytes(), &nonce_bytes, payload_hash.as_bytes()],
     );
-    let base58 = base58_encode(&seed);
+    let base58 = base58::encode(&seed);
     let part = if base58.len() >= 44 {
         base58[..44].to_string()
     } else if base58.is_empty() {
@@ -2413,40 +2609,6 @@ fn h256_raw_frame(tag: &str, parts: &[&[u8]]) -> [u8; 32] {
 
 fn h256_hex_frame(tag: &str, parts: &[&[u8]]) -> String {
     hex::encode(h256_raw_frame(tag, parts))
-}
-
-fn base58_encode(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    if bytes.iter().all(|byte| *byte == 0) {
-        return "1".repeat(bytes.len());
-    }
-
-    let mut digits = vec![0u8];
-    for byte in bytes {
-        let mut carry = u32::from(*byte);
-        for digit in &mut digits {
-            let value = u32::from(*digit) * 256 + carry;
-            *digit = (value % 58) as u8;
-            carry = value / 58;
-        }
-        while carry > 0 {
-            digits.push((carry % 58) as u8);
-            carry /= 58;
-        }
-    }
-
-    let mut encoded = String::new();
-    for byte in bytes {
-        if *byte == 0 {
-            encoded.push('1');
-        } else {
-            break;
-        }
-    }
-    for digit in digits.iter().rev() {
-        encoded.push(ALPHABET[usize::from(*digit)] as char);
-    }
-    encoded
 }
 
 fn cmd_database(command: DatabaseCommand) -> Result<()> {
@@ -3614,6 +3776,20 @@ fn commands_json() -> Value {
                 "envelope": "wallet_status",
             },
             {
+                "command": "octra-sqlite wallet attach PATH",
+                "purpose": "make an existing plaintext wallet JSON the active wallet",
+                "writes": "local_config",
+                "json": true,
+                "envelope": "wallet_attach",
+            },
+            {
+                "command": "octra-sqlite wallet import PATH|--stdin",
+                "purpose": "normalize a plaintext wallet or stdin private key into a local wallet JSON",
+                "writes": "local_file",
+                "json": true,
+                "envelope": "wallet_import",
+            },
+            {
                 "command": "octra-sqlite deploy [OPTIONS]",
                 "purpose": "update an existing Circle with Circle WASM",
                 "writes": true,
@@ -3637,6 +3813,8 @@ fn commands_json() -> Value {
             "commands",
             "status",
             "wallet_status",
+            "wallet_attach",
+            "wallet_import",
             "verify",
             "database_list",
             "database_info",
@@ -5193,6 +5371,51 @@ COMMIT;",
     }
 
     #[test]
+    fn wallet_attach_accepts_path_and_json() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "wallet",
+            "attach",
+            "./wallet.json",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Wallet {
+                command: WalletCommand::Attach(args),
+            } => {
+                assert_eq!(args.path, PathBuf::from("./wallet.json"));
+                assert!(args.json);
+            }
+            _ => panic!("expected wallet attach command"),
+        }
+    }
+
+    #[test]
+    fn wallet_import_accepts_stdin_output_and_json() {
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "wallet",
+            "import",
+            "--stdin",
+            "--output",
+            "./wallet.json",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Wallet {
+                command: WalletCommand::Import(args),
+            } => {
+                assert!(args.stdin);
+                assert_eq!(args.output.as_deref(), Some(Path::new("./wallet.json")));
+                assert!(args.json);
+            }
+            _ => panic!("expected wallet import command"),
+        }
+    }
+
+    #[test]
     fn wallet_is_not_treated_as_database_shorthand() {
         let args = normalize_args(vec![
             "octra-sqlite".to_string(),
@@ -5236,13 +5459,5 @@ COMMIT;",
         }));
         assert_eq!(redacted["message"], "{\"code_b64\":\"<redacted>\"}");
         assert_eq!(redacted["status"], "confirmed");
-    }
-
-    #[test]
-    fn base58_matches_known_vectors() {
-        assert_eq!(base58_encode(&[0]), "1");
-        assert_eq!(base58_encode(&[0, 0]), "11");
-        assert_eq!(base58_encode(&[1]), "2");
-        assert_eq!(base58_encode(b"hello world"), "StV1DL6CwTryKyV");
     }
 }

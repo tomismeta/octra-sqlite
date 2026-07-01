@@ -32,4 +32,8 @@ pub mod low_level {
         build_control_session, build_session, resolve_wallet_path, Session, SessionOptions,
     };
     pub use super::wallet::{discover_wallet_path, wallet_caller};
+    #[cfg(feature = "cli")]
+    pub(crate) use super::wallet::{
+        wallet_file_material, wallet_material_from_private_key, WalletMaterial,
+    };
 }

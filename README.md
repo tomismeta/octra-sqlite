@@ -76,6 +76,8 @@ octra-sqlite init --wallet ./wallet.json
 | --- | --- |
 | `octra-sqlite setup` | Configure wallet, network, RPC, and defaults. |
 | `octra-sqlite init [OPTIONS]` | Scriptable setup. |
+| `octra-sqlite wallet attach PATH` | Use an existing plaintext wallet JSON. |
+| `octra-sqlite wallet import --stdin` | Import a private key into a local wallet JSON. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, and SQLite health. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
 | `octra-sqlite new DATABASE [SQL]` | Create a new Circle-backed SQLite database. |

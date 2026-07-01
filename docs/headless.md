@@ -18,6 +18,23 @@ The preferred wallet file shape is:
 `public_key_b64` is optional, but when supplied the CLI verifies that it matches
 the private key.
 
+Attach an existing plaintext wallet JSON:
+
+```sh
+octra-sqlite wallet attach /secure/path/wallet.json
+```
+
+Or import a private key without putting it in shell history:
+
+```sh
+printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output /secure/path/wallet.json
+```
+
+The import command strips whitespace, derives the Octra address, writes a
+normalized wallet JSON, and stores the file with restrictive permissions. Webcli
+`.oct` files are encrypted with a PIN; direct encrypted `.oct` import is not
+enabled by default in this release.
+
 Lock down the file before use:
 
 ```sh

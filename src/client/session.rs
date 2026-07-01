@@ -1,6 +1,8 @@
 use super::config::{load_config, Config};
 use super::error::{ClientError, ClientErrorKind, Result};
-use super::wallet::{discover_wallet_path, load_wallet};
+use super::wallet::{
+    discover_wallet_path, load_wallet, normalized_public_key_b64, signing_key_from_text,
+};
 use crate::protocol::target::{parse_database_target, DatabaseTarget};
 use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signer, SigningKey};
@@ -292,67 +294,6 @@ fn choose_session_rpc(
     wallet_rpc: Option<String>,
 ) -> Option<String> {
     first_string([explicit_rpc, target_rpc, config_rpc, wallet_rpc])
-}
-
-fn signing_key_from_text(text: &str) -> Result<SigningKey> {
-    let cleaned = text.trim();
-    let mut raw = decode_key_text(cleaned).ok_or_else(|| {
-        ClientError::with_kind(ClientErrorKind::Wallet, "private key must be base64 or hex")
-    })?;
-    if raw.len() != 32 && raw.len() != 64 {
-        raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
-            "private key must decode to a 32-byte seed or 64-byte keypair",
-        ));
-    }
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&raw[..32]);
-    let signing_key = SigningKey::from_bytes(&seed);
-    if raw.len() == 64 && raw[32..] != signing_key.verifying_key().to_bytes() {
-        seed.zeroize();
-        raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
-            "64-byte private key public half does not match seed",
-        ));
-    }
-    seed.zeroize();
-    raw.zeroize();
-    Ok(signing_key)
-}
-
-fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> {
-    let cleaned = text.trim();
-    let mut raw = decode_key_text(cleaned).ok_or_else(|| {
-        ClientError::with_kind(ClientErrorKind::Wallet, "public key must be base64 or hex")
-    })?;
-    if raw.len() != 32 {
-        raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
-            "public key must decode to 32 bytes",
-        ));
-    }
-    if raw.as_slice() != expected {
-        raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
-            "wallet public key does not match private key",
-        ));
-    }
-    let public_key = general_purpose::STANDARD.encode(&raw);
-    raw.zeroize();
-    Ok(public_key)
-}
-
-fn decode_key_text(cleaned: &str) -> Option<Vec<u8>> {
-    let looks_hex =
-        cleaned.len().is_multiple_of(2) && cleaned.as_bytes().iter().all(|b| b.is_ascii_hexdigit());
-    if looks_hex {
-        return hex::decode(cleaned).ok();
-    }
-    general_purpose::STANDARD.decode(cleaned).ok()
 }
 
 #[cfg(test)]
