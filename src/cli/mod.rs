@@ -7,16 +7,17 @@ mod shell;
 use crate::{
     client::{
         config_path, load_config,
-        low_level::{
+        raw::{
             auth_info, build_control_session as client_build_control_session,
             build_session as client_build_session, circle_info, discover_wallet_path, exec_sql,
             next_nonce, program_info, query_typed, query_typed_traced,
+            resolve_database_target as client_resolve_database_target,
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
             wait_for_transaction, wallet_caller, wallet_file_material,
             wallet_material_from_private_key, Session, WalletMaterial,
         },
-        write_config, AuthInfo, ClientError, ClientErrorKind, Config, DatabaseMetadata,
-        RpcTraceMode, SessionOptions,
+        write_config, AuthInfo, ClientOptions, Config, DatabaseMetadata, Error, ErrorKind,
+        RpcTraceMode,
     },
     protocol::{
         base58,
@@ -50,7 +51,7 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.4.0.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.5.0.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
@@ -125,7 +126,7 @@ enum Commands {
 Examples:
   octra-sqlite database list
   octra-sqlite database info art
-  octra-sqlite database use art
+  octra-sqlite database default art
   octra-sqlite database set art oct://devnet/oct...
 ")]
 enum DatabaseCommand {
@@ -151,7 +152,7 @@ enum DatabaseCommand {
         database: String,
     },
     /// Set the default database opened when no database is supplied.
-    Use { name: String },
+    Default { name: String },
     /// Remove a saved database name.
     Remove { name: String },
 }
@@ -1413,7 +1414,7 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
             } else {
                 report.warn(
                     "default database",
-                    "not set; run octra-sqlite database use DATABASE or pass a database argument",
+                    "not set; run octra-sqlite database default DATABASE or pass a database argument",
                 );
             }
 
@@ -2791,7 +2792,7 @@ fn cmd_database(command: DatabaseCommand) -> Result<()> {
             print_field("database", format!("{name} -> {database}"));
             print_field("open", format!("octra-sqlite {name}"));
         }
-        DatabaseCommand::Use { name } => {
+        DatabaseCommand::Default { name } => {
             if !config.databases.contains_key(&name) {
                 bail!("unknown database {name}; run octra-sqlite database list");
             }
@@ -3948,7 +3949,7 @@ fn commands_json() -> Value {
                 "json": false,
             },
             {
-                "command": "octra-sqlite database use NAME",
+                "command": "octra-sqlite database default NAME",
                 "purpose": "set the default local database",
                 "writes": "local_config",
                 "json": false,
@@ -4039,8 +4040,8 @@ pub(super) fn format_schema_result(result: &Value) -> Result<String> {
     Ok(out)
 }
 
-fn session_options(args: &TargetArgs) -> SessionOptions {
-    SessionOptions {
+fn session_options(args: &TargetArgs) -> ClientOptions {
+    ClientOptions {
         target: args.target.clone(),
         wallet: args.wallet.clone(),
         rpc: args.rpc.clone(),
@@ -4155,12 +4156,7 @@ fn prompt_yes_no(label: &str, default: bool) -> Result<bool> {
 }
 
 fn resolve_target(value: &str, config: &Config) -> Result<Target> {
-    if let Some(database) = config.databases.get(value) {
-        let mut target = resolve_target(database, config)?;
-        apply_target_metadata(value, config, &mut target);
-        return Ok(target);
-    }
-    parse_target_uri(value, config)
+    Ok(client_resolve_database_target(value, config)?)
 }
 
 fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
@@ -4189,8 +4185,8 @@ fn now_timestamp() -> f64 {
     duration.as_secs() as f64 + f64::from(duration.subsec_millis()) / 1000.0
 }
 
-fn sqlite_requires_exec(error: &ClientError) -> bool {
-    error.kind() == ClientErrorKind::Rpc
+fn sqlite_requires_exec(error: &Error) -> bool {
+    error.kind() == ErrorKind::Rpc
         && error
             .to_string()
             .starts_with("database error (sqlite_readonly_required)")
@@ -4837,6 +4833,21 @@ mod tests {
     }
 
     #[test]
+    fn database_default_is_the_public_default_command() {
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "database", "default", "organization"]).unwrap();
+        match cli.command {
+            Commands::Database { command } => match command {
+                DatabaseCommand::Default { name } => {
+                    assert_eq!(name, "organization");
+                }
+                _ => panic!("expected database default command"),
+            },
+            _ => panic!("expected database command"),
+        }
+    }
+
+    #[test]
     fn status_and_config_are_public_commands() {
         let status = Cli::try_parse_from(["octra-sqlite", "status", "--skip-network"]).unwrap();
         match status.command {
@@ -4904,20 +4915,20 @@ mod tests {
 
     #[test]
     fn sqlite_readonly_required_routes_to_signed_exec() {
-        let error = ClientError::with_kind(
-            ClientErrorKind::Rpc,
+        let error = Error::with_kind(
+            ErrorKind::Rpc,
             "database error (sqlite_readonly_required): use exec for state-changing SQL",
         );
         assert!(sqlite_requires_exec(&error));
 
-        let error = ClientError::with_kind(
-            ClientErrorKind::Rpc,
+        let error = Error::with_kind(
+            ErrorKind::Rpc,
             "database error (sqlite_prepare_failed): no such table: missing",
         );
         assert!(!sqlite_requires_exec(&error));
 
-        let error = ClientError::with_kind(
-            ClientErrorKind::Rpc,
+        let error = Error::with_kind(
+            ErrorKind::Rpc,
             "database error (sqlite_prepare_failed): detail mentions sqlite_readonly_required",
         );
         assert!(!sqlite_requires_exec(&error));
@@ -5359,6 +5370,12 @@ COMMIT;",
                         .unwrap()
                         .contains(&json!("query"))
             }));
+        assert!(commands["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| command.get("command").and_then(Value::as_str)
+                == Some("octra-sqlite database default NAME")));
         assert!(commands["json_envelopes"]
             .as_array()
             .unwrap()

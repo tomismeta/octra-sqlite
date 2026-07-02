@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.87"
 license = "MIT"
@@ -8,18 +8,21 @@ description = "Real SQLite inside an Octra Circle, with a Rust CLI and client li
 repository = "https://github.com/tomismeta/octra-sqlite"
 homepage = "https://github.com/tomismeta/octra-sqlite"
 readme = "README.md"
-keywords = ["octra", "sqlite", "wasm", "blockchain"]
+keywords = ["octra", "sqlite", "wasm", "blockchain", "database"]
 categories = ["command-line-utilities", "database"]
 include = [
     "/Cargo.lock",
     "/Cargo.toml",
+    "/CHANGELOG.md",
     "/LICENSE",
     "/README.md",
+    "/RELEASE.md",
     "/circle/source/octra_sqlite_circle.c",
     "/circle/wasm/octra_sqlite_circle.wasm",
     "/config/defaults.json",
     "/docs/headless.md",
     "/docs/json-output.md",
+    "/docs/library-boundary.md",
     "/docs/operations.md",
     "/docs/public-surface.md",
     "/docs/spec/**",
@@ -32,9 +35,16 @@ include = [
     "/examples/remilia-read-api/main.rs",
     "/release/README.md",
     "/release/*.json",
+    "/scripts/audit-wasm.sh",
+    "/scripts/build-wasm.sh",
+    "/scripts/install-cli.sh",
     "/src/**",
     "/tests/**",
 ]
+
+[package.metadata.docs.rs]
+no-default-features = true
+features = ["http"]
 
 [features]
 default = ["cli", "http"]

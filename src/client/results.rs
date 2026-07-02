@@ -1,10 +1,14 @@
-use super::error::{ClientError, ClientErrorKind, Result};
+use super::error::{Error, ErrorKind, Result};
 use serde_json::Value;
 
+/// Result of read SQL.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryResult {
+    /// Column names returned by SQLite.
     pub columns: Vec<String>,
+    /// Rows as JSON values in column order.
     pub rows: Vec<Vec<Value>>,
+    /// Number of returned rows.
     pub row_count: usize,
     raw: Value,
 }
@@ -14,32 +18,22 @@ impl QueryResult {
         let columns = value
             .get("columns")
             .and_then(Value::as_array)
-            .ok_or_else(|| {
-                ClientError::with_kind(ClientErrorKind::Decode, "query result missing columns")
-            })?
+            .ok_or_else(|| Error::with_kind(ErrorKind::Decode, "query result missing columns"))?
             .iter()
             .map(|column| {
                 column.as_str().map(str::to_string).ok_or_else(|| {
-                    ClientError::with_kind(
-                        ClientErrorKind::Decode,
-                        "query result column must be a string",
-                    )
+                    Error::with_kind(ErrorKind::Decode, "query result column must be a string")
                 })
             })
             .collect::<Result<Vec<_>>>()?;
         let rows = value
             .get("rows")
             .and_then(Value::as_array)
-            .ok_or_else(|| {
-                ClientError::with_kind(ClientErrorKind::Decode, "query result missing rows")
-            })?
+            .ok_or_else(|| Error::with_kind(ErrorKind::Decode, "query result missing rows"))?
             .iter()
             .map(|row| {
                 row.as_array().cloned().ok_or_else(|| {
-                    ClientError::with_kind(
-                        ClientErrorKind::Decode,
-                        "query result row must be an array",
-                    )
+                    Error::with_kind(ErrorKind::Decode, "query result row must be an array")
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -49,8 +43,8 @@ impl QueryResult {
             .map(|count| count as usize)
             .unwrap_or(rows.len());
         if row_count != rows.len() {
-            return Err(ClientError::with_kind(
-                ClientErrorKind::Decode,
+            return Err(Error::with_kind(
+                ErrorKind::Decode,
                 format!(
                     "query result row_count {row_count} does not match {} rows",
                     rows.len()
@@ -59,8 +53,8 @@ impl QueryResult {
         }
         for row in &rows {
             if row.len() != columns.len() {
-                return Err(ClientError::with_kind(
-                    ClientErrorKind::Decode,
+                return Err(Error::with_kind(
+                    ErrorKind::Decode,
                     format!(
                         "query result row has {} cells but {} columns",
                         row.len(),
@@ -82,44 +76,54 @@ impl QueryResult {
     }
 }
 
+/// Submitted Octra transaction returned by no-wait write paths.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SubmittedTx {
+pub struct SubmittedTransaction {
+    /// Target Circle ID when known.
     pub circle: Option<String>,
+    /// Submitting wallet address when known.
     pub wallet: Option<String>,
+    /// Transaction hash when the RPC returned one.
     pub tx_hash: Option<String>,
+    /// Raw submit result.
     pub result: Value,
 }
 
-impl SubmittedTx {
+impl SubmittedTransaction {
     pub fn from_value(value: Value) -> Result<Self> {
         Ok(Self {
             circle: string_field(&value, "circle"),
             wallet: string_field(&value, "wallet"),
             tx_hash: string_field(&value, "tx_hash"),
             result: value.get("result").cloned().ok_or_else(|| {
-                ClientError::with_kind(ClientErrorKind::Rpc, "submitted transaction missing result")
+                Error::with_kind(ErrorKind::Rpc, "submitted transaction missing result")
             })?,
         })
     }
 }
 
+/// Result of a write that has been submitted and confirmed.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExecResult {
-    pub submitted: SubmittedTx,
+pub struct ExecuteResult {
+    /// Submitted transaction metadata.
+    pub submitted: SubmittedTransaction,
+    /// Confirmed transaction receipt.
     pub receipt: Value,
 }
 
-impl ExecResult {
+impl ExecuteResult {
     pub fn from_value(value: Value) -> Result<Self> {
-        let submitted = SubmittedTx::from_value(value.clone())?;
-        let receipt = value.get("receipt").cloned().ok_or_else(|| {
-            ClientError::with_kind(ClientErrorKind::Receipt, "exec result missing receipt")
-        })?;
+        let submitted = SubmittedTransaction::from_value(value.clone())?;
+        let receipt = value
+            .get("receipt")
+            .cloned()
+            .ok_or_else(|| Error::with_kind(ErrorKind::Receipt, "exec result missing receipt"))?;
         ensure_receipt_success(&receipt)?;
         Ok(Self { submitted, receipt })
     }
 }
 
+/// Deployed Circle program metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgramInfo {
     pub version: Option<String>,
@@ -145,6 +149,7 @@ impl ProgramInfo {
     }
 }
 
+/// Owner-write authorization metadata exposed by the Circle program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthInfo {
     pub configured: bool,
@@ -159,8 +164,8 @@ pub(super) fn ensure_receipt_success(receipt: &Value) -> Result<()> {
         || receipt.get("error").is_some_and(|error| !error.is_null())
         || sql_error.is_some();
     if failed {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Receipt,
+        return Err(Error::with_kind(
+            ErrorKind::Receipt,
             format!(
                 "SQL execution failed: {}",
                 sql_error
@@ -234,7 +239,7 @@ mod tests {
             "row_count": 1,
         }))
         .unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Decode);
+        assert_eq!(error.kind(), ErrorKind::Decode);
     }
 
     #[test]
@@ -248,7 +253,7 @@ mod tests {
             }]
         });
         let error = ensure_receipt_success(&receipt).unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Receipt);
+        assert_eq!(error.kind(), ErrorKind::Receipt);
         assert!(error
             .to_string()
             .contains("database error (sqlite_exec_failed): no such table: correction"));

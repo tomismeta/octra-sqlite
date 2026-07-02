@@ -1,6 +1,6 @@
 use super::error::Result;
 #[cfg(feature = "http")]
-use super::error::{ClientError, ClientErrorKind};
+use super::error::{Error, ErrorKind};
 #[cfg(feature = "http")]
 use serde_json::json;
 use serde_json::Value;
@@ -77,8 +77,8 @@ impl HttpTransport {
             .filter(|parent| !parent.as_os_str().is_empty())
         {
             std::fs::create_dir_all(parent).map_err(|error| {
-                ClientError::with_kind(
-                    ClientErrorKind::Io,
+                Error::with_kind(
+                    ErrorKind::Io,
                     format!("creating RPC trace directory {}: {error}", parent.display()),
                 )
             })?;
@@ -89,8 +89,8 @@ impl HttpTransport {
             .write(true)
             .open(path)
             .map_err(|error| {
-                ClientError::with_kind(
-                    ClientErrorKind::Io,
+                Error::with_kind(
+                    ErrorKind::Io,
                     format!("opening RPC trace {}: {error}", path.display()),
                 )
             })?;
@@ -180,7 +180,7 @@ impl Transport for HttpTransport {
                         sleep_before_retry(attempt, None);
                         continue;
                     }
-                    return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+                    return Err(Error::with_kind(ErrorKind::Transport, message));
                 }
             };
             let status = response.status();
@@ -199,7 +199,7 @@ impl Transport for HttpTransport {
                         sleep_before_retry(attempt, retry_after);
                         continue;
                     }
-                    return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+                    return Err(Error::with_kind(ErrorKind::Transport, message));
                 }
             };
             let payload: Value = match serde_json::from_str(&text) {
@@ -216,7 +216,7 @@ impl Transport for HttpTransport {
                         sleep_before_retry(attempt, retry_after);
                         continue;
                     }
-                    return Err(ClientError::with_kind(ClientErrorKind::Decode, message));
+                    return Err(Error::with_kind(ErrorKind::Decode, message));
                 }
             };
             if !status.is_success() {
@@ -236,7 +236,7 @@ impl Transport for HttpTransport {
                     sleep_before_retry(attempt, retry_after);
                     continue;
                 }
-                return Err(ClientError::with_kind(ClientErrorKind::Transport, message));
+                return Err(Error::with_kind(ErrorKind::Transport, message));
             }
             if let Some(error) = payload.get("error") {
                 let message = format!("{method} failed: {}", preview_value(error, 1024));
@@ -252,13 +252,13 @@ impl Transport for HttpTransport {
                     sleep_before_retry(attempt, retry_after);
                     continue;
                 }
-                return Err(ClientError::with_kind(ClientErrorKind::Rpc, message));
+                return Err(Error::with_kind(ErrorKind::Rpc, message));
             }
             self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None);
             return Ok(payload.get("result").cloned().unwrap_or(Value::Null));
         }
-        Err(ClientError::with_kind(
-            ClientErrorKind::Transport,
+        Err(Error::with_kind(
+            ErrorKind::Transport,
             format!("{method} failed after retry attempts"),
         ))
     }

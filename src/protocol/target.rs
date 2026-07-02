@@ -1,12 +1,16 @@
-use super::error::{ProtocolError, Result};
+use super::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
+/// Read authentication mode for a database target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadMode {
+    /// Probe Circle metadata before choosing signed or unsigned reads.
     Auto,
+    /// Signed Octra view auth reads.
     #[default]
     Sealed,
+    /// Unsigned public Circle view reads.
     Public,
 }
 
@@ -24,6 +28,7 @@ impl ReadMode {
     }
 }
 
+/// Parsed `oct://` target plus read mode and RPC context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTarget {
     pub raw: String,
@@ -49,21 +54,19 @@ pub fn parse_database_target(
         let (network, circle) = match pieces.as_slice() {
             [circle] => (
                 default_network
-                    .ok_or_else(|| {
-                        ProtocolError::new("network is required for oct://<circle-id> URIs")
-                    })?
+                    .ok_or_else(|| Error::new("network is required for oct://<circle-id> URIs"))?
                     .to_string(),
                 (*circle).to_string(),
             ),
             [network, circle] => ((*network).to_string(), (*circle).to_string()),
             _ => {
-                return Err(ProtocolError::new(
+                return Err(Error::new(
                     "oct database URI must look like oct://NETWORK/<circle-id>",
                 ));
             }
         };
         if !circle.starts_with("oct") {
-            return Err(ProtocolError::new("Circle ID must start with oct"));
+            return Err(Error::new("Circle ID must start with oct"));
         }
         let read_mode = read_mode_from_query(rest)?;
         return Ok(DatabaseTarget {
@@ -78,14 +81,14 @@ pub fn parse_database_target(
         return Ok(DatabaseTarget {
             raw: value.to_string(),
             network: default_network
-                .ok_or_else(|| ProtocolError::new("network is required for bare Circle IDs"))?
+                .ok_or_else(|| Error::new("network is required for bare Circle IDs"))?
                 .to_string(),
             circle: value.to_string(),
             rpc: default_rpc,
             read_mode: ReadMode::Sealed,
         });
     }
-    Err(ProtocolError::new(format!(
+    Err(Error::new(format!(
         "unknown database {value}; use a database name, Circle ID, or oct://NETWORK/<circle-id>"
     )))
 }
@@ -103,9 +106,7 @@ fn read_mode_from_query(rest: &str) -> Result<ReadMode> {
                 "auto" => Ok(ReadMode::Auto),
                 "sealed" => Ok(ReadMode::Sealed),
                 "public" => Ok(ReadMode::Public),
-                _ => Err(ProtocolError::new(
-                    "read_mode must be auto, sealed, or public",
-                )),
+                _ => Err(Error::new("read_mode must be auto, sealed, or public")),
             };
         }
     }

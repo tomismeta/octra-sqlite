@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0
+
+- Reshaped the Rust public API for the first crates.io-ready debut:
+  `Client -> Database -> query/execute/inspect`.
+- Promoted the first-story Rust types to the crate root:
+  `Client`, `ClientOptions`, `Database`, `QueryResult`, `ExecuteResult`,
+  `SubmittedTransaction`, `AuthInfo`, `ProgramInfo`, `ReadMode`, `Value`,
+  `Error`, `ErrorKind`, and `Result`.
+- Moved raw session/RPC helpers under `client::raw`.
+- Renamed public Rust API types for consistent product vocabulary and removed
+  old aliases before any public Rust production users existed.
+- Added `Database::wait(&SubmittedTransaction)` so `execute_no_wait` has a
+  complete high-level confirmation path.
+- Replaced the old free operation-safety helper with `Operation::safety()`.
+- Settled saved-database CLI naming on `database default NAME`.
+- Added a public-surface compile tripwire and a config alias-cycle guard.
+- Updated Rust examples and library-boundary docs to use root imports.
+- Kept the bundled Circle WASM, OSR1/OSW1 wire formats, CLI commands, JSON
+  envelopes, and public-read behavior unchanged from `0.4.0`.
+
 ## 0.4.0
 
 - Added explicit public-read database creation with
@@ -172,7 +192,7 @@
 
 - Refactored the Rust code around a reusable protocol/client boundary while
   keeping the SQLite-shaped CLI as the primary user experience.
-- Added the public `OctraSqlite -> Database -> query/execute` API shape for
+- Added the reusable client-to-database API shape for
   native Rust callers.
 - Added devnet and mainnet network profiles, with devnet defaulting to
   `https://devnet.octrascan.io/rpc` and mainnet preloaded as

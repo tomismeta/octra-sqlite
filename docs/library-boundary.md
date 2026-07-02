@@ -1,56 +1,87 @@
 # Library Boundary
 
-`octra-sqlite` has three maintained layers:
+`octra-sqlite` has four maintained Rust layers.
 
-1. `protocol`: small, transport-independent wire formats.
-   - OSR1 typed result decoding
-   - OSW1 owner write intent framing
-   - canonical transaction JSON
-   - `oct://` database URI parsing
-2. `client`: the reusable Rust reference client.
-   - `OctraSqlite::from_default_config()?`
-   - `client.database("organization")?`
-   - `db.query("select ...")? -> QueryResult`
-   - `db.execute("insert ...")? -> ExecResult`
-   - `db.prepare_write(...) -> sign_write(...) -> submit_signed_write_and_wait(...)`
-   - `db.prepare_write_no_wait(...) -> sign_write(...) -> submit_signed_write(...)`
-   - `Transport` for HTTP, mock tests, and future adapters
-3. `cli`: the SQLite-shaped user experience.
-   - `octra-sqlite organization`
-   - `.tables`, `.schema`, `.read`, `.open`
-   - Octra-aware inspection through `.circle`, `.storage`, `.wallet`, `.verify`
+## Root
 
-The default public Rust path should stay small:
+The crate root is the first-story application API:
 
 ```rust
-use octra_sqlite::client::OctraSqlite;
+use octra_sqlite::Client;
 
-let client = OctraSqlite::from_default_config()?;
+let client = Client::from_default_config()?;
 let db = client.database("organization")?;
 let rows = db.query("select * from person order by first_name;")?;
 ```
 
-`Database` methods return typed Rust wrappers over OSR1/RPC data.
-`QueryResult`, `ExecResult`, `SubmittedTx`, `ProgramInfo`, and `AuthInfo` are
-the public client shapes; `serde_json::Value` remains available under
-`client::low_level` for CLI and audit plumbing.
+Root exports are intentionally small:
 
-Every public database operation has safety metadata through
-`operation_safety(DatabaseOperation::...)`. Adapters should surface that
-metadata directly: reads are safe to preview, writes submit Octra transactions,
-and write operations require owner write intent authorization.
+- `Client`, `ClientOptions`, and `Database`
+- `QueryResult`, `ExecuteResult`, and `SubmittedTransaction`
+- `AuthInfo`, `ProgramInfo`, and `ReadMode`
+- `Value`, `Error`, `ErrorKind`, and `Result`
 
-`Transport` is the only network seam in the client layer. The default transport
-is blocking HTTP RPC through `HttpTransport`, which is appropriate for the CLI,
-native REST services, MCP servers, A2A agents, and tests. Browser and worker
-clients are protocol-compatible through OSR1/OSW1, but they should use a future
-async/WASM transport rather than the current blocking Rust transport. Adapters
-should not reimplement OSR1, OSW1, or transaction signing.
+`Client` is the control plane: configuration, transport ownership, and database
+selection. `Database` is the data plane: SQL reads, writes, and inspection.
 
-`client::low_level` exists for the CLI, deployment, and audit plumbing. New app,
-agent, REST, MCP, or A2A integrations should build on the default `Database`
-API first and only use `low_level` when they need to reproduce the CLI's signed
-Octra transaction flow.
+`Database::execute(sql)` is the confirmed write path.
+`Database::execute_no_wait(sql)` returns `SubmittedTransaction`; pass it to
+`Database::wait(&submitted)` to complete the lifecycle.
 
-Do not add servers, frameworks, query builders, ORMs, or agent runtimes to the
-core repo. Those belong in examples or downstream adapters.
+## Client
+
+`octra_sqlite::client` is the advanced application integration layer.
+
+It exposes local config types and helpers:
+
+- `Config`, `NetworkConfig`, and `DatabaseMetadata`
+- `config_path`, `load_config`, and `write_config`
+
+It exposes the supported transport seam:
+
+- `Transport`
+- `HttpTransport`
+- `RpcTraceMode`
+
+It exposes the advanced write/signer lifecycle:
+
+- `PreparedWrite`
+- `PreparedOwnerWrite`
+- `SignedWrite`
+- `Operation`
+- `OperationSafety`
+
+Use `Operation::Execute.safety()` when an adapter needs to surface whether an
+operation reads SQL, mutates state, submits a transaction, waits for a receipt,
+or requires OSW1 owner write intent.
+
+## Raw
+
+`octra_sqlite::client::raw` is supported raw plumbing for the CLI, audits,
+tests, and advanced adapters.
+
+It exposes sessions and direct Octra RPC helpers such as `view`, `query_typed`,
+`exec_sql`, `submit_tx`, and `wait_for_transaction`. New app, REST, MCP, A2A,
+or service integrations should start with `Client` and `Database` and use
+`raw` only when they need to reproduce the CLI's signed Octra transaction flow.
+
+## Protocol
+
+`octra_sqlite::protocol` is transport-independent wire format support:
+
+- `osr1`: typed SQL result decoding
+- `osw1`: owner write intent framing
+- `target`: `oct://` database URI parsing and read modes
+- `tx`: canonical Octra transaction JSON
+
+Adapters should not reimplement OSR1, OSW1, target parsing, or transaction
+canonicalization.
+
+## Boundaries
+
+The CLI remains the primary product surface for humans and automation. Rust
+applications use the root `Client`/`Database` API first.
+
+Do not add servers, frameworks, query builders, ORMs, agent runtimes,
+compatibility aliases, or duplicated command surfaces to the core repo. Those
+belong in examples or downstream adapters if they earn their weight.

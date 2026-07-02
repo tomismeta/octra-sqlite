@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::low_level::{auth_info, exec_sql, exec_sql_with_owner_auth, view, Session};
+use crate::client::raw::{auth_info, exec_sql, exec_sql_with_owner_auth, view, Session};
 
 use super::BackupSummary;
 

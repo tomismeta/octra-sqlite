@@ -1,5 +1,5 @@
 use super::{
-    error::{ClientError, ClientErrorKind, Result},
+    error::{Error, ErrorKind, Result},
     results::AuthInfo,
     session::Session,
     transport::Transport,
@@ -118,7 +118,7 @@ pub(super) fn auth_info_with<T: Transport>(transport: &T, session: &Session) -> 
     let db_id = value
         .get("db_id")
         .and_then(Value::as_str)
-        .ok_or_else(|| ClientError::with_kind(ClientErrorKind::Decode, "auth_info missing db_id"))?
+        .ok_or_else(|| Error::with_kind(ErrorKind::Decode, "auth_info missing db_id"))?
         .to_string();
     let owner_pubkey = value
         .get("owner_pubkey")
@@ -191,8 +191,8 @@ pub(super) fn wait_for_receipt_with<T: Transport>(
         }
         std::thread::sleep(Duration::from_secs(2));
     }
-    Err(ClientError::with_kind(
-        ClientErrorKind::Timeout,
+    Err(Error::with_kind(
+        ErrorKind::Timeout,
         format!("timed out waiting for receipt {tx_hash}"),
     ))
 }
@@ -213,8 +213,8 @@ pub(super) fn wait_for_transaction_with<T: Transport>(
             match status {
                 "confirmed" | "accepted" => return Ok(transaction),
                 "rejected" | "failed" => {
-                    return Err(ClientError::with_kind(
-                        ClientErrorKind::Receipt,
+                    return Err(Error::with_kind(
+                        ErrorKind::Receipt,
                         format!("transaction {tx_hash} {status}: {transaction}"),
                     ));
                 }
@@ -223,8 +223,8 @@ pub(super) fn wait_for_transaction_with<T: Transport>(
         }
         std::thread::sleep(Duration::from_secs(2));
     }
-    Err(ClientError::with_kind(
-        ClientErrorKind::Timeout,
+    Err(Error::with_kind(
+        ErrorKind::Timeout,
         format!("timed out waiting for transaction {tx_hash}"),
     ))
 }
@@ -249,7 +249,7 @@ fn decode_method_result(text: &str) -> Result<Value> {
     }
     let value = serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()));
     if let Some(error) = contract_error_text(&value) {
-        return Err(ClientError::with_kind(ClientErrorKind::Rpc, error));
+        return Err(Error::with_kind(ErrorKind::Rpc, error));
     }
     Ok(value)
 }

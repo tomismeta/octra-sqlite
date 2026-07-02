@@ -1,4 +1,4 @@
-use super::error::{ClientError, ClientErrorKind, Result};
+use super::error::{Error, ErrorKind, Result};
 #[cfg(feature = "cli")]
 use crate::protocol::base58;
 use base64::{engine::general_purpose, Engine as _};
@@ -72,14 +72,14 @@ pub(super) fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
     match path {
         Some(path) => {
             let mut text = fs::read_to_string(path).map_err(|error| {
-                ClientError::with_kind(
-                    ClientErrorKind::Io,
+                Error::with_kind(
+                    ErrorKind::Io,
                     format!("reading wallet {}: {error}", path.display()),
                 )
             })?;
             let parsed = serde_json::from_str(&text).map_err(|error| {
-                ClientError::with_kind(
-                    ClientErrorKind::Wallet,
+                Error::with_kind(
+                    ErrorKind::Wallet,
                     format!("parsing wallet {}: {error}", path.display()),
                 )
             });
@@ -109,8 +109,8 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
     let wallet = load_wallet(Some(path))?;
     let key_pair = wallet.key_pair.unwrap_or_default();
     let supplied_address = first_string(&[wallet.addr, wallet.address]).ok_or_else(|| {
-        ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        Error::with_kind(
+            ErrorKind::Wallet,
             format!("wallet {} is missing address/addr", path.display()),
         )
     })?;
@@ -122,8 +122,8 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
         key_pair.secret_key,
     ])
     .ok_or_else(|| {
-        ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        Error::with_kind(
+            ErrorKind::Wallet,
             format!(
                 "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
                 path.display()
@@ -140,8 +140,8 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
     let material = wallet_material_from_private_key(&private_key, supplied_public_key)?;
     private_key.zeroize();
     if material.address != supplied_address {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        return Err(Error::with_kind(
+            ErrorKind::Wallet,
             format!(
                 "wallet address {} does not match private key-derived address {}",
                 supplied_address, material.address
@@ -171,13 +171,12 @@ pub(crate) fn wallet_material_from_private_key(
 
 pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned).ok_or_else(|| {
-        ClientError::with_kind(ClientErrorKind::Wallet, "private key must be base64 or hex")
-    })?;
+    let mut raw = decode_key_text(&cleaned)
+        .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "private key must be base64 or hex"))?;
     if raw.len() != 32 && raw.len() != 64 {
         raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        return Err(Error::with_kind(
+            ErrorKind::Wallet,
             "private key must decode to a 32-byte seed or 64-byte keypair",
         ));
     }
@@ -187,8 +186,8 @@ pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     if raw.len() == 64 && raw[32..] != signing_key.verifying_key().to_bytes() {
         seed.zeroize();
         raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        return Err(Error::with_kind(
+            ErrorKind::Wallet,
             "64-byte private key public half does not match seed",
         ));
     }
@@ -199,20 +198,19 @@ pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
 
 pub(super) fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned).ok_or_else(|| {
-        ClientError::with_kind(ClientErrorKind::Wallet, "public key must be base64 or hex")
-    })?;
+    let mut raw = decode_key_text(&cleaned)
+        .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "public key must be base64 or hex"))?;
     if raw.len() != 32 {
         raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        return Err(Error::with_kind(
+            ErrorKind::Wallet,
             "public key must decode to 32 bytes",
         ));
     }
     if raw.as_slice() != expected {
         raw.zeroize();
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Wallet,
+        return Err(Error::with_kind(
+            ErrorKind::Wallet,
             "wallet public key does not match private key",
         ));
     }

@@ -1,0 +1,146 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.5.0",
+  "circle_program_version": "3",
+  "network": "devnet",
+  "public_circle": "octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+  "circle_create_tx": "318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed",
+  "initializer_tx": "971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0",
+  "program_update_tx": "efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 609354,
+    "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+  },
+  "sqlite": {
+    "version": "3.53.2",
+    "source_path": "vendor/sqlite/3.53.2/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530200",
+    "source_sha256": "d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "portability": {
+    "backup": "page_stream_v1",
+    "dump": "sqlite_shell_compatible_sql",
+    "read": "sqlite_dump_restore_without_shell_wrappers",
+    "csv_import": "sqlite_cli_subset"
+  },
+  "typed_results": {
+    "codec": "OSR1",
+    "spec": "docs/spec/osr1.md"
+  },
+  "write_intents": {
+    "codec": "OSW1",
+    "wire_domain": "octra-sqlite.osw1.v1\\0",
+    "spec": "docs/spec/osw1.md"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "deployment_kind": "program_update",
+    "personalized_sha256": "195bbc6dde80edc764041c45faa55f67db16a3352f7a83dd50f86f5882393f6f",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "2b2ce4c282bba87be3a113a571a334129bd49d329a247ca170dbd8bf502c8682",
+    "owner_pubkey_offset": 603090,
+    "db_id_offset": 603122,
+    "non_owner_denied_tx": "fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148"
+  },
+  "explorer_urls": {
+    "circle": "https://devnet.octrascan.io/address.html?addr=octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+    "circle_create": "https://devnet.octrascan.io/tx.html?hash=318ca1a98df95bedb87d1042d0555eecc94660bbf828813a148bf11393ed73ed",
+    "initializer": "https://devnet.octrascan.io/tx.html?hash=971b50d434226e7892bb3e5f926a1dced9dd35df1df4bfe4266351116c3bc5f0",
+    "program_update": "https://devnet.octrascan.io/tx.html?hash=efe65e5ff4c23668703f1e51b6af74f99442355f0cb4a753aff25e74b3388ebb",
+    "non_owner_denied": "https://devnet.octrascan.io/tx.html?hash=fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148"
+  },
+  "public_read_proof": {
+    "status": "deployed",
+    "database_uri": "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "circle": "octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "program_version": "1",
+    "program_hash": "547c68b2d4ac2abe400e1ed28a6c107218f06bdead164f2984c218099da3902e",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "browser_mode": "gateway_allowed",
+    "resource_mode": "public_resources",
+    "owner": "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "c3b4f6d245a55b6c19ef8f0c75039feb2d333f7609e2f8f44a83061051a1f180",
+    "circle_create_tx": "ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+    "initializer_tx": "a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b",
+    "owner_write_tx": "f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798",
+    "unsigned_read": {
+      "wallet_required": false,
+      "caller": "oct11111111111111111111111111111111111111111111",
+      "query": "select id, name from artist order by id;",
+      "row_count": 5
+    },
+    "owner_lock": {
+      "non_owner_wallet": "oct6NBfpTfR9zHdDy5UftWk3FstMYpjp47gDgcTQF5EAxvY",
+      "write_rejected_tx": "da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0",
+      "rejection": "wasm export returned 403",
+      "event": "auth_not_authorized:auth_denied:signed exec signer is not the database owner"
+    },
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b",
+      "owner_write": "https://devnet.octrascan.io/tx.html?hash=f73d4e97cbbb8dbe415c8fda84813ed7364616b38557167591013aefdb5ec798",
+      "non_owner_denied": "https://devnet.octrascan.io/tx.html?hash=da8533a22d2994899958e4ce29a0410852548b35f5e286130460acbc2c6f0ce0"
+    }
+  },
+  "live_portability_proof": {
+    "database_uri": "oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY",
+    "backup": {
+      "bytes": 16384,
+      "pages": 4,
+      "generation": 2,
+      "sha256": "7eac9d276c6ddefeb72ae112635a82262e5a62c969ba0394c4cfaa7e502e2ab7",
+      "integrity_check": "ok"
+    },
+    "write_smoke": {
+      "tx": "aae4bb0f4cc4506c80f37ce1045958398cdb1a6d70183baab274b73e056ec28b",
+      "statements": 3,
+      "status": "confirmed"
+    },
+    "owner_lock": {
+      "non_owner_wallet": "oct6NBfpTfR9zHdDy5UftWk3FstMYpjp47gDgcTQF5EAxvY",
+      "read_query_ok": true,
+      "write_rejected_tx": "fe13f345435efce21a362fddab3ac9234dfd2ba747581a65709b03b915c44148",
+      "rejection": "wasm export returned 403"
+    }
+  },
+  "client_release": {
+    "notes": "Rust API ontology and crates.io debut preparation release over the deployed 0.3.3 Circle WASM proof: the public root API is Client -> Database -> query/execute/inspect, advanced integration lives under client, raw RPC plumbing lives under client::raw, and public-read behavior remains unchanged.",
+    "public_read": "new --read-mode public deploys the public/gateway_allowed/public_resources Circle tuple; reads use octra_circleView and writes remain owner-signed OSW1.",
+    "read_only_api_example": "examples/remilia-read-api"
+  },
+  "status": "Rust API ontology release over deployed 0.3.3 devnet proof with separate public-read devnet proof"
+}

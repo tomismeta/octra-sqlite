@@ -1,8 +1,8 @@
 use super::{
-    error::{ClientError, ClientErrorKind, Result},
+    error::{Error, ErrorKind, Result},
     results::ensure_receipt_success,
     rpc::{auth_info_with, compact_json, next_nonce_with, rpc_call, wait_for_receipt_with},
-    safety::{operation_safety, DatabaseOperation, OperationSafety},
+    safety::{Operation, OperationSafety},
     session::Session,
     transport::Transport,
 };
@@ -152,11 +152,11 @@ impl fmt::Debug for SignedWrite {
     }
 }
 
-pub(super) fn ensure_submit_mode(signed: &SignedWrite, expected: DatabaseOperation) -> Result<()> {
+pub(super) fn ensure_submit_mode(signed: &SignedWrite, expected: Operation) -> Result<()> {
     let actual = signed.safety.operation;
     if actual != expected {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Config,
+        return Err(Error::with_kind(
+            ErrorKind::Config,
             format!("signed write was prepared for {actual:?}, not {expected:?}"),
         ));
     }
@@ -167,7 +167,7 @@ pub(super) fn prepare_write_with<T: Transport>(
     transport: &T,
     session: &Session,
     sql: &str,
-    operation: DatabaseOperation,
+    operation: Operation,
 ) -> Result<PreparedWrite> {
     let nonce = next_nonce_with(transport, session)?;
     let timestamp = now_timestamp();
@@ -177,16 +177,16 @@ pub(super) fn prepare_write_with<T: Transport>(
         "exec"
     };
     let auth = auth_info_with(transport, session).map_err(|error| {
-        ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        Error::with_kind(
+            ErrorKind::Authorization,
             format!(
                 "could not read Circle auth_info; refusing to choose unsigned exec implicitly: {error}"
             ),
         )
     })?;
     if !auth.configured {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "database is not owner-write-personalized; refusing unsigned SQL write",
         ));
     }
@@ -209,7 +209,7 @@ pub(super) fn prepare_write_with_owner_auth<T: Transport>(
     transport: &T,
     session: &Session,
     sql: &str,
-    operation: DatabaseOperation,
+    operation: Operation,
     db_id: &str,
     owner_pubkey: &str,
 ) -> Result<PreparedWrite> {
@@ -242,7 +242,7 @@ struct OwnerWriteAuth<'a> {
 fn prepare_write_with_owner_parts(
     session: &Session,
     sql: &str,
-    operation: DatabaseOperation,
+    operation: Operation,
     nonce: i64,
     timestamp: f64,
     method: &str,
@@ -254,8 +254,8 @@ fn prepare_write_with_owner_parts(
         Some(owner_pubkey) => {
             let configured = hex_to_32("owner_pubkey", owner_pubkey)?;
             if configured != session_owner_pubkey {
-                return Err(ClientError::with_kind(
-                    ClientErrorKind::Authorization,
+                return Err(Error::with_kind(
+                    ErrorKind::Authorization,
                     "owner write metadata does not match the active wallet",
                 ));
             }
@@ -279,7 +279,7 @@ fn prepare_write_with_owner_parts(
         wallet: session.caller().to_string(),
         public_key: session.public_key_b64()?.to_string(),
         owner_write,
-        safety: operation_safety(operation),
+        safety: operation.safety(),
     })
 }
 
@@ -354,7 +354,7 @@ fn submit_tx_with<T: Transport>(
         if !no_wait {
             let receipt = wait_for_receipt_with(transport, session, &hash)?;
             if let Err(error) = ensure_receipt_success(&receipt) {
-                return Err(ClientError::with_kind(
+                return Err(Error::with_kind(
                     error.kind(),
                     format!("{error}; tx_hash: {hash}"),
                 ));
@@ -367,20 +367,20 @@ fn submit_tx_with<T: Transport>(
 
 fn ensure_prepared_for_session(session: &Session, prepared: &PreparedWrite) -> Result<()> {
     if prepared.circle != session.target().circle {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "prepared write Circle does not match the active database",
         ));
     }
     if prepared.wallet != session.caller() {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "prepared write wallet does not match the active session",
         ));
     }
     if prepared.public_key != session.public_key_b64()? {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "prepared write public key does not match the active session",
         ));
     }
@@ -389,20 +389,20 @@ fn ensure_prepared_for_session(session: &Session, prepared: &PreparedWrite) -> R
 
 fn ensure_signed_for_session(session: &Session, signed: &SignedWrite) -> Result<()> {
     if signed.tx.to_ != session.target().circle {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "signed write Circle does not match the active database",
         ));
     }
     if signed.tx.from != session.caller() {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "signed write wallet does not match the active session",
         ));
     }
     if signed.tx.public_key != session.public_key_b64()? {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Authorization,
+        return Err(Error::with_kind(
+            ErrorKind::Authorization,
             "signed write public key does not match the active session",
         ));
     }
@@ -411,14 +411,11 @@ fn ensure_signed_for_session(session: &Session, signed: &SignedWrite) -> Result<
 
 fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
     let bytes = hex::decode(text).map_err(|error| {
-        ClientError::with_kind(
-            ClientErrorKind::Decode,
-            format!("decoding {label} hex: {error}"),
-        )
+        Error::with_kind(ErrorKind::Decode, format!("decoding {label} hex: {error}"))
     })?;
     if bytes.len() != 32 {
-        return Err(ClientError::with_kind(
-            ClientErrorKind::Decode,
+        return Err(Error::with_kind(
+            ErrorKind::Decode,
             format!("{label} must decode to 32 bytes"),
         ));
     }
@@ -443,7 +440,7 @@ fn now_timestamp() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::session::{build_session, SessionOptions};
+    use crate::client::session::{build_session, ClientOptions};
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
 
@@ -459,8 +456,8 @@ mod tests {
                     self.submits.lock().unwrap().push(params);
                     Ok(json!({ "tx_hash": "abc123" }))
                 }
-                _ => Err(ClientError::with_kind(
-                    ClientErrorKind::Other,
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
                     format!("unexpected method {method}"),
                 )),
             }
@@ -468,14 +465,14 @@ mod tests {
     }
 
     fn test_session() -> Session {
-        build_session(&SessionOptions {
+        build_session(&ClientOptions {
             target: Some("oct://devnet/octABC".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
             private_key: Some(
                 "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
             ),
-            ..SessionOptions::default()
+            ..ClientOptions::default()
         })
         .unwrap()
     }
@@ -511,7 +508,7 @@ mod tests {
         let transport = CaptureTransport::default();
         let session = test_session();
         let tx = tx_for(&session, "pre-signed");
-        let signed = SignedWrite::new(tx, operation_safety(DatabaseOperation::ExecuteNoWait));
+        let signed = SignedWrite::new(tx, Operation::ExecuteNoWait.safety());
 
         submit_signed_write_with(&transport, &session, signed, true).unwrap();
 

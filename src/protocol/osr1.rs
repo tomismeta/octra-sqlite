@@ -1,4 +1,4 @@
-use super::error::{ProtocolError, Result};
+use super::error::{Error, Result};
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::{json, Value};
 
@@ -7,7 +7,7 @@ pub const TYPED_PREFIX: &str = "OSR1:";
 pub fn decode_typed_result(encoded: &str) -> Result<Value> {
     let raw = general_purpose::STANDARD.decode(encoded)?;
     if raw.len() < 12 || &raw[..4] != b"OSR1" {
-        return Err(ProtocolError::new("bad typed result magic"));
+        return Err(Error::new("bad typed result magic"));
     }
     let mut offset = 4usize;
     let col_count = read_u32(&raw, &mut offset)? as usize;
@@ -26,7 +26,7 @@ pub fn decode_typed_result(encoded: &str) -> Result<Value> {
         rows.push(Value::Array(row));
     }
     if offset != raw.len() {
-        return Err(ProtocolError::new("typed result has trailing bytes"));
+        return Err(Error::new("typed result has trailing bytes"));
     }
     Ok(json!({
         "ok": true,
@@ -39,7 +39,7 @@ pub fn decode_typed_result(encoded: &str) -> Result<Value> {
 
 fn read_u32(raw: &[u8], offset: &mut usize) -> Result<u32> {
     if *offset + 4 > raw.len() {
-        return Err(ProtocolError::new("truncated u32"));
+        return Err(Error::new("truncated u32"));
     }
     let value = u32::from_be_bytes(raw[*offset..*offset + 4].try_into().unwrap());
     *offset += 4;
@@ -48,7 +48,7 @@ fn read_u32(raw: &[u8], offset: &mut usize) -> Result<u32> {
 
 fn read_u64(raw: &[u8], offset: &mut usize) -> Result<u64> {
     if *offset + 8 > raw.len() {
-        return Err(ProtocolError::new("truncated u64"));
+        return Err(Error::new("truncated u64"));
     }
     let value = u64::from_be_bytes(raw[*offset..*offset + 8].try_into().unwrap());
     *offset += 8;
@@ -58,7 +58,7 @@ fn read_u64(raw: &[u8], offset: &mut usize) -> Result<u64> {
 fn read_bytes<'a>(raw: &'a [u8], offset: &mut usize) -> Result<&'a [u8]> {
     let len = read_u32(raw, offset)? as usize;
     if *offset + len > raw.len() {
-        return Err(ProtocolError::new("truncated bytes"));
+        return Err(Error::new("truncated bytes"));
     }
     let bytes = &raw[*offset..*offset + len];
     *offset += len;
@@ -67,7 +67,7 @@ fn read_bytes<'a>(raw: &'a [u8], offset: &mut usize) -> Result<&'a [u8]> {
 
 fn read_cell(raw: &[u8], offset: &mut usize) -> Result<Value> {
     if *offset >= raw.len() {
-        return Err(ProtocolError::new("truncated cell"));
+        return Err(Error::new("truncated cell"));
     }
     let tag = raw[*offset];
     *offset += 1;
@@ -88,9 +88,7 @@ fn read_cell(raw: &[u8], offset: &mut usize) -> Result<Value> {
             "type": "blob",
             "base64": general_purpose::STANDARD.encode(read_bytes(raw, offset)?),
         })),
-        _ => Err(ProtocolError::new(format!(
-            "unknown typed result cell tag {tag}"
-        ))),
+        _ => Err(Error::new(format!("unknown typed result cell tag {tag}"))),
     }
 }
 

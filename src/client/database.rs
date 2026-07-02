@@ -1,11 +1,11 @@
 #[cfg(feature = "http")]
-use super::write::prepare_write_with_owner_auth;
+use super::transport::HttpTransport;
 use super::{
-    error::Result,
-    results::{AuthInfo, ExecResult, ProgramInfo, QueryResult, SubmittedTx},
-    rpc::{auth_info_with, program_info_with, query_typed_with},
-    safety::DatabaseOperation,
-    session::{build_session, Session, SessionOptions},
+    error::{Error, ErrorKind, Result},
+    results::{AuthInfo, ExecuteResult, ProgramInfo, QueryResult, SubmittedTransaction},
+    rpc::{auth_info_with, program_info_with, query_typed_with, wait_for_receipt_with},
+    safety::Operation,
+    session::{build_session, ClientOptions, Session},
     transport::Transport,
     write::{
         ensure_submit_mode, prepare_write_with, sign_write, submit_signed_write_with,
@@ -13,55 +13,54 @@ use super::{
     },
 };
 #[cfg(feature = "http")]
-use super::{
-    rpc::{circle_info_with, next_nonce_with, view_with, wait_for_transaction_with},
-    transport::{HttpTransport, RpcTraceMode},
-};
-#[cfg(feature = "http")]
-use crate::protocol::tx::Tx;
-#[cfg(feature = "http")]
-use serde_json::Value;
-#[cfg(feature = "http")]
 use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(feature = "http")]
+/// Configured client used to open Circle-backed SQLite databases.
 #[derive(Clone)]
-pub struct OctraSqlite<T = HttpTransport> {
-    options: SessionOptions,
+pub struct Client<T = HttpTransport> {
+    options: ClientOptions,
     transport: Arc<T>,
 }
 
 #[cfg(not(feature = "http"))]
+/// Configured client used to open Circle-backed SQLite databases.
 #[derive(Clone)]
-pub struct OctraSqlite<T> {
-    options: SessionOptions,
+pub struct Client<T> {
+    options: ClientOptions,
     transport: Arc<T>,
 }
 
 #[cfg(feature = "http")]
-impl Default for OctraSqlite<HttpTransport> {
+impl Default for Client<HttpTransport> {
     fn default() -> Self {
         Self {
-            options: SessionOptions::default(),
+            options: ClientOptions::default(),
             transport: Arc::new(HttpTransport::default()),
         }
     }
 }
 
 #[cfg(feature = "http")]
-impl OctraSqlite<HttpTransport> {
+impl Client<HttpTransport> {
+    /// Load the default local config and construct a client with the HTTP transport.
+    ///
+    /// This is fallible because it reads the configured octra-sqlite config
+    /// file. Use [`Client::with_options`] when construction should be purely
+    /// in-memory.
     pub fn from_default_config() -> Result<Self> {
         let config = super::config::load_config()?;
-        let options = SessionOptions {
+        let options = ClientOptions {
             target: config.default_database.clone(),
             wallet: config.wallet.as_ref().map(PathBuf::from),
-            ..SessionOptions::default()
+            ..ClientOptions::default()
         };
         Ok(Self::with_options(options))
     }
 
-    pub fn with_options(options: SessionOptions) -> Self {
+    /// Construct a client from explicit options using the default HTTP transport.
+    pub fn with_options(options: ClientOptions) -> Self {
         Self {
             options,
             transport: Arc::new(HttpTransport::default()),
@@ -69,14 +68,16 @@ impl OctraSqlite<HttpTransport> {
     }
 }
 
-impl<T: Transport> OctraSqlite<T> {
-    pub fn with_transport(options: SessionOptions, transport: T) -> Self {
+impl<T: Transport> Client<T> {
+    /// Construct a client from explicit options and a custom transport.
+    pub fn with_transport(options: ClientOptions, transport: T) -> Self {
         Self {
             options,
             transport: Arc::new(transport),
         }
     }
 
+    /// Open a database by saved name, Circle ID, or `oct://` URI.
     pub fn database(&self, target: impl Into<String>) -> Result<Database<T>> {
         let mut options = self.options.clone();
         options.target = Some(target.into());
@@ -85,6 +86,7 @@ impl<T: Transport> OctraSqlite<T> {
 }
 
 #[cfg(feature = "http")]
+/// Opened Circle-backed SQLite database.
 #[derive(Clone)]
 pub struct Database<T = HttpTransport> {
     session: Session,
@@ -92,6 +94,7 @@ pub struct Database<T = HttpTransport> {
 }
 
 #[cfg(not(feature = "http"))]
+/// Opened Circle-backed SQLite database.
 #[derive(Clone)]
 pub struct Database<T> {
     session: Session,
@@ -100,23 +103,26 @@ pub struct Database<T> {
 
 #[cfg(feature = "http")]
 impl Database<HttpTransport> {
-    pub fn open(options: SessionOptions) -> Result<Self> {
+    /// Open a database directly with the default HTTP transport.
+    pub fn open(options: ClientOptions) -> Result<Self> {
         Self::open_with_transport(options, HttpTransport::default())
     }
 }
 
 impl<T: Transport> Database<T> {
-    pub fn open_with_transport(options: SessionOptions, transport: T) -> Result<Self> {
+    /// Open a database directly with a custom transport.
+    pub fn open_with_transport(options: ClientOptions, transport: T) -> Result<Self> {
         Self::open_with_shared_transport(options, Arc::new(transport))
     }
 
-    fn open_with_shared_transport(options: SessionOptions, transport: Arc<T>) -> Result<Self> {
+    fn open_with_shared_transport(options: ClientOptions, transport: Arc<T>) -> Result<Self> {
         Ok(Self {
             session: build_session(&options)?,
             transport,
         })
     }
 
+    /// Run read-only SQL and return typed rows.
     pub fn query(&self, sql: &str) -> Result<QueryResult> {
         QueryResult::from_value(query_typed_with(
             self.transport.as_ref(),
@@ -125,37 +131,43 @@ impl<T: Transport> Database<T> {
         )?)
     }
 
-    pub fn execute(&self, sql: &str) -> Result<ExecResult> {
+    /// Submit a write and wait for its receipt.
+    pub fn execute(&self, sql: &str) -> Result<ExecuteResult> {
         let prepared = self.prepare_write(sql)?;
         let signed = self.sign_write(&prepared)?;
         self.submit_signed_write_and_wait(signed)
     }
 
-    pub fn execute_no_wait(&self, sql: &str) -> Result<SubmittedTx> {
+    /// Submit a write without waiting for confirmation.
+    pub fn execute_no_wait(&self, sql: &str) -> Result<SubmittedTransaction> {
         let prepared = self.prepare_write_no_wait(sql)?;
         let signed = self.sign_write(&prepared)?;
         self.submit_signed_write(signed)
     }
 
+    /// Prepare a write for later signing and no-wait submission.
     pub fn prepare_write_no_wait(&self, sql: &str) -> Result<PreparedWrite> {
-        self.prepare_write_for(sql, DatabaseOperation::ExecuteNoWait)
+        self.prepare_write_for(sql, Operation::ExecuteNoWait)
     }
 
+    /// Prepare a write for later signing and confirmed execution.
     pub fn prepare_write(&self, sql: &str) -> Result<PreparedWrite> {
-        self.prepare_write_for(sql, DatabaseOperation::Execute)
+        self.prepare_write_for(sql, Operation::Execute)
     }
 
-    fn prepare_write_for(&self, sql: &str, operation: DatabaseOperation) -> Result<PreparedWrite> {
+    fn prepare_write_for(&self, sql: &str, operation: Operation) -> Result<PreparedWrite> {
         prepare_write_with(self.transport.as_ref(), &self.session, sql, operation)
     }
 
+    /// Sign a prepared write with the database session wallet.
     pub fn sign_write(&self, prepared: &PreparedWrite) -> Result<SignedWrite> {
         sign_write(&self.session, prepared)
     }
 
-    pub fn submit_signed_write(&self, signed: SignedWrite) -> Result<SubmittedTx> {
-        ensure_submit_mode(&signed, DatabaseOperation::ExecuteNoWait)?;
-        SubmittedTx::from_value(submit_signed_write_with(
+    /// Submit a signed write without waiting for confirmation.
+    pub fn submit_signed_write(&self, signed: SignedWrite) -> Result<SubmittedTransaction> {
+        ensure_submit_mode(&signed, Operation::ExecuteNoWait)?;
+        SubmittedTransaction::from_value(submit_signed_write_with(
             self.transport.as_ref(),
             &self.session,
             signed,
@@ -163,9 +175,10 @@ impl<T: Transport> Database<T> {
         )?)
     }
 
-    pub fn submit_signed_write_and_wait(&self, signed: SignedWrite) -> Result<ExecResult> {
-        ensure_submit_mode(&signed, DatabaseOperation::Execute)?;
-        ExecResult::from_value(submit_signed_write_with(
+    /// Submit a signed write and wait for its receipt.
+    pub fn submit_signed_write_and_wait(&self, signed: SignedWrite) -> Result<ExecuteResult> {
+        ensure_submit_mode(&signed, Operation::Execute)?;
+        ExecuteResult::from_value(submit_signed_write_with(
             self.transport.as_ref(),
             &self.session,
             signed,
@@ -173,112 +186,53 @@ impl<T: Transport> Database<T> {
         )?)
     }
 
+    /// Wait for a submitted transaction receipt.
+    pub fn wait(&self, submitted: &SubmittedTransaction) -> Result<ExecuteResult> {
+        let tx_hash = submitted.tx_hash.as_deref().ok_or_else(|| {
+            Error::with_kind(
+                ErrorKind::Config,
+                "submitted transaction is missing tx_hash",
+            )
+        })?;
+        let receipt = wait_for_receipt_with(self.transport.as_ref(), &self.session, tx_hash)?;
+        let mut value = serde_json::Map::new();
+        if let Some(circle) = &submitted.circle {
+            value.insert(
+                "circle".to_string(),
+                serde_json::Value::String(circle.clone()),
+            );
+        }
+        if let Some(wallet) = &submitted.wallet {
+            value.insert(
+                "wallet".to_string(),
+                serde_json::Value::String(wallet.clone()),
+            );
+        }
+        value.insert(
+            "tx_hash".to_string(),
+            serde_json::Value::String(tx_hash.to_string()),
+        );
+        value.insert("result".to_string(), submitted.result.clone());
+        value.insert("receipt".to_string(), receipt);
+        ExecuteResult::from_value(serde_json::Value::Object(value))
+    }
+
+    /// Read owner-write authorization metadata.
     pub fn auth_info(&self) -> Result<AuthInfo> {
         auth_info_with(self.transport.as_ref(), &self.session)
     }
 
+    /// Read deployed Circle program metadata.
     pub fn program_info(&self) -> Result<ProgramInfo> {
         ProgramInfo::from_value(program_info_with(self.transport.as_ref(), &self.session)?)
     }
-}
-
-#[cfg(feature = "http")]
-pub fn view(session: &Session, method: &str, params: Vec<Value>) -> Result<Value> {
-    let transport = HttpTransport::default();
-    view_with(&transport, session, method, params)
-}
-
-#[cfg(feature = "http")]
-pub fn query_typed(session: &Session, sql: &str) -> Result<Value> {
-    let transport = HttpTransport::default();
-    query_typed_with(&transport, session, sql)
-}
-
-#[cfg(feature = "http")]
-pub fn query_typed_traced(
-    session: &Session,
-    sql: &str,
-    trace_path: &std::path::Path,
-    trace_mode: RpcTraceMode,
-) -> Result<Value> {
-    let transport = HttpTransport::with_trace_jsonl_mode(trace_path, trace_mode)?;
-    query_typed_with(&transport, session, sql)
-}
-
-#[cfg(feature = "http")]
-pub fn auth_info(session: &Session) -> Result<AuthInfo> {
-    let transport = HttpTransport::default();
-    auth_info_with(&transport, session)
-}
-
-#[cfg(feature = "http")]
-pub fn program_info(session: &Session) -> Result<Value> {
-    let transport = HttpTransport::default();
-    program_info_with(&transport, session)
-}
-
-#[cfg(feature = "http")]
-pub fn circle_info(session: &Session) -> Result<Value> {
-    let transport = HttpTransport::default();
-    circle_info_with(&transport, session)
-}
-
-#[cfg(feature = "http")]
-pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
-    let transport = HttpTransport::default();
-    let operation = if no_wait {
-        DatabaseOperation::ExecuteNoWait
-    } else {
-        DatabaseOperation::Execute
-    };
-    let prepared = prepare_write_with(&transport, session, sql, operation)?;
-    let signed = sign_write(session, &prepared)?;
-    submit_signed_write_with(&transport, session, signed, no_wait)
-}
-
-#[cfg(feature = "http")]
-pub(crate) fn exec_sql_with_owner_auth(
-    session: &Session,
-    sql: &str,
-    db_id: &str,
-    owner_pubkey: &str,
-) -> Result<Value> {
-    let transport = HttpTransport::default();
-    let prepared = prepare_write_with_owner_auth(
-        &transport,
-        session,
-        sql,
-        DatabaseOperation::Execute,
-        db_id,
-        owner_pubkey,
-    )?;
-    let signed = sign_write(session, &prepared)?;
-    submit_signed_write_with(&transport, session, signed, false)
-}
-
-#[cfg(feature = "http")]
-pub fn next_nonce(session: &Session) -> Result<i64> {
-    let transport = HttpTransport::default();
-    next_nonce_with(&transport, session)
-}
-
-#[cfg(feature = "http")]
-pub fn submit_tx(session: &Session, tx: Tx, no_wait: bool) -> Result<Value> {
-    let transport = HttpTransport::default();
-    super::write::sign_and_submit_tx_with(&transport, session, tx, no_wait)
-}
-
-#[cfg(feature = "http")]
-pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
-    let transport = HttpTransport::default();
-    wait_for_transaction_with(&transport, session, tx_hash)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::write::sign_and_submit_tx_with;
     use super::*;
-    use crate::client::{ClientError, ClientErrorKind};
+    use crate::client::{Error, ErrorKind};
     use crate::protocol::tx::Tx;
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex};
@@ -371,8 +325,8 @@ mod tests {
                 "octra_balance" => Ok(json!({ "pending_nonce": 41 })),
                 "octra_submit" => Ok(json!({ "tx_hash": "abc123" })),
                 "contract_receipt" => Ok(self.receipt.lock().unwrap().clone()),
-                _ => Err(ClientError::with_kind(
-                    ClientErrorKind::Other,
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
                     format!("unexpected method {method}"),
                 )),
             }
@@ -387,28 +341,28 @@ mod tests {
                 "octra_circleViewAuth" => Ok(Value::String(
                     r#"{"ok":false,"error":"sqlite_prepare_failed","detail":"no such table: companion"}"#.to_string(),
                 )),
-                _ => Err(ClientError::with_kind(
-                    ClientErrorKind::Other,
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
                     format!("unexpected method {method}"),
                 )),
             }
         }
     }
 
-    fn test_options() -> SessionOptions {
-        SessionOptions {
+    fn test_options() -> ClientOptions {
+        ClientOptions {
             target: Some("oct://devnet/octABC?read_mode=sealed".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
             private_key: Some(
                 "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
             ),
-            ..SessionOptions::default()
+            ..ClientOptions::default()
         }
     }
 
-    fn test_options_for(target: &str) -> SessionOptions {
-        SessionOptions {
+    fn test_options_for(target: &str) -> ClientOptions {
+        ClientOptions {
             target: Some(target.to_string()),
             ..test_options()
         }
@@ -430,10 +384,10 @@ mod tests {
         let transport = MockTransport::default();
         let calls = transport.calls.clone();
         let db = Database::open_with_transport(
-            SessionOptions {
+            ClientOptions {
                 target: Some("oct://devnet/octABC?read_mode=public".to_string()),
                 rpc: Some("mock://rpc".to_string()),
-                ..SessionOptions::default()
+                ..ClientOptions::default()
             },
             transport,
         )
@@ -448,10 +402,10 @@ mod tests {
         let transport = MockTransport::public_read_circle();
         let calls = transport.calls.clone();
         let db = Database::open_with_transport(
-            SessionOptions {
+            ClientOptions {
                 target: Some("oct://devnet/octABC?read_mode=auto".to_string()),
                 rpc: Some("mock://rpc".to_string()),
-                ..SessionOptions::default()
+                ..ClientOptions::default()
             },
             transport,
         )
@@ -468,7 +422,7 @@ mod tests {
     fn database_query_surfaces_contract_sql_errors() {
         let db = Database::open_with_transport(test_options(), ContractErrorTransport).unwrap();
         let error = db.query("select * from companion;").unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Rpc);
+        assert_eq!(error.kind(), ErrorKind::Rpc);
         assert!(error.to_string().contains("sqlite_prepare_failed"));
         assert!(error.to_string().contains("no such table: companion"));
     }
@@ -482,7 +436,7 @@ mod tests {
         }));
         let db = Database::open_with_transport(test_options(), transport).unwrap();
         let error = db.execute("bad sql").unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Receipt);
+        assert_eq!(error.kind(), ErrorKind::Receipt);
         assert!(error.to_string().contains("syntax error"));
         assert!(error.to_string().contains("tx_hash: abc123"));
     }
@@ -494,7 +448,7 @@ mod tests {
         let prepared = db.prepare_write("create table demo(id integer);").unwrap();
         let signed = db.sign_write(&prepared).unwrap();
         let error = db.submit_signed_write(signed).unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Config);
+        assert_eq!(error.kind(), ErrorKind::Config);
     }
 
     #[test]
@@ -537,6 +491,6 @@ mod tests {
             .prepare_write("create table demo(id integer);")
             .unwrap();
         let error = db_b.sign_write(&prepared).unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Authorization);
+        assert_eq!(error.kind(), ErrorKind::Authorization);
     }
 }

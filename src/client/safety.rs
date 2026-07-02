@@ -1,5 +1,6 @@
+/// Public database operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DatabaseOperation {
+pub enum Operation {
     Query,
     Execute,
     ExecuteNoWait,
@@ -7,9 +8,10 @@ pub enum DatabaseOperation {
     ProgramInfo,
 }
 
+/// Safety metadata for a database operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationSafety {
-    pub operation: DatabaseOperation,
+    pub operation: Operation,
     pub reads_sql: bool,
     pub mutates_state: bool,
     pub submits_transaction: bool,
@@ -18,44 +20,46 @@ pub struct OperationSafety {
     pub requires_owner_write_intent: bool,
 }
 
-pub fn operation_safety(operation: DatabaseOperation) -> OperationSafety {
-    match operation {
-        DatabaseOperation::Query => OperationSafety {
-            operation,
-            reads_sql: true,
-            mutates_state: false,
-            submits_transaction: false,
-            waits_for_receipt: false,
-            requires_signed_rpc: true,
-            requires_owner_write_intent: false,
-        },
-        DatabaseOperation::Execute => OperationSafety {
-            operation,
-            reads_sql: true,
-            mutates_state: true,
-            submits_transaction: true,
-            waits_for_receipt: true,
-            requires_signed_rpc: true,
-            requires_owner_write_intent: true,
-        },
-        DatabaseOperation::ExecuteNoWait => OperationSafety {
-            operation,
-            reads_sql: true,
-            mutates_state: true,
-            submits_transaction: true,
-            waits_for_receipt: false,
-            requires_signed_rpc: true,
-            requires_owner_write_intent: true,
-        },
-        DatabaseOperation::AuthInfo | DatabaseOperation::ProgramInfo => OperationSafety {
-            operation,
-            reads_sql: false,
-            mutates_state: false,
-            submits_transaction: false,
-            waits_for_receipt: false,
-            requires_signed_rpc: true,
-            requires_owner_write_intent: false,
-        },
+impl Operation {
+    pub fn safety(self) -> OperationSafety {
+        match self {
+            Operation::Query => OperationSafety {
+                operation: self,
+                reads_sql: true,
+                mutates_state: false,
+                submits_transaction: false,
+                waits_for_receipt: false,
+                requires_signed_rpc: true,
+                requires_owner_write_intent: false,
+            },
+            Operation::Execute => OperationSafety {
+                operation: self,
+                reads_sql: true,
+                mutates_state: true,
+                submits_transaction: true,
+                waits_for_receipt: true,
+                requires_signed_rpc: true,
+                requires_owner_write_intent: true,
+            },
+            Operation::ExecuteNoWait => OperationSafety {
+                operation: self,
+                reads_sql: true,
+                mutates_state: true,
+                submits_transaction: true,
+                waits_for_receipt: false,
+                requires_signed_rpc: true,
+                requires_owner_write_intent: true,
+            },
+            Operation::AuthInfo | Operation::ProgramInfo => OperationSafety {
+                operation: self,
+                reads_sql: false,
+                mutates_state: false,
+                submits_transaction: false,
+                waits_for_receipt: false,
+                requires_signed_rpc: true,
+                requires_owner_write_intent: false,
+            },
+        }
     }
 }
 
@@ -64,8 +68,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn operation_safety_marks_execute_as_mutating_transaction() {
-        let safety = operation_safety(DatabaseOperation::Execute);
+    fn operation_method_marks_execute_as_mutating_transaction() {
+        let safety = Operation::Execute.safety();
         assert!(safety.mutates_state);
         assert!(safety.submits_transaction);
         assert!(safety.waits_for_receipt);
@@ -73,8 +77,8 @@ mod tests {
     }
 
     #[test]
-    fn operation_safety_marks_no_wait_without_receipt_wait() {
-        let safety = operation_safety(DatabaseOperation::ExecuteNoWait);
+    fn operation_method_marks_no_wait_without_receipt_wait() {
+        let safety = Operation::ExecuteNoWait.safety();
         assert!(safety.mutates_state);
         assert!(safety.submits_transaction);
         assert!(!safety.waits_for_receipt);

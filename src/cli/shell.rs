@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use crate::client::{
     config_path,
-    low_level::{program_info, query_typed, view, Session},
+    raw::{program_info, query_typed, view, Session},
 };
 
 use super::output::{dim, format_json, format_result, strong, write_text, OutputMode};

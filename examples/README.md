@@ -65,13 +65,33 @@ octra-sqlite status my_collections
 octra-sqlite verify my_collections
 ```
 
+Public-read mirror:
+
+```sh
+octra-sqlite new remilia_public --read-mode public --schema examples/remilia-collections.sql
+octra-sqlite status remilia_public --ready
+octra-sqlite remilia_public "select name, opensea_slug, relationship from collection order by name;"
+```
+
+Share the `read_uri` printed by `new` or `database info` so readers can query
+without a wallet:
+
+```sh
+octra-sqlite database info remilia_public
+octra-sqlite 'oct://devnet/oct...?read_mode=public' "select name from collection order by name;"
+```
+
+Public-read changes reads only. Inserts, updates, deletes, and restores still
+require the owner wallet.
+
 ## Remilia Read API
 
 [`remilia-read-api/`](./remilia-read-api/) is a tiny read-only Rust HTTP
-example. It shows how an application can build on the same client boundary as
-the CLI without making this repo a web framework.
+example for a public-read database. It shows how an application can build on the
+same client boundary as the CLI without making this repo a web framework.
 
 ```sh
+OCTRA_SQLITE_DATABASE=remilia_public \
 cargo run --example remilia-read-api
 curl http://127.0.0.1:8787/collections/milady
 ```

@@ -1,5 +1,5 @@
-use octra_sqlite::client::{Database, HttpTransport, OctraSqlite, QueryResult};
-use serde_json::{json, Map, Value};
+use octra_sqlite::{Client, Database, QueryResult, Value};
+use serde_json::{json, Map};
 use std::{
     env,
     error::Error,
@@ -12,7 +12,7 @@ type AppResult<T> = Result<T, Box<dyn Error>>;
 fn main() -> AppResult<()> {
     let addr = env::var("OCTRA_SQLITE_API_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".to_string());
     let database_name = env::var("OCTRA_SQLITE_DATABASE").unwrap_or_else(|_| "remilia".to_string());
-    let client = OctraSqlite::from_default_config()?;
+    let client = Client::from_default_config()?;
     let database = client.database(database_name.clone())?;
     let listener = TcpListener::bind(&addr)?;
 
@@ -35,7 +35,7 @@ fn main() -> AppResult<()> {
 
 fn handle_connection(
     mut stream: TcpStream,
-    database: &Database<HttpTransport>,
+    database: &Database,
     database_name: &str,
 ) -> AppResult<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -83,7 +83,7 @@ fn handle_connection(
     )
 }
 
-fn query_collection(database: &Database<HttpTransport>, slug: &str) -> AppResult<QueryResult> {
+fn query_collection(database: &Database, slug: &str) -> AppResult<QueryResult> {
     let sql = format!(
         "select name, opensea_slug, chain, relationship, launched_month, date_precision \
          from collection where opensea_slug = {} limit 1;",

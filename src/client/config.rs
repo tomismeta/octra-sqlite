@@ -1,4 +1,4 @@
-use super::error::{ClientError, ClientErrorKind, Result};
+use super::error::{Error, ErrorKind, Result};
 use crate::protocol::target::{DatabaseTarget, ReadMode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 const DEFAULT_CONFIG_JSON: &str = include_str!("../../config/defaults.json");
 
+/// Local octra-sqlite configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub wallet: Option<String>,
@@ -24,12 +25,14 @@ pub struct Config {
     pub database_metadata: BTreeMap<String, DatabaseMetadata>,
 }
 
+/// Per-network RPC and explorer profile.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkConfig {
     pub rpc: Option<String>,
     pub explorer: Option<String>,
 }
 
+/// Saved database metadata written by `octra-sqlite new`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct DatabaseMetadata {
     pub uri: String,
@@ -128,9 +131,8 @@ pub fn config_path() -> Result<PathBuf> {
     if let Ok(path) = env::var("OCTRA_SQLITE_CONFIG") {
         return Ok(PathBuf::from(path));
     }
-    let home = dirs::home_dir().ok_or_else(|| {
-        ClientError::with_kind(ClientErrorKind::Config, "could not locate home directory")
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| Error::with_kind(ErrorKind::Config, "could not locate home directory"))?;
     Ok(home.join(".octra").join("sqlite.json"))
 }
 
@@ -141,14 +143,14 @@ pub fn load_config() -> Result<Config> {
         return Ok(defaults);
     }
     let text = fs::read_to_string(&path).map_err(|error| {
-        ClientError::with_kind(
-            ClientErrorKind::Io,
+        Error::with_kind(
+            ErrorKind::Io,
             format!("reading {}: {error}", path.display()),
         )
     })?;
     let user_config = serde_json::from_str(&text).map_err(|error| {
-        ClientError::with_kind(
-            ClientErrorKind::Config,
+        Error::with_kind(
+            ErrorKind::Config,
             format!("parsing {}: {error}", path.display()),
         )
     })?;
@@ -166,8 +168,8 @@ pub fn write_config(config: &Config) -> Result<()> {
 
 fn bundled_default_config() -> Result<Config> {
     serde_json::from_str(DEFAULT_CONFIG_JSON).map_err(|error| {
-        ClientError::with_kind(
-            ClientErrorKind::Config,
+        Error::with_kind(
+            ErrorKind::Config,
             format!("parsing bundled default config: {error}"),
         )
     })

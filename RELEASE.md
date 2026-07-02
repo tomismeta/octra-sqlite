@@ -1,5 +1,39 @@
 # Release Notes
 
+## 0.5.0
+
+This is a Rust API ontology and crates.io debut preparation release over the
+deployed `0.3.3` Circle WASM proof. The contract, wire formats, bundled SQLite
+engine, CLI command surface, JSON envelopes, and public-read behavior are
+unchanged.
+
+## Added
+
+- Root Rust API exports for the admired path:
+  `Client`, `ClientOptions`, `Database`, `QueryResult`, `ExecuteResult`,
+  `SubmittedTransaction`, `AuthInfo`, `ProgramInfo`, `ReadMode`, `Value`,
+  `Error`, `ErrorKind`, and `Result`.
+- `Database::wait(&SubmittedTransaction)` to complete the `execute_no_wait`
+  lifecycle without exposing raw sessions.
+- `client::raw` for supported raw session/RPC plumbing.
+- Public-surface compile tripwire tests and config alias-cycle tests.
+
+## Changed
+
+- Renamed the Rust public API around product nouns and removed the
+  implementation-derived pre-debut names instead of carrying aliases.
+- Removed old Rust aliases instead of carrying compatibility debt.
+- Moved CLI entrypoints under `octra_sqlite::cli`.
+- Replaced the old free operation-safety helper with `Operation::safety()`.
+- Settled saved-database CLI naming on `database default NAME`.
+- Updated README, library-boundary docs, and shipped Rust examples to use the
+  root API.
+
+## Notes
+
+- No Circle redeploy is required for `0.5.0`.
+- External signer work is deferred to `0.6.0`.
+
 ## 0.4.0
 
 This is a productization release over the deployed `0.3.3` Circle WASM proof.
@@ -278,7 +312,7 @@ audited devnet proof; `0.2.0` is a client/library/devex release.
 
 ## Added
 
-- Public `OctraSqlite -> Database -> query/execute` Rust API shape.
+- Public client-to-database Rust API shape.
 - Devnet and mainnet network profiles in bundled config.
 - Public Remilia example database in bundled config.
 - Tiny read-only Remilia API example under `examples/remilia-read-api/`.

@@ -50,6 +50,7 @@ octra-sqlite new DATABASE "create table ..."
 octra-sqlite restore DATABASE --file dump.sql
 octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
+octra-sqlite database default DATABASE
 octra-sqlite limits DATABASE
 octra-sqlite commands --json
 ```
@@ -121,9 +122,10 @@ requiring callers to parse human help text.
 - `src/cli/portability.rs`: backup, dump, SQL restore, and CSV import helpers.
 - `src/client/`: reusable Rust client.
 - `src/client/mod.rs`: intentional client exports. The intended path is
-  `OctraSqlite -> Database -> query/execute` with typed results and operation
-  safety metadata. Raw deploy/RPC helpers live under `client::low_level`.
-- `src/client/database.rs`: small database handle.
+  `Client -> Database -> query/execute` with typed results and operation
+  safety metadata. Raw deploy/RPC helpers live under `client::raw`.
+- `src/client/database.rs`: `Client` and `Database` handles.
+- `src/client/raw.rs`: raw session and Octra RPC helpers for CLI/audit plumbing.
 - `src/client/rpc.rs`: signed RPC/view/query plumbing.
 - `src/client/results.rs`: typed client result wrappers and receipt validation.
 - `src/client/safety.rs`: operation safety metadata.
@@ -143,7 +145,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.4.0.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.5.0.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

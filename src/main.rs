@@ -1,5 +1,5 @@
 fn main() {
-    match octra_sqlite::run_cli_with_exit_code() {
+    match octra_sqlite::cli::run_with_exit_code() {
         Ok(0) => {}
         Ok(code) => std::process::exit(code),
         Err(error) => {

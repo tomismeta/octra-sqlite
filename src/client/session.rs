@@ -1,11 +1,12 @@
 use super::config::{load_config, Config};
-use super::error::{ClientError, ClientErrorKind, Result};
+use super::error::{Error, ErrorKind, Result};
 use super::wallet::{
     discover_wallet_path, load_wallet, normalized_public_key_b64, signing_key_from_text,
 };
 use crate::protocol::target::{parse_database_target, DatabaseTarget, ReadMode};
 use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signer, SigningKey};
+use std::collections::BTreeSet;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,16 +14,35 @@ use zeroize::Zeroize;
 
 const PUBLIC_VIEW_CALLER: &str = "oct11111111111111111111111111111111111111111111";
 
+/// Explicit options for opening a client or database.
+///
+/// Prefer `wallet` for normal use. Inline `private_key` and `public_key`
+/// fields exist for controlled services and tests that already manage secret
+/// material outside the local wallet file.
+///
+/// `ClientOptions` intentionally does not implement `Debug` because it may
+/// contain private key material.
+///
+/// ```compile_fail
+/// let _ = format!("{:?}", octra_sqlite::ClientOptions::default());
+/// ```
 #[derive(Clone, Default)]
-pub struct SessionOptions {
+pub struct ClientOptions {
+    /// Saved database name, raw Circle ID, or `oct://` database URI.
     pub target: Option<String>,
+    /// Local wallet JSON path.
     pub wallet: Option<PathBuf>,
+    /// Octra RPC URL override.
     pub rpc: Option<String>,
+    /// Caller address override for read/session construction.
     pub caller: Option<String>,
+    /// Inline private key material. Prefer `wallet` outside controlled tests.
     pub private_key: Option<String>,
+    /// Optional public key material used to verify the private key.
     pub public_key: Option<String>,
 }
 
+/// Resolved Octra session used by the raw client layer.
 #[derive(Clone)]
 pub struct Session {
     target: DatabaseTarget,
@@ -103,7 +123,7 @@ impl Session {
 
     pub fn open_database(&self, target: impl Into<String>) -> Result<Session> {
         let config = load_config().unwrap_or_default();
-        let mut target = resolve_target(&target.into(), &config)?;
+        let mut target = resolve_database_target(&target.into(), &config)?;
         if target.rpc.is_empty() {
             target.rpc = self.rpc.clone();
         }
@@ -139,15 +159,15 @@ impl Session {
 
     fn signer(&self) -> Result<&LocalSigner> {
         self.signer.as_deref().ok_or_else(|| {
-            ClientError::with_kind(
-                ClientErrorKind::Wallet,
+            Error::with_kind(
+                ErrorKind::Wallet,
                 "wallet private key is required for signed Octra operations",
             )
         })
     }
 }
 
-pub fn build_session(options: &SessionOptions) -> Result<Session> {
+pub fn build_session(options: &ClientOptions) -> Result<Session> {
     let config = load_config().unwrap_or_default();
     let target_value = options
         .target
@@ -157,16 +177,16 @@ pub fn build_session(options: &SessionOptions) -> Result<Session> {
         .or_else(|| env::var("OCTRA_SQLITE_TARGET").ok())
         .or_else(|| env::var("OCTRA_CIRCLE_ID").ok())
         .ok_or_else(|| {
-            ClientError::with_kind(
-                ClientErrorKind::Config,
+            Error::with_kind(
+                ErrorKind::Config,
                 "no database supplied and no default database is configured",
             )
         })?;
-    let target = resolve_target(&target_value, &config)?;
+    let target = resolve_database_target(&target_value, &config)?;
     build_session_for_target(options, &config, target)
 }
 
-pub fn build_control_session(options: &SessionOptions, network: &str) -> Result<Session> {
+pub fn build_control_session(options: &ClientOptions, network: &str) -> Result<Session> {
     let config = load_config().unwrap_or_default();
     let target = DatabaseTarget {
         raw: format!("oct://{network}"),
@@ -178,7 +198,7 @@ pub fn build_control_session(options: &SessionOptions, network: &str) -> Result<
     build_session_for_target(options, &config, target)
 }
 
-pub fn resolve_wallet_path(options: &SessionOptions, config: &Config) -> Option<PathBuf> {
+pub fn resolve_wallet_path(options: &ClientOptions, config: &Config) -> Option<PathBuf> {
     options
         .wallet
         .clone()
@@ -187,9 +207,30 @@ pub fn resolve_wallet_path(options: &SessionOptions, config: &Config) -> Option<
         .or_else(discover_wallet_path)
 }
 
-fn resolve_target(value: &str, config: &Config) -> Result<DatabaseTarget> {
+pub fn resolve_database_target(value: &str, config: &Config) -> Result<DatabaseTarget> {
+    let mut seen = BTreeSet::new();
+    let mut chain = Vec::new();
+    resolve_database_target_inner(value, config, &mut seen, &mut chain)
+}
+
+fn resolve_database_target_inner(
+    value: &str,
+    config: &Config,
+    seen: &mut BTreeSet<String>,
+    chain: &mut Vec<String>,
+) -> Result<DatabaseTarget> {
     if let Some(database) = config.databases.get(value) {
-        let mut target = resolve_target(database, config)?;
+        if !seen.insert(value.to_string()) {
+            chain.push(value.to_string());
+            return Err(Error::with_kind(
+                ErrorKind::Config,
+                format!("cyclic database alias: {}", chain.join(" -> ")),
+            ));
+        }
+        chain.push(value.to_string());
+        let mut target = resolve_database_target_inner(database, config, seen, chain)?;
+        chain.pop();
+        seen.remove(value);
         apply_target_metadata(value, config, &mut target);
         return Ok(target);
     }
@@ -208,7 +249,7 @@ fn apply_target_metadata(requested: &str, config: &Config, target: &mut Database
 }
 
 fn build_session_for_target(
-    options: &SessionOptions,
+    options: &ClientOptions,
     config: &Config,
     mut target: DatabaseTarget,
 ) -> Result<Session> {
@@ -234,8 +275,8 @@ fn build_session_for_target(
         wallet_rpc,
     )
     .ok_or_else(|| {
-        ClientError::with_kind(
-            ClientErrorKind::Config,
+        Error::with_kind(
+            ErrorKind::Config,
             "RPC is required; run octra-sqlite setup, pass --rpc, or set OCTRA_RPC_URL",
         )
     })?;
@@ -270,8 +311,8 @@ fn build_session_for_target(
         }
         None if target.read_mode.allows_unsigned_read() => None,
         None => {
-            return Err(ClientError::with_kind(
-                ClientErrorKind::Wallet,
+            return Err(Error::with_kind(
+                ErrorKind::Wallet,
                 "wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64",
             ))
         }
@@ -391,8 +432,41 @@ mod tests {
     }
 
     #[test]
+    fn resolve_database_target_follows_aliases() {
+        let mut config = Config {
+            network: Some("devnet".to_string()),
+            ..Config::default()
+        };
+        config.databases.insert("a".to_string(), "b".to_string());
+        config
+            .databases
+            .insert("b".to_string(), "oct://devnet/octABC".to_string());
+        let target = resolve_database_target("a", &config).unwrap();
+        assert_eq!(target.circle, "octABC");
+    }
+
+    #[test]
+    fn resolve_database_target_rejects_self_alias_cycle() {
+        let mut config = Config::default();
+        config.databases.insert("a".to_string(), "a".to_string());
+        let error = resolve_database_target("a", &config).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Config);
+        assert!(error.to_string().contains("a -> a"));
+    }
+
+    #[test]
+    fn resolve_database_target_rejects_multi_alias_cycle() {
+        let mut config = Config::default();
+        config.databases.insert("a".to_string(), "b".to_string());
+        config.databases.insert("b".to_string(), "a".to_string());
+        let error = resolve_database_target("a", &config).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Config);
+        assert!(error.to_string().contains("a -> b -> a"));
+    }
+
+    #[test]
     fn supplied_public_key_must_match_private_key() {
-        let error = match build_session(&SessionOptions {
+        let error = match build_session(&ClientOptions {
             target: Some("oct://devnet/octABC".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
@@ -400,12 +474,12 @@ mod tests {
                 "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
             ),
             public_key: Some(general_purpose::STANDARD.encode([2u8; 32])),
-            ..SessionOptions::default()
+            ..ClientOptions::default()
         }) {
             Ok(_) => panic!("mismatched public key should fail"),
             Err(error) => error,
         };
-        assert_eq!(error.kind(), ClientErrorKind::Wallet);
+        assert_eq!(error.kind(), ErrorKind::Wallet);
         assert!(error
             .to_string()
             .contains("wallet public key does not match private key"));
@@ -418,13 +492,13 @@ mod tests {
         let public_key = key.verifying_key().to_bytes();
         let mut keypair = Vec::from(seed);
         keypair.extend_from_slice(&public_key);
-        let session = build_session(&SessionOptions {
+        let session = build_session(&ClientOptions {
             target: Some("oct://devnet/octABC".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
             private_key: Some(hex::encode(keypair)),
             public_key: Some(general_purpose::STANDARD.encode(public_key)),
-            ..SessionOptions::default()
+            ..ClientOptions::default()
         })
         .unwrap();
         assert_eq!(
@@ -436,7 +510,7 @@ mod tests {
     #[test]
     fn rejects_private_keys_with_ambiguous_length() {
         let error = signing_key_from_text("0102").unwrap_err();
-        assert_eq!(error.kind(), ClientErrorKind::Wallet);
+        assert_eq!(error.kind(), ErrorKind::Wallet);
         assert!(error
             .to_string()
             .contains("32-byte seed or 64-byte keypair"));

@@ -3,7 +3,7 @@
 **Real SQLite inside an Octra Circle.**
 
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.4.0-111827)](./release/octra-sqlite-0.4.0.json)
+[![version](https://img.shields.io/badge/version-v0.5.0-111827)](./release/octra-sqlite-0.5.0.json)
 [![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
@@ -17,9 +17,7 @@ You need Rust/Cargo 1.87+. The Circle WASM is bundled; you do not need to
 compile it to start.
 
 ```sh
-git clone https://github.com/tomismeta/octra-sqlite.git
-cd octra-sqlite
-cargo install --path . --locked
+cargo install octra-sqlite --locked
 ```
 
 Read a public database immediately, no wallet required:
@@ -47,7 +45,15 @@ octra-sqlite art "select * from artist order by name;"
 Pinned install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.4.0 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.5.0 --locked
+```
+
+Source checkout:
+
+```sh
+git clone https://github.com/tomismeta/octra-sqlite.git
+cd octra-sqlite
+cargo install --path . --locked
 ```
 
 Guided wallet setup:
@@ -111,9 +117,9 @@ data intended to be publicly queryable.
 - Rust client: use the same reference client without shelling out.
 
 ```rust
-use octra_sqlite::client::OctraSqlite;
+use octra_sqlite::Client;
 
-let client = OctraSqlite::from_default_config()?;
+let client = Client::from_default_config()?;
 let db = client.database("art")?;
 let rows = db.query("select * from artist order by name;")?;
 ```
@@ -150,6 +156,7 @@ URI.
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, Circle ID, network, and RPC. |
 | `octra-sqlite database set NAME URI` | Save an `oct://` database URI locally. |
+| `octra-sqlite database default NAME` | Set the default local database. |
 | `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status. |
 | `octra-sqlite deploy [OPTIONS]` | Update an existing Circle with Circle WASM. |
 | `octra-sqlite help` | Show CLI help. |
@@ -245,6 +252,15 @@ flowchart TD
 The contract keeps the consensus surface small: SQLite runs SQL, the VFS stores
 SQLite pages in Octra storage, and the Rust client handles signing, rendering,
 backup, restore, and local developer experience.
+
+## Bundled WASM
+
+The crate ships `circle/wasm/octra_sqlite_circle.wasm` so users do not need a
+local WASM toolchain. `scripts/audit-wasm.sh` checks the Circle import/export
+surface, [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs,
+and release manifests publish the bundled WASM hash plus live devnet proof
+metadata. The WASM embeds public-domain SQLite and public-domain TweetNaCl C
+code inside this MIT-licensed crate.
 
 ## Reference
 
