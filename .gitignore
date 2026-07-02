@@ -23,5 +23,9 @@ secrets.json
 .octra
 .octra/
 .claude/
+
+# local handoff notes
+docs/handoff.md
+
 *.wasm
 !circle/wasm/octra_sqlite_circle.wasm
