@@ -131,11 +131,11 @@ octra-sqlite wallet attach ./wallet.json
 printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
 ```
 
-Supported wallet inputs are the official Octra wallet-generator `wallet.json`,
-an existing plaintext wallet JSON, or a private key pasted/imported through the
-CLI. WebCLI `.oct` files are encrypted/PIN-protected and are not imported
-directly; use the official `wallet.json`, attach plaintext wallet JSON, or
-import the private key.
+Supported wallet inputs are the official Octra wallet-generator
+[`wallet.json`](https://wallet.octra.org/), an existing plaintext wallet JSON,
+or a private key pasted/imported through the CLI. WebCLI `.oct` files are
+encrypted/PIN-protected and are not imported directly; use the official
+`wallet.json`, attach plaintext wallet JSON, or import the private key.
 
 ## Verifiability
 
