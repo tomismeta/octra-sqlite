@@ -2,16 +2,16 @@
 
 ## 0.5.1
 
-This is a README and packaging polish release for the crates.io debut. The
-contract, wire formats, bundled SQLite engine, CLI command surface, JSON
-envelopes, Rust API, and public-read behavior are unchanged from `0.5.0`.
+This is a README and packaging polish release. The contract, wire formats,
+bundled SQLite engine, CLI command surface, JSON envelopes, Rust API, and
+public-read behavior are unchanged from `0.5.0`.
 
 ## Changed
 
 - Refactored the README around the crates.io reader: quick CLI query, quick
-  Rust query, Octra context, read modes, core commands, shell dot-command
-  reference, verifiability, feature flags, MSRV, stability, and
-  security/contribution links.
+  Rust query, Octra context, wallet setup, root Rust API surface, CLI command
+  reference, shell dot-command reference, read modes, verifiability, Cargo
+  features, MSRV, stability, and security/contribution links.
 - Replaced the GitHub-only Mermaid architecture diagram with a plain text
   diagram that renders on crates.io.
 - Mirrored the README's config-free public-read Rust example in crate docs and
@@ -24,7 +24,7 @@ envelopes, Rust API, and public-read behavior are unchanged from `0.5.0`.
 ## Notes
 
 - No Circle redeploy is required for `0.5.1`.
-- `0.5.1` is intended to be the first crates.io-published version.
+- `0.5.1` is ready to be the first crates.io-published version.
 
 ## 0.5.0
 
