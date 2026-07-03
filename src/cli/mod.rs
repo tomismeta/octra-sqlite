@@ -1,42 +1,44 @@
-use anyhow::{anyhow, bail, Context, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 mod portability;
 mod shell;
 use crate::{
     client::{
+        AuthInfo, ClientOptions, Config, DatabaseMetadata, Error, ErrorKind, RpcTraceMode,
         config_path, load_config,
         raw::{
-            auth_info, build_control_session as client_build_control_session,
+            Session, WalletMaterial, auth_info,
+            build_control_session as client_build_control_session,
             build_session as client_build_session, circle_info, discover_wallet_path, exec_sql,
             next_nonce, program_info, query_typed, query_typed_traced,
             resolve_database_target as client_resolve_database_target,
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
             wait_for_transaction, wallet_caller, wallet_file_material,
-            wallet_material_from_private_key, Session, WalletMaterial,
+            wallet_material_from_private_key,
         },
-        write_config, AuthInfo, ClientOptions, Config, DatabaseMetadata, Error, ErrorKind,
-        RpcTraceMode,
+        write_config,
     },
     protocol::{
         base58,
-        target::{parse_database_target, DatabaseTarget as Target, ReadMode},
+        target::{DatabaseTarget as Target, ReadMode, parse_database_target},
         tx::Tx,
     },
 };
 use output::{
-    dim, format_exec_result, format_field, format_json, format_result, format_status_line,
-    hyperlink, print_exec_result, print_json, print_result, strong, value_to_string, write_text,
-    OutputMode,
+    OutputMode, dim, format_exec_result, format_field, format_json, format_result,
+    format_status_line, hyperlink, print_exec_result, print_json, print_result, strong,
+    value_to_string, write_text,
 };
 use portability::{
-    backup_database, ensure_sql_text_fits, execute_sql_script_with_bootstrap_owner_progress,
-    execute_sql_script_with_owner_auth_progress, execute_sql_script_with_progress, plan_sql_script,
-    run_local_sqlite_integrity, submit_sql_script_no_wait, SqlBatchProgress, SqlScriptExecution,
-    SqlScriptPlan, MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES,
+    MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES, SqlBatchProgress, SqlScriptExecution,
+    SqlScriptPlan, backup_database, ensure_sql_text_fits,
+    execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_owner_auth_progress,
+    execute_sql_script_with_progress, plan_sql_script, run_local_sqlite_integrity,
+    submit_sql_script_no_wait,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
 use std::env;
@@ -940,12 +942,16 @@ fn ensure_wallet_for_database_creation(args: &NewArgs, config: &mut Config) -> R
         return Ok(());
     }
     if !io::stdin().is_terminal() {
-        bail!("database creation requires a wallet; run octra-sqlite setup, pass --wallet, or set OCTRA_PRIVATE_KEY_B64");
+        bail!(
+            "database creation requires a wallet; run octra-sqlite setup, pass --wallet, or set OCTRA_PRIVATE_KEY_B64"
+        );
     }
     match prompt_wallet_onboarding(config)? {
         WalletOnboarding::Configured(_) => Ok(()),
         WalletOnboarding::Walletless => {
-            bail!("database creation requires a wallet; walletless mode only works for public-read queries")
+            bail!(
+                "database creation requires a wallet; walletless mode only works for public-read queries"
+            )
         }
     }
 }
@@ -1360,11 +1366,7 @@ fn dot_arg_quote(value: &str) -> String {
 }
 
 fn new_followup_target<'a>(name: &'a str, target_uri: &'a str, no_name: bool) -> &'a str {
-    if no_name {
-        target_uri
-    } else {
-        name
-    }
+    if no_name { target_uri } else { name }
 }
 
 pub(super) fn print_field(label: &str, detail: impl AsRef<str>) {
@@ -1884,7 +1886,9 @@ fn read_stdin_secret(error: &str) -> Result<String> {
 
 fn read_tty_secret(prompt: &str) -> Result<String> {
     if !io::stdin().is_terminal() {
-        bail!("interactive private-key import requires a terminal; use wallet import --stdin for automation");
+        bail!(
+            "interactive private-key import requires a terminal; use wallet import --stdin for automation"
+        );
     }
     let prompt = format!("{}: ", dim(prompt));
     rpassword::prompt_password(prompt).context("reading private key from terminal")
@@ -2946,7 +2950,9 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
             return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
         }
         if args.trace_rpc_json.is_some() {
-            bail!("--trace-rpc-json requires one SQL statement; interactive shell tracing is not supported");
+            bail!(
+                "--trace-rpc-json requires one SQL statement; interactive shell tracing is not supported"
+            );
         }
         run_shell(session, mode)
     } else {
@@ -5044,14 +5050,16 @@ COMMIT;",
             vec![".backup", "main", "organization copy.sqlite"]
         );
         assert!(shell::reject_shell_pipe_arg("|cat", ".read").is_err());
-        assert!(shell::import_args(&[
-            "--csv".to_string(),
-            "--skip".to_string(),
-            "1".to_string(),
-            "person.csv".to_string(),
-            "person".to_string(),
-        ])
-        .is_ok());
+        assert!(
+            shell::import_args(&[
+                "--csv".to_string(),
+                "--skip".to_string(),
+                "1".to_string(),
+                "person.csv".to_string(),
+                "person".to_string(),
+            ])
+            .is_ok()
+        );
         assert!(shell::import_args(&["person.csv".to_string(), "person".to_string()]).is_err());
     }
 
@@ -5345,10 +5353,12 @@ COMMIT;",
         );
         assert_eq!(limits["auth"]["read_modes"], json!(["sealed", "public"]));
         assert_eq!(limits["auth"]["write_model"], "OSW1 owner write intent");
-        assert!(limits["trace"]["modes"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("summary")));
+        assert!(
+            limits["trace"]["modes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("summary"))
+        );
     }
 
     #[test]
@@ -5357,33 +5367,41 @@ COMMIT;",
         assert_eq!(commands["ok"], true);
         assert_eq!(commands["type"], "commands");
         assert_eq!(commands["schema"], "octra-sqlite.cli.v1");
-        assert!(commands["commands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|command| {
-                command.get("command").and_then(Value::as_str)
-                    == Some("octra-sqlite DATABASE \"SQL\"")
-                    && command
-                        .get("envelopes")
-                        .and_then(Value::as_array)
-                        .unwrap()
-                        .contains(&json!("query"))
-            }));
-        assert!(commands["commands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|command| command.get("command").and_then(Value::as_str)
-                == Some("octra-sqlite database default NAME")));
-        assert!(commands["json_envelopes"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("new")));
-        assert!(!commands["json_envelopes"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("install")));
+        assert!(
+            commands["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| {
+                    command.get("command").and_then(Value::as_str)
+                        == Some("octra-sqlite DATABASE \"SQL\"")
+                        && command
+                            .get("envelopes")
+                            .and_then(Value::as_array)
+                            .unwrap()
+                            .contains(&json!("query"))
+                })
+        );
+        assert!(
+            commands["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| command.get("command").and_then(Value::as_str)
+                    == Some("octra-sqlite database default NAME"))
+        );
+        assert!(
+            commands["json_envelopes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("new"))
+        );
+        assert!(
+            !commands["json_envelopes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("install"))
+        );
         assert!(commands["discovery"].get("install").is_none());
         assert_eq!(
             commands["discovery"]["limits"],
@@ -5602,13 +5620,17 @@ COMMIT;",
     #[test]
     fn setup_rejects_encrypted_oct_wallet_path() {
         let error = reject_encrypted_oct_wallet(Path::new("wallet.oct")).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("webcli .oct wallets are encrypted"));
+        assert!(
+            error
+                .to_string()
+                .contains("webcli .oct wallets are encrypted")
+        );
         let error = reject_encrypted_oct_wallet(Path::new("wallet.OCT")).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("webcli .oct wallets are encrypted"));
+        assert!(
+            error
+                .to_string()
+                .contains("webcli .oct wallets are encrypted")
+        );
     }
 
     #[test]

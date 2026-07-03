@@ -17,10 +17,12 @@ fn limits_json_is_machine_readable_without_wallet() {
     assert_eq!(value["type"], "limits");
     assert_eq!(value["schema"], "octra-sqlite.cli.v1");
     assert_eq!(value["result"]["limit_error"], "result_limit_exceeded");
-    assert!(value["trace"]["modes"]
-        .as_array()
-        .unwrap()
-        .contains(&Value::String("summary".to_string())));
+    assert!(
+        value["trace"]["modes"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String("summary".to_string()))
+    );
 }
 
 #[test]
@@ -34,15 +36,19 @@ fn commands_json_is_machine_readable_without_wallet() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["type"], "commands");
     assert_eq!(value["schema"], "octra-sqlite.cli.v1");
-    assert!(value["commands"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|command| command["command"] == "octra-sqlite DATABASE \"SQL\""));
-    assert!(value["json_envelopes"]
-        .as_array()
-        .unwrap()
-        .contains(&Value::String("commands".to_string())));
+    assert!(
+        value["commands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| command["command"] == "octra-sqlite DATABASE \"SQL\"")
+    );
+    assert!(
+        value["json_envelopes"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String("commands".to_string()))
+    );
 }
 
 #[test]
@@ -60,8 +66,10 @@ fn json_errors_have_stable_shape_and_exit_code() {
     assert_eq!(value["schema"], "octra-sqlite.cli.v1");
     assert_eq!(value["exit_code"], 1);
     assert!(value["error"]["code"].is_string());
-    assert!(value["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("check requires"));
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("check requires")
+    );
 }

@@ -254,8 +254,10 @@ mod tests {
         });
         let error = ensure_receipt_success(&receipt).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Receipt);
-        assert!(error
-            .to_string()
-            .contains("database error (sqlite_exec_failed): no such table: correction"));
+        assert!(
+            error
+                .to_string()
+                .contains("database error (sqlite_exec_failed): no such table: correction")
+        );
     }
 }

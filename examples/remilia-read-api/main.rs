@@ -1,5 +1,5 @@
 use octra_sqlite::{Client, Database, QueryResult, Value};
-use serde_json::{json, Map};
+use serde_json::{Map, json};
 use std::{
     env,
     error::Error,

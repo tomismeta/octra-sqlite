@@ -11,12 +11,14 @@
   diagram.
 - Mirrored the README's config-free public-read Rust example in crate docs and
   added a public-surface guard for `Client::default()`.
+- Swapped the default HTTP transport dependency from `reqwest` to `ureq` and
+  moved the crate to Rust edition 2024.
 - Refreshed `CONTRIBUTING.md` and included it with `SECURITY.md` in the crate
   package so README links resolve from crates.io.
 - Added CI coverage for clippy and the `http`-without-`cli` feature
   configuration used by docs.rs.
-- Kept code behavior, CLI commands, JSON envelopes, OSR1/OSW1 wire formats,
-  bundled Circle WASM, and public-read behavior unchanged from `0.5.0`.
+- Kept CLI commands, JSON envelopes, Rust API, OSR1/OSW1 wire formats, bundled
+  Circle WASM, and public-read behavior unchanged from `0.5.0`.
 
 ## 0.5.0
 

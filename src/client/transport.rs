@@ -1,9 +1,9 @@
 use super::error::Result;
 #[cfg(feature = "http")]
 use super::error::{Error, ErrorKind};
+use serde_json::Value;
 #[cfg(feature = "http")]
 use serde_json::json;
-use serde_json::Value;
 #[cfg(feature = "http")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "http")]
@@ -25,7 +25,7 @@ const MAX_RPC_ATTEMPTS: usize = 4;
 #[cfg(feature = "http")]
 #[derive(Clone)]
 pub struct HttpTransport {
-    client: reqwest::blocking::Client,
+    agent: ureq::Agent,
     trace: Option<Arc<Mutex<RpcTraceWriter>>>,
 }
 
@@ -56,12 +56,12 @@ impl Default for HttpTransport {
 #[cfg(feature = "http")]
 impl HttpTransport {
     pub fn new() -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new());
+        let config = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .build();
         Self {
-            client,
+            agent: ureq::Agent::new_with_config(config),
             trace: None,
         }
     }
@@ -171,7 +171,7 @@ impl Transport for HttpTransport {
         });
         let retryable = method != "octra_submit";
         for attempt in 1..=MAX_RPC_ATTEMPTS {
-            let response = match self.client.post(rpc).json(&body).send() {
+            let mut response = match self.agent.post(rpc).send_json(&body) {
                 Ok(response) => response,
                 Err(error) => {
                     let message = format!("calling {method}: {error}");
@@ -187,10 +187,10 @@ impl Transport for HttpTransport {
             let status_code = status.as_u16();
             let retry_after = response
                 .headers()
-                .get(reqwest::header::RETRY_AFTER)
+                .get("retry-after")
                 .and_then(|value| value.to_str().ok())
                 .and_then(parse_retry_after);
-            let text = match response.text() {
+            let text = match response.body_mut().read_to_string() {
                 Ok(text) => text,
                 Err(error) => {
                     let message = format!("reading {method} response body: {error}");

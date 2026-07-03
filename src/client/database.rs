@@ -5,11 +5,11 @@ use super::{
     results::{AuthInfo, ExecuteResult, ProgramInfo, QueryResult, SubmittedTransaction},
     rpc::{auth_info_with, program_info_with, query_typed_with, wait_for_receipt_with},
     safety::Operation,
-    session::{build_session, ClientOptions, Session},
+    session::{ClientOptions, Session, build_session},
     transport::Transport,
     write::{
-        ensure_submit_mode, prepare_write_with, sign_write, submit_signed_write_with,
-        PreparedWrite, SignedWrite,
+        PreparedWrite, SignedWrite, ensure_submit_mode, prepare_write_with, sign_write,
+        submit_signed_write_with,
     },
 };
 #[cfg(feature = "http")]
@@ -234,7 +234,7 @@ mod tests {
     use super::*;
     use crate::client::{Error, ErrorKind};
     use crate::protocol::tx::Tx;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::sync::{Arc, Mutex};
 
     #[derive(Clone)]

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rustyline::error::ReadlineError;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,16 +6,16 @@ use std::time::Instant;
 
 use crate::client::{
     config_path,
-    raw::{program_info, query_typed, view, Session},
+    raw::{Session, program_info, query_typed, view},
 };
 
-use super::output::{dim, format_json, format_result, strong, write_text, OutputMode};
+use super::output::{OutputMode, dim, format_json, format_result, strong, write_text};
 use super::portability::{
     backup_database, dump_database, execute_sql_script, fullschema_database, import_csv,
     sql_string_literal,
 };
 use super::{
-    format_schema_result, linked_circle, print_field, run_one_sql_to, verify, BackupSummary,
+    BackupSummary, format_schema_result, linked_circle, print_field, run_one_sql_to, verify,
 };
 
 struct ShellState {
@@ -527,11 +527,13 @@ mod tests {
             (PathBuf::from("rows.csv"), "artist".to_string(), 2)
         );
         assert!(import_args(&["rows.csv".to_string(), "artist".to_string()]).is_err());
-        assert!(import_args(&[
-            "--csv".to_string(),
-            "|cat".to_string(),
-            "artist".to_string(),
-        ])
-        .is_err());
+        assert!(
+            import_args(&[
+                "--csv".to_string(),
+                "|cat".to_string(),
+                "artist".to_string(),
+            ])
+            .is_err()
+        );
     }
 }

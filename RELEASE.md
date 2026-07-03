@@ -2,9 +2,9 @@
 
 ## 0.5.1
 
-This is a README and packaging polish release. The contract, wire formats,
-bundled SQLite engine, CLI command surface, JSON envelopes, Rust API, and
-public-read behavior are unchanged from `0.5.0`.
+This is a README, dependency, and packaging polish release. The contract, wire
+formats, bundled SQLite engine, CLI command surface, JSON envelopes, Rust API,
+and public-read behavior are unchanged from `0.5.0`.
 
 ## Changed
 
@@ -16,6 +16,8 @@ public-read behavior are unchanged from `0.5.0`.
   diagram that renders on crates.io.
 - Mirrored the README's config-free public-read Rust example in crate docs and
   added a public-surface guard for `Client::default()`.
+- Swapped the default HTTP transport dependency from `reqwest` to `ureq` and
+  moved the crate to Rust edition 2024.
 - Refreshed `CONTRIBUTING.md` and included it with `SECURITY.md` in the crate
   package.
 - Added CI coverage for clippy and the `http`-without-`cli` feature

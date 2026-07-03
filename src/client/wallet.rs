@@ -1,7 +1,7 @@
 use super::error::{Error, ErrorKind, Result};
 #[cfg(feature = "cli")]
 use crate::protocol::base58;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use ed25519_dalek::SigningKey;
 use serde::Deserialize;
 #[cfg(feature = "cli")]

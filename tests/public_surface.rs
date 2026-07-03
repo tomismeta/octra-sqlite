@@ -7,16 +7,16 @@ use octra_sqlite::{
 };
 
 use octra_sqlite::client::{
-    config_path, load_config, write_config, Config, DatabaseMetadata, NetworkConfig, Operation,
-    OperationSafety, PreparedOwnerWrite, PreparedWrite, SignedWrite, Transport,
+    Config, DatabaseMetadata, NetworkConfig, Operation, OperationSafety, PreparedOwnerWrite,
+    PreparedWrite, SignedWrite, Transport, config_path, load_config, write_config,
 };
 
 #[cfg(feature = "http")]
 use octra_sqlite::client::{HttpTransport, RpcTraceMode};
 
 use octra_sqlite::client::raw::{
-    build_control_session, build_session, discover_wallet_path, resolve_database_target,
-    resolve_wallet_path, wallet_caller, ClientOptions as RawClientOptions, Session,
+    ClientOptions as RawClientOptions, Session, build_control_session, build_session,
+    discover_wallet_path, resolve_database_target, resolve_wallet_path, wallet_caller,
 };
 
 #[cfg(feature = "http")]

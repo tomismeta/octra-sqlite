@@ -126,7 +126,9 @@ mod tests {
             "result_limit_exceeded"
         );
         assert_eq!(
-            classify_error("database error (response_too_large): typed query result exceeded contract response buffer"),
+            classify_error(
+                "database error (response_too_large): typed query result exceeded contract response buffer"
+            ),
             "result_too_large"
         );
         assert_eq!(

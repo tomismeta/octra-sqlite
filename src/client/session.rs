@@ -1,10 +1,10 @@
-use super::config::{load_config, Config};
+use super::config::{Config, load_config};
 use super::error::{Error, ErrorKind, Result};
 use super::wallet::{
     discover_wallet_path, load_wallet, normalized_public_key_b64, signing_key_from_text,
 };
-use crate::protocol::target::{parse_database_target, DatabaseTarget, ReadMode};
-use base64::{engine::general_purpose, Engine as _};
+use crate::protocol::target::{DatabaseTarget, ReadMode, parse_database_target};
+use base64::{Engine as _, engine::general_purpose};
 use ed25519_dalek::{Signer, SigningKey};
 use std::collections::BTreeSet;
 use std::env;
@@ -314,7 +314,7 @@ fn build_session_for_target(
             return Err(Error::with_kind(
                 ErrorKind::Wallet,
                 "wallet private key is required; pass --wallet or OCTRA_PRIVATE_KEY_B64",
-            ))
+            ));
         }
     };
     Ok(Session {
@@ -480,9 +480,11 @@ mod tests {
             Err(error) => error,
         };
         assert_eq!(error.kind(), ErrorKind::Wallet);
-        assert!(error
-            .to_string()
-            .contains("wallet public key does not match private key"));
+        assert!(
+            error
+                .to_string()
+                .contains("wallet public key does not match private key")
+        );
     }
 
     #[test]
@@ -511,8 +513,10 @@ mod tests {
     fn rejects_private_keys_with_ambiguous_length() {
         let error = signing_key_from_text("0102").unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Wallet);
-        assert!(error
-            .to_string()
-            .contains("32-byte seed or 64-byte keypair"));
+        assert!(
+            error
+                .to_string()
+                .contains("32-byte seed or 64-byte keypair")
+        );
     }
 }

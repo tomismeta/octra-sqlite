@@ -83,8 +83,8 @@ impl From<std::io::Error> for Error {
 }
 
 #[cfg(feature = "http")]
-impl From<reqwest::Error> for Error {
-    fn from(error: reqwest::Error) -> Self {
+impl From<ureq::Error> for Error {
+    fn from(error: ureq::Error) -> Self {
         Self::with_kind(ErrorKind::Transport, error.to_string())
     }
 }

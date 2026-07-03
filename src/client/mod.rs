@@ -10,7 +10,7 @@ mod transport;
 mod wallet;
 mod write;
 
-pub use config::{config_path, load_config, write_config, Config, DatabaseMetadata, NetworkConfig};
+pub use config::{Config, DatabaseMetadata, NetworkConfig, config_path, load_config, write_config};
 pub use database::{Client, Database};
 pub use error::{Error, ErrorKind, Result};
 pub use results::{AuthInfo, ExecuteResult, ProgramInfo, QueryResult, SubmittedTransaction};

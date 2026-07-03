@@ -1,6 +1,6 @@
 use super::error::{Error, Result};
-use base64::{engine::general_purpose, Engine as _};
-use serde_json::{json, Value};
+use base64::{Engine as _, engine::general_purpose};
+use serde_json::{Value, json};
 
 pub const TYPED_PREFIX: &str = "OSR1:";
 

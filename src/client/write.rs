@@ -8,9 +8,9 @@ use super::{
 };
 use crate::protocol::{
     osw1,
-    tx::{canonical_tx, Tx},
+    tx::{Tx, canonical_tx},
 };
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::env;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -440,7 +440,7 @@ fn now_timestamp() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::session::{build_session, ClientOptions};
+    use crate::client::session::{ClientOptions, build_session};
     use serde_json::Value;
     use std::sync::{Arc, Mutex};
 

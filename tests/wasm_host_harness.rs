@@ -1,7 +1,7 @@
 #[cfg(feature = "wasm-behavior")]
 mod wasm_behavior {
-    use anyhow::{anyhow, bail, Result};
-    use base64::{engine::general_purpose, Engine as _};
+    use anyhow::{Result, anyhow, bail};
+    use base64::{Engine as _, engine::general_purpose};
     use ed25519_dalek::{Signer, SigningKey};
     use serde_json::Value;
     use sha2::{Digest, Sha256};
@@ -517,13 +517,15 @@ select no_such_column from people;",
         assert_eq!(unsigned["ok"], false);
         assert_eq!(unsigned["error"], "auth_required");
         assert_eq!(contract.host.borrow().status, 401);
-        assert!(contract
-            .host
-            .borrow()
-            .events
-            .iter()
-            .any(|(topic, data)| topic == "octra.sqlite.auth"
-                && data.contains("auth_not_authenticated:auth_required")));
+        assert!(
+            contract
+                .host
+                .borrow()
+                .events
+                .iter()
+                .any(|(topic, data)| topic == "octra.sqlite.auth"
+                    && data.contains("auth_not_authenticated:auth_required"))
+        );
 
         let reset = json_response(&contract.call_update("reset", &[])?);
         assert_eq!(reset["ok"], false);
@@ -545,14 +547,15 @@ insert into person(first_name) values ('Ada');";
         let written =
             json_response(&contract.call_update("exec_trace", &[sql, &pubkey, "1", &sig])?);
         assert_eq!(written["ok"], true);
-        assert!(contract
-            .host
-            .borrow()
-            .events
-            .iter()
-            .any(
-                |(topic, data)| topic == "octra.sqlite.sql" && data.contains("create table person")
-            ));
+        assert!(
+            contract
+                .host
+                .borrow()
+                .events
+                .iter()
+                .any(|(topic, data)| topic == "octra.sqlite.sql"
+                    && data.contains("create table person"))
+        );
 
         let storage = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage["owner_sequence"], 1);
@@ -571,13 +574,15 @@ insert into person(first_name) values ('Ada');";
         assert_eq!(denied["ok"], false);
         assert_eq!(denied["error"], "auth_denied");
         assert_eq!(contract.host.borrow().status, 403);
-        assert!(contract
-            .host
-            .borrow()
-            .events
-            .iter()
-            .any(|(topic, data)| topic == "octra.sqlite.auth"
-                && data.contains("auth_not_authorized:auth_denied")));
+        assert!(
+            contract
+                .host
+                .borrow()
+                .events
+                .iter()
+                .any(|(topic, data)| topic == "octra.sqlite.auth"
+                    && data.contains("auth_not_authorized:auth_denied"))
+        );
 
         let mut wrong_db_id = [0u8; 32];
         wrong_db_id.copy_from_slice(&Sha256::digest(b"wrong-db-id"));
@@ -610,13 +615,15 @@ insert into person(first_name) values ('Ada');";
         assert_eq!(failed_sql["ok"], false);
         assert_eq!(failed_sql["error"], "sqlite_exec_failed");
         assert_eq!(contract.host.borrow().status, 0);
-        assert!(contract
-            .host
-            .borrow()
-            .events
-            .iter()
-            .any(|(topic, data)| topic == "octra.sqlite.error"
-                && data.contains("sqlite_exec_failed:no such table: missing_table")));
+        assert!(
+            contract
+                .host
+                .borrow()
+                .events
+                .iter()
+                .any(|(topic, data)| topic == "octra.sqlite.error"
+                    && data.contains("sqlite_exec_failed:no such table: missing_table"))
+        );
         let storage_after_failed_sql = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage_after_failed_sql["owner_sequence"], 2);
 
@@ -821,11 +828,13 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
             &["create table people(first_name text not null, last_name text not null);"],
         )?);
         assert_eq!(failed["ok"], false);
-        assert!(!contract
-            .host
-            .borrow()
-            .kv
-            .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice()));
+        assert!(
+            !contract
+                .host
+                .borrow()
+                .kv
+                .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice())
+        );
         Ok(())
     }
 
@@ -840,11 +849,13 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         contract.host.borrow_mut().fail_put_after = Some(0);
         let failed = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
         assert_eq!(failed["ok"], false);
-        assert!(!contract
-            .host
-            .borrow()
-            .kv
-            .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice()));
+        assert!(
+            !contract
+                .host
+                .borrow()
+                .kv
+                .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice())
+        );
 
         contract.host.borrow_mut().fail_put_after = None;
         let retry = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
@@ -865,11 +876,13 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         contract.host.borrow_mut().fail_put_key_contains = Some(".manifest".to_string());
         let failed = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
         assert_eq!(failed["ok"], false);
-        assert!(!contract
-            .host
-            .borrow()
-            .kv
-            .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice()));
+        assert!(
+            !contract
+                .host
+                .borrow()
+                .kv
+                .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice())
+        );
         let storage = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage["owner_sequence"], 0);
 
@@ -894,11 +907,13 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         let failed = json_response(&contract.call_update("exec", &[sql, &pubkey, "1", &sig])?);
         assert_eq!(failed["ok"], false);
         assert!(manifest_key_count(&contract) >= 1);
-        assert!(!contract
-            .host
-            .borrow()
-            .kv
-            .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice()));
+        assert!(
+            !contract
+                .host
+                .borrow()
+                .kv
+                .contains_key(b"octra.sqlite.vfs.v1.meta".as_slice())
+        );
         let storage = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage["owner_sequence"], 0);
 
@@ -920,9 +935,11 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
             json_response(&contract.call_query("query_typed", &["select * from companion;"])?);
         assert_eq!(missing["ok"], false);
         assert_eq!(missing["error"], "sqlite_prepare_failed");
-        assert!(missing["detail"]
-            .as_str()
-            .is_some_and(|detail| detail.contains("no such table: companion")));
+        assert!(
+            missing["detail"]
+                .as_str()
+                .is_some_and(|detail| detail.contains("no such table: companion"))
+        );
         let trailing_line_comment =
             contract.call_query("query_typed", &["select 1 as one; -- trailing comment"])?;
         assert!(trailing_line_comment.starts_with("OSR1:"));

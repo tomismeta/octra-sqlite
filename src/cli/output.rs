@@ -547,8 +547,10 @@ mod tests {
         let rendered = format_exec_result(&result).unwrap();
         assert!(rendered.contains("write: confirmed"));
         assert!(rendered.contains("circle: octCircle"));
-        assert!(rendered
-            .contains("circle_url: https://devnet.octrascan.io/address.html?addr=octCircle"));
+        assert!(
+            rendered
+                .contains("circle_url: https://devnet.octrascan.io/address.html?addr=octCircle")
+        );
         assert!(rendered.contains("wallet: octWallet"));
         assert!(rendered.contains("tx: abc123"));
         assert!(rendered.contains("tx_url: https://devnet.octrascan.io/tx.html?hash=abc123"));

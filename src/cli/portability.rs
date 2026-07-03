@@ -1,5 +1,5 @@
-use anyhow::{anyhow, bail, Context, Result};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::raw::{auth_info, exec_sql, exec_sql_with_owner_auth, view, Session};
+use crate::client::raw::{Session, auth_info, exec_sql, exec_sql_with_owner_auth, view};
 
 use super::BackupSummary;
 
@@ -887,11 +887,7 @@ fn sql_tail_tokens_since_last_semicolon(sql: &str) -> Vec<String> {
             tokens.push(token.to_ascii_lowercase());
         }
     });
-    if !tokens.is_empty() {
-        tokens
-    } else {
-        tail
-    }
+    if !tokens.is_empty() { tokens } else { tail }
 }
 
 fn scan_sql_tokens(mut sql: &str, mut visit: impl FnMut(&str)) {
@@ -1170,11 +1166,13 @@ create trigger person_audit after insert on person begin
 end;
 insert into person(name) values ('Ada; Lovelace'),('Grace Hopper');";
 
-        assert!(ProcessCommand::new("sqlite3")
-            .arg(&source)
-            .arg(seed)
-            .status()?
-            .success());
+        assert!(
+            ProcessCommand::new("sqlite3")
+                .arg(&source)
+                .arg(seed)
+                .status()?
+                .success()
+        );
         let dump = ProcessCommand::new("sqlite3")
             .arg(&source)
             .arg(".dump")
@@ -1187,11 +1185,13 @@ insert into person(name) values ('Ada; Lovelace'),('Grace Hopper');";
 
         let split_dump = dir.join("split.sql");
         fs::write(&split_dump, statements.join("\n"))?;
-        assert!(ProcessCommand::new("sqlite3")
-            .arg(&restored)
-            .arg(format!(".read {}", split_dump.display()))
-            .status()?
-            .success());
+        assert!(
+            ProcessCommand::new("sqlite3")
+                .arg(&restored)
+                .arg(format!(".read {}", split_dump.display()))
+                .status()?
+                .success()
+        );
         let integrity = ProcessCommand::new("sqlite3")
             .arg(&restored)
             .arg("pragma integrity_check;")

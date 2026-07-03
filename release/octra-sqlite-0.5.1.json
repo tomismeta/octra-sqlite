@@ -138,9 +138,9 @@
     }
   },
   "client_release": {
-    "notes": "Documentation and packaging polish over the 0.5.0 Rust API ontology release. Code behavior, CLI commands, JSON envelopes, OSR1/OSW1 wire formats, bundled Circle WASM, and public-read behavior are unchanged.",
+    "notes": "Documentation, dependency, and packaging polish over the 0.5.0 Rust API ontology release. CLI behavior and commands, JSON envelopes, OSR1/OSW1 wire formats, bundled Circle WASM, and public-read behavior are unchanged.",
     "public_read": "new --read-mode public deploys the public/gateway_allowed/public_resources Circle tuple; reads use octra_circleView and writes remain owner-signed OSW1.",
     "read_only_api_example": "examples/remilia-read-api"
   },
-  "status": "README and packaging polish release over deployed 0.3.3 devnet proof with separate public-read devnet proof"
+  "status": "README, dependency, and packaging polish release over deployed 0.3.3 devnet proof with separate public-read devnet proof"
 }

@@ -14,14 +14,14 @@ use super::{
 };
 
 pub use super::session::{
-    build_control_session, build_session, resolve_database_target, resolve_wallet_path,
-    ClientOptions, Session,
+    ClientOptions, Session, build_control_session, build_session, resolve_database_target,
+    resolve_wallet_path,
 };
 pub use super::wallet::{discover_wallet_path, wallet_caller};
 
 #[cfg(feature = "cli")]
 pub(crate) use super::wallet::{
-    wallet_file_material, wallet_material_from_private_key, WalletMaterial,
+    WalletMaterial, wallet_file_material, wallet_material_from_private_key,
 };
 
 #[cfg(feature = "http")]

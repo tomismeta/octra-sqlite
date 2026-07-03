@@ -4,9 +4,9 @@ use super::{
     session::Session,
     transport::Transport,
 };
-use crate::protocol::osr1::{decode_typed_result, TYPED_PREFIX};
+use crate::protocol::osr1::{TYPED_PREFIX, decode_typed_result};
 use crate::protocol::target::ReadMode;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 

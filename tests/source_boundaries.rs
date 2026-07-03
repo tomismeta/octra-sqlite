@@ -5,7 +5,7 @@ use std::path::Path;
 fn protocol_layer_stays_transport_and_cli_free() {
     let forbidden = [
         "anyhow",
-        "reqwest",
+        "ureq",
         "clap",
         "dirs",
         "std::env",
