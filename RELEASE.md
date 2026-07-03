@@ -14,8 +14,9 @@ and public-read behavior are unchanged from `0.5.0`.
   reference, and security/contribution links.
 - Replaced the GitHub-only Mermaid architecture diagram with a plain text
   diagram that renders on crates.io.
-- Mirrored the README's config-free public-read Rust example in crate docs and
-  added a public-surface guard for `Client::default()`.
+- Added `Client::default()` for config-free public reads, mirrored the README's
+  Rust example in crate docs, and guarded the constructor in the public-surface
+  test.
 - Swapped the default HTTP transport dependency from `reqwest` to `ureq` and
   moved the crate to Rust edition 2024.
 - Refreshed `CONTRIBUTING.md` and included it with `SECURITY.md` in the crate

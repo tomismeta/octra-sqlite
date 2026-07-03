@@ -9,8 +9,9 @@
 - Added crates.io/docs.rs badges, MSRV/stability notes,
   license/contributing/security links, and a crates.io-safe ASCII architecture
   diagram.
-- Mirrored the README's config-free public-read Rust example in crate docs and
-  added a public-surface guard for `Client::default()`.
+- Added `Client::default()` for config-free public reads, mirrored the README's
+  Rust example in crate docs, and guarded the constructor in the public-surface
+  test.
 - Swapped the default HTTP transport dependency from `reqwest` to `ureq` and
   moved the crate to Rust edition 2024.
 - Refreshed `CONTRIBUTING.md` and included it with `SECURITY.md` in the crate
