@@ -13,6 +13,11 @@ It is not an ORM, a SQL dialect, or a SQLite reimplementation. It is SQLite
 running in an Octra execution environment, with a Rust CLI and client library
 around deployment, reads, writes, proofs, and developer ergonomics.
 
+New to Octra? Start with the official [Octra docs](https://docs.octra.org/)
+and [Circles guide](https://docs.octra.org/user-docs/circles). In this project,
+a Circle is the Octra-hosted WASM environment that owns the SQLite pages and
+executes the SQLite engine.
+
 - Real SQLite: SQL is executed by the bundled SQLite C amalgamation.
 - Octra-native writes: state-changing SQL is owner-signed through OSW1 owner
   write intent.
@@ -99,7 +104,7 @@ public data. Writes remain owner-signed OSW1 calls in both read modes. When
 using a raw URI instead of a saved database name, mark public reads explicitly
 with `?read_mode=public`.
 
-## Core Commands
+## CLI Commands
 
 In commands below, `DATABASE` can be a saved database name or a raw `oct://`
 URI.
@@ -115,27 +120,66 @@ URI.
 | `octra-sqlite limits DATABASE --json` | Show SQL, restore, transaction, auth, and trace limits. |
 | `octra-sqlite commands --json` | Show the supported CLI and JSON envelopes. |
 
-The full public command surface is documented in
-[docs/public-surface.md](./docs/public-surface.md) and discoverable through
-`octra-sqlite commands --json`.
+The same public command surface is documented in
+[docs/public-surface.md](./docs/public-surface.md) and emitted in machine form
+by `octra-sqlite commands --json`.
 
 ## `sqlite>` Shell
 
-Run `octra-sqlite DATABASE` or `octra-sqlite open DATABASE` to enter a
-SQLite-shaped shell. SQL runs when it ends with `;`; dot commands run
-immediately.
+Run `octra-sqlite DATABASE` or `octra-sqlite open DATABASE` to enter the shell.
 
-Common dot commands include `.tables`, `.schema`, `.mode`, `.backup`, `.dump`,
-`.read`, `.import`, and `.open`. Octra-aware inspection commands include
-`.circle`, `.storage`, `.wallet`, and `.verify`.
+```sql
+sqlite> select id, name
+   ...> from artist
+   ...> order by name;
+sqlite> .tables
+sqlite> .quit
+```
+
+`sqlite>` is ready for a new SQL statement or dot command. `...>` is waiting
+for the rest of a multiline SQL statement. SQL runs when it ends with `;`.
+Dot commands run immediately.
+
+| Dot command | Origin | Purpose |
+| --- | --- | --- |
+| `.help` | SQLite | Show shell commands. |
+| `.tables` | SQLite | List tables. |
+| `.schema [TABLE]` | SQLite | Show schema. |
+| `.indexes [TABLE]` | SQLite | List indexes. |
+| `.mode MODE` | SQLite | Set output mode: `box`, `table`, `list`, `json`, `line`, or `csv`. |
+| `.headers on\|off` | SQLite | Show or hide column headers. |
+| `.backup main FILE` | SQLite | Save a local `.sqlite` backup. |
+| `.save FILE` | SQLite | Save a local `.sqlite` backup. |
+| `.dump [TABLE]` | SQLite | Print SQL text for restore or inspection. |
+| `.read FILE` | SQLite | Execute SQL from a file. |
+| `.import --csv FILE TABLE` | SQLite | Import CSV rows. |
+| `.output FILE` | SQLite | Redirect output. |
+| `.once FILE` | SQLite | Redirect one command. |
+| `.fullschema` | SQLite | Show schema plus SQLite metadata. |
+| `.databases` | SQLite | Show the current database URI. |
+| `.open DATABASE` | SQLite | Switch database. |
+| `.timer on\|off` | SQLite | Show query timing. |
+| `.show` | SQLite | Show shell settings. |
+| `.quit` / `.exit` | SQLite | Exit the shell. |
+| `.circle` | Octra | Show Circle metadata. |
+| `.wallet` | Octra | Show active wallet. |
+| `.storage` | Octra | Show SQLite page storage info. |
+| `.verify` | Octra | Verify live Circle SQLite status. |
+
+## Backup And Restore
 
 ```sh
 octra-sqlite art ".backup main art.sqlite"
 sqlite3 art.sqlite "pragma integrity_check;"
+
+octra-sqlite art ".dump" > art.sql
+octra-sqlite new art_copy
+octra-sqlite restore art_copy --file art.sql
 ```
 
 Local `sqlite3` is optional. It is used only for exported-file integrity checks
-and local snapshot rendering commands such as `.dump` and `.fullschema`. See
+and local snapshot rendering commands such as `.dump` and `.fullschema`. The
+`octra-sqlite` commands talk to the Octra Circle. See
 [docs/operations.md](./docs/operations.md) for restore and backfill guidance.
 
 ## Verifiability

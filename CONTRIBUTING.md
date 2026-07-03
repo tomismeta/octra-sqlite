@@ -1,26 +1,58 @@
 # Contributing
 
-This repo is trying to be a small, auditable reference architecture for SQLite
-inside an Octra Circle. Please keep changes aligned with that shape.
+`octra-sqlite` is a small reference architecture for running the real SQLite C
+engine inside an Octra Circle. Contributions should make that architecture
+clearer, smaller, safer, or easier to use.
 
-## Before You Change Code
+## Principles
 
-- Prefer the Rust CLI for user-facing workflows.
-- Do not add Python to the reference path.
-- Do not add Docker to the reference path.
+- Keep it SQLite-first. Prefer SQLite semantics, SQLite terminology, and SQLite
+  C APIs over project-specific inventions.
+- Keep it Octra-native. Use Circles, Octra RPC, read modes, OSW1 owner-write
+  intent, and deployment manifests directly.
+- Keep the trusted surface small. Contract and WASM code should stay boring,
+  deterministic, and easy to audit.
+- Treat the CLI as the primary product surface. Automation should use the same
+  commands with `--json`, not a separate agent path.
+- Do not add pre-1.0 compatibility aliases or hidden legacy paths without a
+  strong reason. There are no production users to carry yet; get the names
+  right.
+- Keep secrets out of logs, JSON output, examples, manifests, and tests.
+- Put proof beside claims: tests, manifests, live proof metadata, or docs should
+  back user-visible behavior.
+
+## Before Changing Code
+
+- Read the surrounding module first and follow its local style.
+- Keep changes scoped. Avoid unrelated refactors in the same patch.
+- Avoid new dependencies unless they remove real complexity or match an
+  established project boundary.
 - Treat `circle/source/octra_sqlite_circle.c` as consensus-critical code.
-- Keep role and policy enforcement outside SQL unless Octra exposes
-  authenticated caller identity to WASM.
+- Keep role and policy enforcement outside SQL unless Octra exposes native
+  authenticated caller identity or policy hooks to WASM.
 
 ## Checks
 
-Run:
+Run the focused checks for your change. Before a release or public API change,
+run the full local gate:
 
 ```sh
-cargo fmt
+cargo fmt --check
 cargo test --locked
+cargo test --locked --doc
+cargo clippy --locked --all-targets -- -D warnings
+cargo build --locked --no-default-features --lib
+cargo check --locked --no-default-features --features http
 find scripts -name '*.sh' -exec bash -n {} \;
-octra-sqlite status --skip-network
+bash scripts/audit-wasm.sh circle/wasm/octra_sqlite_circle.wasm
+```
+
+For local CLI smoke checks:
+
+```sh
+cargo run --locked -- status --skip-network
+cargo run --locked -- commands --json
+cargo run --locked -- limits --json
 ```
 
 If you changed the bundled WASM, also run:
@@ -32,5 +64,21 @@ OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm \
   cargo test --locked --features wasm-behavior --test wasm_host_harness
 ```
 
-Update `release/octra-sqlite-0.1.0.json`, `docs/toolchain.md`, and
-`CHANGELOG.md` when artifact bytes or hashes change.
+## Release Notes And Manifests
+
+Update `CHANGELOG.md`, `RELEASE.md`, `docs/toolchain.md`, and the matching
+`release/octra-sqlite-VERSION.json` when a change affects public behavior,
+package contents, artifact bytes, hashes, deployment proofs, or release claims.
+
+For crates.io preparation, verify the package before tagging:
+
+```sh
+cargo package --list --allow-dirty
+cargo publish --dry-run --allow-dirty
+```
+
+## Security
+
+Do not include private keys, wallet files, passphrases, RPC credentials, or
+private Circle data in issues, pull requests, examples, traces, release
+manifests, or tests. Report security concerns through [SECURITY.md](./SECURITY.md).

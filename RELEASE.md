@@ -9,13 +9,15 @@ envelopes, Rust API, and public-read behavior are unchanged from `0.5.0`.
 ## Changed
 
 - Refactored the README around the crates.io reader: quick CLI query, quick
-  Rust query, read modes, core commands, verifiability, feature flags, MSRV,
-  stability, and security/contribution links.
+  Rust query, Octra context, read modes, core commands, shell dot-command
+  reference, verifiability, feature flags, MSRV, stability, and
+  security/contribution links.
 - Replaced the GitHub-only Mermaid architecture diagram with a plain text
   diagram that renders on crates.io.
 - Mirrored the README's config-free public-read Rust example in crate docs and
   added a public-surface guard for `Client::default()`.
-- Included `CONTRIBUTING.md` and `SECURITY.md` in the crate package.
+- Refreshed `CONTRIBUTING.md` and included it with `SECURITY.md` in the crate
+  package.
 - Added CI coverage for clippy and the `http`-without-`cli` feature
   configuration used by docs.rs.
 
