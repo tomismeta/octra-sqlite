@@ -8,10 +8,10 @@ public-read behavior are unchanged from `0.5.0`.
 
 ## Changed
 
-- Refactored the README around the crates.io reader: quick CLI query, quick
-  Rust query, Octra context, wallet setup, root Rust API surface, CLI command
-  reference, shell dot-command reference, read modes, verifiability, Cargo
-  features, MSRV, stability, and security/contribution links.
+- Refactored the README around the package reader: quick CLI query, quick Rust
+  client query, Octra context, root Rust API surface, read modes, wallet setup,
+  CLI command reference, shell dot-command reference, verifiability, MSRV,
+  stability, and security/contribution links.
 - Replaced the GitHub-only Mermaid architecture diagram with a plain text
   diagram that renders on crates.io.
 - Mirrored the README's config-free public-read Rust example in crate docs and

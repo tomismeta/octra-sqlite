@@ -27,7 +27,7 @@ executes the SQLite engine.
 - Verifiable deployment: the bundled WASM, rebuild inputs, audit script, hashes,
   and devnet proof metadata are published with each release.
 
-## Quick Start: CLI
+## CLI Quick Start
 
 You need Rust/Cargo 1.87+. The Circle WASM is bundled; no local WASM toolchain
 is required.
@@ -64,26 +64,7 @@ wallet JSON, accept a hidden private-key paste, or continue walletless for
 public-read queries. For scripted wallet setup, see
 [docs/headless.md](./docs/headless.md).
 
-## Wallets
-
-Public-read queries do not need a wallet. Sealed reads and all writes require a
-configured Octra wallet because reads use signed Octra view auth and writes are
-owner-signed.
-
-```sh
-octra-sqlite setup
-octra-sqlite wallet status
-octra-sqlite wallet attach ./wallet.json
-printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
-```
-
-Supported wallet inputs are the official Octra wallet-generator `wallet.json`,
-an existing plaintext wallet JSON, or a private key pasted/imported through the
-CLI. WebCLI `.oct` files are encrypted/PIN-protected and are not imported
-directly; use the official `wallet.json`, attach plaintext wallet JSON, or
-import the private key.
-
-## Quick Start: Rust
+## Rust Client Quick Start
 
 ```toml
 [dependencies]
@@ -138,6 +119,25 @@ Public-read SQL queries use unsigned `octra_circleView`; anyone can query the
 public data. Writes remain owner-signed OSW1 calls in both read modes. When
 using a raw URI instead of a saved database name, mark public reads explicitly
 with `?read_mode=public`.
+
+## Wallets
+
+Public-read queries do not need a wallet. Sealed reads and all writes require a
+configured Octra wallet because reads use signed Octra view auth and writes are
+owner-signed.
+
+```sh
+octra-sqlite setup
+octra-sqlite wallet status
+octra-sqlite wallet attach ./wallet.json
+printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --output ./wallet.json
+```
+
+Supported wallet inputs are the official Octra wallet-generator `wallet.json`,
+an existing plaintext wallet JSON, or a private key pasted/imported through the
+CLI. WebCLI `.oct` files are encrypted/PIN-protected and are not imported
+directly; use the official `wallet.json`, attach plaintext wallet JSON, or
+import the private key.
 
 ## CLI Commands
 
@@ -266,19 +266,6 @@ carefully.
 `octra-sqlite` is still alpha software for Octra testing. Do not store secrets,
 production records, financial records, or irreplaceable data in alpha
 databases.
-
-## Cargo Features
-
-| Feature | Purpose |
-| --- | --- |
-| `default` | Enables `cli` and `http`. |
-| `cli` | Builds the `octra-sqlite` command line interface. |
-| `http` | Enables the default blocking HTTP RPC transport. |
-| `wasm-behavior` | Enables host-harness tests for the bundled Circle WASM. |
-
-`cargo build --no-default-features --lib` builds the protocol/client core
-without the CLI or HTTP transport. docs.rs builds with `http` and without the
-CLI so library documentation stays focused.
 
 ## Reference
 
