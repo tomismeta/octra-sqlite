@@ -4,8 +4,8 @@
 
 - Refactored the README for public package readers: CLI and Rust client quick
   starts now appear above the fold, Octra context, the root Rust API, read
-  modes, wallet setup, CLI commands, and shell dot-command reference stay
-  visible, and trust/stability sections are explicit.
+  modes, wallet setup, verifiability, stability, CLI commands, and shell
+  dot-command reference stay visible.
 - Added crates.io/docs.rs badges, MSRV/stability notes,
   license/contributing/security links, and a crates.io-safe ASCII architecture
   diagram.

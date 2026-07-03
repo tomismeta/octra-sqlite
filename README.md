@@ -58,11 +58,9 @@ octra-sqlite status art --ready
 octra-sqlite art "select * from artist order by name;"
 ```
 
-`setup` is the first door for wallet and network defaults. It can import the
-official Octra wallet-generator `wallet.json`, attach an existing plaintext
-wallet JSON, accept a hidden private-key paste, or continue walletless for
-public-read queries. For scripted wallet setup, see
-[docs/headless.md](./docs/headless.md).
+`setup` walks you through wallet and network defaults; see [Wallets](#wallets)
+for wallet options and [docs/headless.md](./docs/headless.md) for scripted
+setup.
 
 ## Rust Client Quick Start
 
@@ -138,6 +136,40 @@ an existing plaintext wallet JSON, or a private key pasted/imported through the
 CLI. WebCLI `.oct` files are encrypted/PIN-protected and are not imported
 directly; use the official `wallet.json`, attach plaintext wallet JSON, or
 import the private key.
+
+## Verifiability
+
+The crate ships `circle/wasm/octra_sqlite_circle.wasm` so users do not need a
+local WASM toolchain. `scripts/audit-wasm.sh` checks the Circle import/export
+surface, [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs,
+and release manifests publish the bundled WASM hash plus live devnet proof
+metadata.
+
+The `0.5.1` crate uses the same bundled Circle WASM as `0.5.0`. The current
+release manifest is
+[release/octra-sqlite-0.5.1.json](./release/octra-sqlite-0.5.1.json).
+
+```text
+Rust CLI/client -> Octra RPC -> Circle wasm_v1
+                                  |
+                                  v
+                   SQLite C engine -> VFS -> Octra page storage
+```
+
+The consensus surface is intentionally small: SQLite runs SQL, the VFS stores
+SQLite pages in Octra storage, and the Rust client handles signing, rendering,
+backup, restore, and local developer experience.
+
+## Stability
+
+MSRV is Rust 1.87. While the crate is `0.x`, the Rust API may change in minor
+versions. CLI JSON envelopes, `commands --json`, release manifests, and the
+OSR1/OSW1 wire formats are treated as stable automation surfaces and changed
+carefully.
+
+`octra-sqlite` is still alpha software for Octra testing. Do not store secrets,
+production records, financial records, or irreplaceable data in alpha
+databases.
 
 ## CLI Commands
 
@@ -232,40 +264,6 @@ Local `sqlite3` is optional. It is used only for exported-file integrity checks
 and local snapshot rendering commands such as `.dump` and `.fullschema`. The
 `octra-sqlite` commands talk to the Octra Circle. See
 [docs/operations.md](./docs/operations.md) for restore and backfill guidance.
-
-## Verifiability
-
-The crate ships `circle/wasm/octra_sqlite_circle.wasm` so users do not need a
-local WASM toolchain. `scripts/audit-wasm.sh` checks the Circle import/export
-surface, [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs,
-and release manifests publish the bundled WASM hash plus live devnet proof
-metadata.
-
-The `0.5.1` crate uses the same bundled Circle WASM as `0.5.0`. The current
-release manifest is
-[release/octra-sqlite-0.5.1.json](./release/octra-sqlite-0.5.1.json).
-
-```text
-Rust CLI/client -> Octra RPC -> Circle wasm_v1
-                                  |
-                                  v
-                   SQLite C engine -> VFS -> Octra page storage
-```
-
-The consensus surface is intentionally small: SQLite runs SQL, the VFS stores
-SQLite pages in Octra storage, and the Rust client handles signing, rendering,
-backup, restore, and local developer experience.
-
-## Stability
-
-MSRV is Rust 1.87. While the crate is `0.x`, the Rust API may change in minor
-versions. CLI JSON envelopes, `commands --json`, release manifests, and the
-OSR1/OSW1 wire formats are treated as stable automation surfaces and changed
-carefully.
-
-`octra-sqlite` is still alpha software for Octra testing. Do not store secrets,
-production records, financial records, or irreplaceable data in alpha
-databases.
 
 ## Reference
 
