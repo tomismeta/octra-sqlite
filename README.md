@@ -13,9 +13,10 @@ It gives you a SQLite-shaped CLI and a small Rust client for live Circle state:
 query public databases without a wallet, create sealed or public-read databases
 with an Octra wallet, and verify what was deployed.
 
-New to Octra? Start with the official [Octra docs](https://docs.octra.org/)
-and [Circles guide](https://docs.octra.org/user-docs/circles). In this project,
-a Circle is the Octra-hosted WASM environment that owns the SQLite pages and
+If you're new to Octra, start with the official
+[Octra docs](https://docs.octra.org/) and
+[Circles guide](https://docs.octra.org/user-docs/circles). In this project, a
+Circle is the Octra-hosted WASM environment that owns the SQLite pages and
 executes the SQLite engine.
 
 - Real SQLite: SQL is executed by the bundled SQLite C amalgamation.
@@ -110,23 +111,17 @@ adapter plumbing that needs to reproduce CLI-style signed Octra RPC flows.
 ## Rust API Surface
 
 The crate root exports the first-story API:
+`Client`, `ClientOptions`, `Database`, `QueryResult`, `ExecuteResult`,
+`SubmittedTransaction`, `AuthInfo`, `ProgramInfo`, `ReadMode`, `Value`,
+`Error`, `ErrorKind`, and `Result`.
 
-| Type | Purpose |
-| --- | --- |
-| `Client` | Configured entrypoint for opening saved database names, Circle IDs, or `oct://` URIs. |
-| `ClientOptions` | Explicit target, wallet, RPC, network, and tracing options. |
-| `Database` | Open database handle with `query`, `execute`, `execute_no_wait`, `wait`, `auth_info`, and `program_info`. |
-| `QueryResult` | Typed read result: columns, rows, row count, and raw JSON. |
-| `ExecuteResult` | Confirmed write result with submitted transaction metadata and receipt. |
-| `SubmittedTransaction` | Submitted write returned by no-wait paths; may be pending, confirmed later, or stopped by RPC/chain behavior. |
-| `AuthInfo` | Owner-write authorization metadata for the target database. |
-| `ProgramInfo` | Deployed Circle program metadata. |
-| `ReadMode` | `Sealed` or `Public` read routing. |
-| `Error`, `ErrorKind`, `Result` | Error and result types for client operations. |
-| `Value` | Re-exported `serde_json::Value` for raw fields and lower-level adapters. |
-
-Lower-level transport/session helpers live under `octra_sqlite::client` and
-`octra_sqlite::client::raw`.
+Use `Client::default()` for config-free public reads,
+`Client::from_default_config()` for local CLI config, and
+`Client::with_options(...)` when code needs explicit target, wallet, RPC,
+caller, or key-material overrides. Lower-level transport/session helpers live
+under `octra_sqlite::client` and `octra_sqlite::client::raw`. See
+[docs.rs](https://docs.rs/octra-sqlite) for the authoritative Rust API
+reference.
 
 ## Writes And Read Modes
 
