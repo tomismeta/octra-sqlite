@@ -24,8 +24,12 @@ jobs:
           sudo apt-get install -y sqlite3 wabt
       - name: Rust tests
         run: cargo test --locked
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
       - name: Protocol/client core without HTTP
         run: cargo build --locked --no-default-features --lib
+      - name: HTTP client without CLI
+        run: cargo check --locked --no-default-features --features http
       - name: Script syntax
         run: find scripts -name '*.sh' -exec bash -n {} \;
       - name: Check bundled WASM artifact

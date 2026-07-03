@@ -1,5 +1,29 @@
 # Release Notes
 
+## 0.5.1
+
+This is a README and packaging polish release for the crates.io debut. The
+contract, wire formats, bundled SQLite engine, CLI command surface, JSON
+envelopes, Rust API, and public-read behavior are unchanged from `0.5.0`.
+
+## Changed
+
+- Refactored the README around the crates.io reader: quick CLI query, quick
+  Rust query, read modes, core commands, verifiability, feature flags, MSRV,
+  stability, and security/contribution links.
+- Replaced the GitHub-only Mermaid architecture diagram with a plain text
+  diagram that renders on crates.io.
+- Mirrored the README's config-free public-read Rust example in crate docs and
+  added a public-surface guard for `Client::default()`.
+- Included `CONTRIBUTING.md` and `SECURITY.md` in the crate package.
+- Added CI coverage for clippy and the `http`-without-`cli` feature
+  configuration used by docs.rs.
+
+## Notes
+
+- No Circle redeploy is required for `0.5.1`.
+- `0.5.1` is intended to be the first crates.io-published version.
+
 ## 0.5.0
 
 This is a Rust API ontology and crates.io debut preparation release over the

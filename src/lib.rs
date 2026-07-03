@@ -17,6 +17,22 @@
 //! }
 //! ```
 //!
+//! A public-read database can be queried without local wallet setup:
+//!
+//! ```no_run
+//! use octra_sqlite::{Client, Result};
+//!
+//! fn main() -> Result<()> {
+//!     let client = Client::default();
+//!     let db = client.database(
+//!         "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public",
+//!     )?;
+//!     let rows = db.query("select id, name from artist order by id;")?;
+//!     println!("{} rows", rows.row_count);
+//!     Ok(())
+//! }
+//! ```
+//!
 //! Sealed databases use signed Octra view auth for reads. Public-read
 //! databases use unsigned Octra Circle views for SQL reads while keeping writes
 //! owner-signed through OSW1 owner write intent. Pass a saved database name or a

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.1
+
+- Refactored the README for the crates.io debut: CLI and Rust quick starts now
+  appear above the fold, exhaustive command tables moved back to reference
+  docs, and trust/stability sections are explicit.
+- Added crates.io/docs.rs badges, feature flag notes, MSRV/stability notes,
+  license/contributing/security links, and a crates.io-safe ASCII architecture
+  diagram.
+- Mirrored the README's config-free public-read Rust example in crate docs and
+  added a public-surface guard for `Client::default()`.
+- Included `CONTRIBUTING.md` and `SECURITY.md` in the crate package so README
+  links resolve from crates.io.
+- Added CI coverage for clippy and the `http`-without-`cli` feature
+  configuration used by docs.rs.
+- Kept code behavior, CLI commands, JSON envelopes, OSR1/OSW1 wire formats,
+  bundled Circle WASM, and public-read behavior unchanged from `0.5.0`.
+
 ## 0.5.0
 
 - Reshaped the Rust public API for the first crates.io-ready debut:

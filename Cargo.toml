@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.87"
 license = "MIT"
@@ -14,9 +14,11 @@ include = [
     "/Cargo.lock",
     "/Cargo.toml",
     "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
     "/LICENSE",
     "/README.md",
     "/RELEASE.md",
+    "/SECURITY.md",
     "/circle/source/octra_sqlite_circle.c",
     "/circle/wasm/octra_sqlite_circle.wasm",
     "/config/defaults.json",

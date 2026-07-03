@@ -145,7 +145,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.5.0.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.5.1.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

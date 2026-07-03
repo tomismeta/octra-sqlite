@@ -204,7 +204,7 @@ pub(super) fn prepare_write_with<T: Transport>(
     )
 }
 
-#[cfg(feature = "http")]
+#[cfg(all(feature = "cli", feature = "http"))]
 pub(super) fn prepare_write_with_owner_auth<T: Transport>(
     transport: &T,
     session: &Session,

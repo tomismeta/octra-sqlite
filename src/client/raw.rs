@@ -1,4 +1,4 @@
-#[cfg(feature = "http")]
+#[cfg(all(feature = "cli", feature = "http"))]
 use super::write::prepare_write_with_owner_auth;
 #[cfg(feature = "http")]
 use super::{
@@ -83,7 +83,7 @@ pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     submit_signed_write_with(&transport, session, signed, no_wait)
 }
 
-#[cfg(feature = "http")]
+#[cfg(all(feature = "cli", feature = "http"))]
 pub(crate) fn exec_sql_with_owner_auth(
     session: &Session,
     sql: &str,
