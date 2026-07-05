@@ -138,7 +138,7 @@
     }
   },
   "client_release": {
-    "notes": "CLI and client polish over the 0.5.1 crates.io debut. Raw Circle targets now detect the Octra read surface, status separates read_ready from write_ready, interactive private-key paste is masked, and install guidance is clearer. Bundled Circle WASM and OSR1/OSW1 wire formats are unchanged.",
+    "notes": "CLI and client polish over the 0.5.1 crates.io debut. Raw Circle targets now detect the Octra read surface, status separates read_ready from write_ready, malformed wallet-load errors remain visible for signed operations, interactive private-key paste is masked, MSRV is 1.88+ for patched supply-chain dependencies, and install guidance is clearer. Bundled Circle WASM and OSR1/OSW1 wire formats are unchanged.",
     "public_read": "new --read-mode public deploys the public/gateway_allowed/public_resources Circle tuple; reads use octra_circleView and writes remain owner-signed OSW1.",
     "read_only_api_example": "examples/remilia-read-api"
   },

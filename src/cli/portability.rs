@@ -512,17 +512,17 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
             .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
-        if offset == 0 {
-            if let Err(error) = auth_info(session) {
-                return Ok(BootstrapOwnerSqlScriptExecution {
-                    execution: SqlScriptExecution {
-                        statements: executed,
-                        batches: offset + 1,
-                        results,
-                    },
-                    post_auth_error: Some(format!("{error:#}")),
-                });
-            }
+        if offset == 0
+            && let Err(error) = auth_info(session)
+        {
+            return Ok(BootstrapOwnerSqlScriptExecution {
+                execution: SqlScriptExecution {
+                    statements: executed,
+                    batches: offset + 1,
+                    results,
+                },
+                post_auth_error: Some(format!("{error:#}")),
+            });
         }
     }
     Ok(BootstrapOwnerSqlScriptExecution {

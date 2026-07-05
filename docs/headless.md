@@ -89,7 +89,7 @@ OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status mai
 
 ## Server Checklist
 
-Install with Rust/Cargo 1.87 or newer. `rustup stable` is recommended because
+Install with Rust/Cargo 1.88 or newer. `rustup stable` is recommended because
 some Linux distributions ship older Cargo versions:
 
 ```sh

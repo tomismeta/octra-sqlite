@@ -6,7 +6,7 @@ and `octra-sqlite deploy` use that artifact by default.
 
 ## User Requirements
 
-- Rust/Cargo 1.87 or newer for the CLI. `rustup stable` is recommended; distro
+- Rust/Cargo 1.88 or newer for the CLI. `rustup stable` is recommended; distro
   packages can lag behind the lockfile. Cargo must support lockfile version 4.
 - The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.

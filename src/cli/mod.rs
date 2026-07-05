@@ -974,10 +974,10 @@ fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
     if !args.sql_args.is_empty() {
         init_sql.extend(args.sql_args.iter().cloned());
     }
-    if init_sql.is_empty() {
-        if let Some(sql) = read_stdin_sql()? {
-            init_sql.push(sql);
-        }
+    if init_sql.is_empty()
+        && let Some(sql) = read_stdin_sql()?
+    {
+        init_sql.push(sql);
     }
     Ok(init_sql)
 }
@@ -1458,6 +1458,13 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
                     } else {
                         report.warn("caller", "not found in wallet/env");
                     }
+                }
+                Err(error) if explicit_target_unsigned_read => {
+                    report.warn(
+                        "wallet",
+                        format!("failed to load; public reads can continue without it: {error}"),
+                    );
+                    report.ok("caller", "not needed for public reads");
                 }
                 Err(error) => report.fail("wallet", error.to_string()),
             }
@@ -2410,7 +2417,13 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                         }
                         Err(error) => {
                             report.ready("owner_write_valid", false);
-                            if session.target().read_mode.allows_unsigned_read() {
+                            if session.wallet_load_error().is_some() {
+                                let _ = error;
+                                report.ok(
+                                    "auth owner wallet",
+                                    "wallet failed to load; writes require a valid owner wallet",
+                                );
+                            } else if session.target().read_mode.allows_unsigned_read() {
                                 let _ = error;
                                 report.ok(
                                     "auth owner wallet",
@@ -2592,10 +2605,9 @@ fn with_explorer(mut result: Value, session: &Session) -> Value {
         .get("tx_hash")
         .and_then(Value::as_str)
         .map(str::to_string)
+        && let Some(url) = explorer_tx_url(&session.target().network, &tx_hash)
     {
-        if let Some(url) = explorer_tx_url(&session.target().network, &tx_hash) {
-            object.insert("tx_url".to_string(), Value::String(url));
-        }
+        object.insert("tx_url".to_string(), Value::String(url));
     }
     result
 }
@@ -2785,10 +2797,10 @@ fn project_roots() -> Vec<PathBuf> {
         roots.push(cwd);
     }
     roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
-    if let Ok(exe) = env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            roots.push(dir.to_path_buf());
-        }
+    if let Ok(exe) = env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        roots.push(dir.to_path_buf());
     }
     let mut unique = Vec::new();
     for root in roots {
@@ -3017,6 +3029,7 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
     } else {
         OutputMode::Table
     };
+    warn_wallet_load_error_for_public_reads(&session, mode);
     if let Some(path) = &args.sql_file {
         let sql = read_sql_file_arg(path)?;
         return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
@@ -3035,6 +3048,23 @@ fn cmd_open(args: OpenArgs) -> Result<()> {
         let sql = args.sql.join(" ");
         run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json)
     }
+}
+
+fn warn_wallet_load_error_for_public_reads(session: &Session, mode: OutputMode) {
+    if mode == OutputMode::Json {
+        return;
+    }
+    let Some(error) = session.wallet_load_error() else {
+        return;
+    };
+    eprintln!(
+        "{}",
+        format_status_line(
+            "warn",
+            "wallet",
+            format!("failed to load; public reads can continue without it: {error}")
+        )
+    );
 }
 
 fn cmd_restore(args: RestoreArgs) -> Result<()> {
@@ -4433,26 +4463,26 @@ pub(super) fn verify(
         "program",
         format!("version {version}, bytes {bytes}, hash {hash}"),
     );
-    if let Some(expected) = expected_hash {
-        if hash != expected {
-            if expected == EXPECTED_WASM_SHA256 {
-                match personalized_wasm_hash(session) {
-                    Ok(Some(personalized_hash)) if hash == personalized_hash => {
-                        print_field("program", "owner-personalized bundled WASM");
-                    }
-                    Ok(Some(personalized_hash)) => bail!(
-                        "deployed code hash {hash} does not match expected {expected} or owner-personalized {personalized_hash}"
-                    ),
-                    Ok(None) => {
-                        bail!("deployed code hash {hash} does not match expected {expected}");
-                    }
-                    Err(error) => bail!(
-                        "deployed code hash {hash} does not match expected {expected}; personalized check failed: {error:#}"
-                    ),
+    if let Some(expected) = expected_hash
+        && hash != expected
+    {
+        if expected == EXPECTED_WASM_SHA256 {
+            match personalized_wasm_hash(session) {
+                Ok(Some(personalized_hash)) if hash == personalized_hash => {
+                    print_field("program", "owner-personalized bundled WASM");
                 }
-            } else {
-                bail!("deployed code hash {hash} does not match expected {expected}");
+                Ok(Some(personalized_hash)) => bail!(
+                    "deployed code hash {hash} does not match expected {expected} or owner-personalized {personalized_hash}"
+                ),
+                Ok(None) => {
+                    bail!("deployed code hash {hash} does not match expected {expected}");
+                }
+                Err(error) => bail!(
+                    "deployed code hash {hash} does not match expected {expected}; personalized check failed: {error:#}"
+                ),
             }
+        } else {
+            bail!("deployed code hash {hash} does not match expected {expected}");
         }
     }
     let storage = view(session, "storage_info", vec![])?;

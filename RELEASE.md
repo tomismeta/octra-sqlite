@@ -16,10 +16,13 @@ bundled Circle WASM, deployed event strings, and on-chain behavior are unchanged
   owner-write readiness is reported separately for public-read deployments.
 - Status output treats walletless public reads as a supported mode when Circle
   metadata confirms the target is public-readable.
+- Public-read sessions now preserve malformed wallet-load errors and surface
+  them when signed operations need a valid wallet.
 - Interactive private-key paste now shows masked `*` feedback while keeping the
   secret out of shell history.
-- README install guidance now names Rust/Cargo 1.87+ from a current Rust
-  toolchain and points users to `rustup` when Cargo is missing or too old.
+- CI now runs `cargo audit` for published-crate supply-chain checks.
+- MSRV is now Rust/Cargo 1.88+, allowing patched HTTP cookie/time dependencies
+  without a supply-chain audit ignore.
 
 ## Notes
 

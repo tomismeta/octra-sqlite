@@ -29,7 +29,7 @@ executes the SQLite engine.
 
 ## CLI Quick Start
 
-You need Rust/Cargo 1.87+ from a current Rust toolchain. If `cargo` is missing,
+You need Rust/Cargo 1.88+ from a current Rust toolchain. If `cargo` is missing,
 install Rust with [rustup](https://rustup.rs/); distro packages such as
 `apt install cargo` may be too old. The Circle WASM is bundled; no local WASM
 toolchain is required.
@@ -165,7 +165,7 @@ backup, restore, and local developer experience.
 
 ## Stability
 
-MSRV is Rust 1.87. While the crate is `0.x`, the Rust API may change in minor
+MSRV is Rust 1.88. While the crate is `0.x`, the Rust API may change in minor
 versions. CLI JSON envelopes, `commands --json`, release manifests, and the
 OSR1/OSW1 wire formats are treated as stable automation surfaces and changed
 carefully.

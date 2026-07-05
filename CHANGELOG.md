@@ -11,10 +11,13 @@
 - Reduced setup/wallet warning noise for explicit public-capable targets:
   walletless public reads are reported as a supported mode, not a broken owner
   setup.
+- Preserved malformed wallet-load errors on public-read sessions, so public
+  reads can continue without hiding why signed operations are unavailable.
 - Added masked feedback for interactive private-key paste while keeping input
   out of shell history.
-- Clarified README install guidance for Rust/Cargo 1.87+ from a current Rust
-  toolchain.
+- Added `cargo audit` to CI for published-crate supply-chain checks.
+- Raised the documented MSRV to Rust/Cargo 1.88+ so the lockfile can use
+  patched HTTP cookie/time dependencies without a supply-chain audit ignore.
 - Kept the bundled Circle WASM, OSR1/OSW1 wire formats, deployed event strings,
   and on-chain contract behavior unchanged from `0.5.1`.
 
