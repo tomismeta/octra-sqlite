@@ -35,16 +35,15 @@ read data intended to be public. Writes still use owner-signed OSW1 calls. For
 public apps, prefer application-level rate limits or query allowlists at the app
 edge; the database Circle is a public SQL read surface.
 
-Saved database metadata carries the read mode. If automation uses a raw
-`oct://` URI, keep the mode explicit:
+Saved database metadata carries the read mode. Raw `oct://` targets detect the
+Octra read surface from Circle metadata:
 
 ```sh
-octra-sqlite 'oct://devnet/oct...?read_mode=public' "select * from artist;"
+octra-sqlite 'oct://devnet/oct...' "select * from artist;"
 ```
 
-Raw URIs without a read-mode marker default to sealed reads. Use
-`?read_mode=auto` only when you intentionally want the client to probe Circle
-info before choosing signed or unsigned reads.
+Use `?read_mode=sealed` or `?read_mode=public` only when automation needs an
+explicit override.
 
 ## Empty Circle Bootstrap Recovery
 

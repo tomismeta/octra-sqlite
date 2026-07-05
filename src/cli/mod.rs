@@ -53,7 +53,7 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.5.1.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.5.2.json";
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
@@ -646,7 +646,7 @@ fn cmd_setup(args: SetupArgs) -> Result<()> {
     } else {
         print_command(
             "browse a public database",
-            format!("octra-sqlite open oct://{network}/CIRCLE?read_mode=public"),
+            format!("octra-sqlite open oct://{network}/CIRCLE"),
         );
         print_command(
             "attach a wallet",
@@ -956,11 +956,8 @@ fn ensure_wallet_for_database_creation(args: &NewArgs, config: &mut Config) -> R
     }
 }
 
-fn database_read_uri(target_uri: &str, read_mode: ReadMode) -> String {
-    match read_mode {
-        ReadMode::Public => format!("{target_uri}?read_mode=public"),
-        ReadMode::Auto | ReadMode::Sealed => target_uri.to_string(),
-    }
+fn database_read_uri(target_uri: &str, _read_mode: ReadMode) -> String {
+    target_uri.to_string()
 }
 
 fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
@@ -1398,10 +1395,21 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
     let mut report = StatusReport::new(label, args.json);
     report.init_database_readiness();
     let config_path = config_path()?;
+    let explicit_target = args.target.target.is_some();
     match load_config() {
         Ok(config) => {
+            let explicit_target_unsigned_read =
+                explicit_target_allows_unsigned_read(&args.target, &config);
             if config_path.exists() {
                 report.ok("config", format!("read {}", config_path.display()));
+            } else if explicit_target {
+                report.ok(
+                    "config",
+                    format!(
+                        "not found at {}; explicit database target supplied",
+                        config_path.display()
+                    ),
+                );
             } else {
                 report.warn(
                     "config",
@@ -1413,6 +1421,11 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
             }
             if let Some(default_database) = &config.default_database {
                 report.ok("default database", default_database);
+            } else if explicit_target {
+                report.ok(
+                    "default database",
+                    "not needed for explicit database target",
+                );
             } else {
                 report.warn(
                     "default database",
@@ -1427,14 +1440,21 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
                         report.ok("wallet", format!("read {}", path.display()));
                     } else if env::var("OCTRA_PRIVATE_KEY_B64").is_ok() {
                         report.ok("wallet", "using OCTRA_PRIVATE_KEY_B64");
+                    } else if explicit_target_unsigned_read {
+                        report.ok(
+                            "wallet",
+                            "not configured; public reads can continue without a wallet",
+                        );
                     } else {
                         report.warn(
                             "wallet",
-                            "not configured; reads/writes that need signed RPC will be skipped",
+                            "not configured; sealed reads and writes need signed RPC",
                         );
                     }
                     if let Some(caller) = caller {
                         report.ok("caller", caller);
+                    } else if explicit_target_unsigned_read {
+                        report.ok("caller", "not needed for public reads");
                     } else {
                         report.warn("caller", "not found in wallet/env");
                     }
@@ -1668,7 +1688,10 @@ fn paste_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
         "saved at",
         "~/.octra/wallet.json with restricted permissions where supported",
     );
-    print_field("secret", "input is hidden and not stored in shell history");
+    print_field(
+        "secret",
+        "input is masked with * characters and not stored in shell history",
+    );
     let mut private_key = read_tty_secret("private key")?;
     let material = wallet_material_from_private_key(&private_key, None)?;
     private_key.zeroize();
@@ -1891,7 +1914,11 @@ fn read_tty_secret(prompt: &str) -> Result<String> {
         );
     }
     let prompt = format!("{}: ", dim(prompt));
-    rpassword::prompt_password(prompt).context("reading private key from terminal")
+    let config = rpassword::ConfigBuilder::new()
+        .password_feedback_mask('*')
+        .build();
+    rpassword::prompt_password_with_config(prompt, config)
+        .context("reading private key from terminal")
 }
 
 fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Result<()> {
@@ -2060,34 +2087,51 @@ impl StatusReport {
     }
 
     fn finish_with_ready(self, label: &str, require_ready: bool) -> Result<i32> {
-        let database_ready = self.database_ready();
-        let ok = self.failures == 0 && (!require_ready || database_ready);
+        let read_ready = self.read_ready();
+        let write_ready = self.write_ready();
+        let ok = self.failures == 0 && (!require_ready || read_ready);
         if self.json {
+            let mut readiness = self.readiness;
+            readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
+            readiness.insert("write_ready".to_string(), Value::Bool(write_ready));
             return print_json(&json!({
                 "ok": ok,
                 "type": self.label,
                 "schema": "octra-sqlite.cli.v1",
-                "ready": database_ready,
+                "ready": read_ready,
+                "read_ready": read_ready,
+                "write_ready": write_ready,
                 "failures": self.failures,
                 "warnings": self.warnings,
-                "readiness": self.readiness,
+                "readiness": readiness,
                 "items": self.items,
             }))
             .map(|_| if ok { 0 } else { 1 });
         }
         if self.failures != 0 {
             bail!("{label} found {} issue(s)", self.failures)
-        } else if require_ready && !database_ready {
-            println!("{}", format_status_line("fail", "ready", "false"));
+        } else if require_ready && !read_ready {
+            println!("{}", format_status_line("fail", "read_ready", "false"));
             Ok(1)
         } else {
-            println!("{} ready", dim(format!("{label}:")));
+            println!(
+                "{} read_ready={} write_ready={}",
+                dim(format!("{label}:")),
+                read_ready,
+                write_ready
+            );
             Ok(0)
         }
     }
 
-    fn database_ready(&self) -> bool {
-        DATABASE_READINESS_KEYS
+    fn read_ready(&self) -> bool {
+        READ_READINESS_KEYS
+            .iter()
+            .all(|key| self.readiness.get(*key).and_then(Value::as_bool) == Some(true))
+    }
+
+    fn write_ready(&self) -> bool {
+        WRITE_READINESS_KEYS
             .iter()
             .all(|key| self.readiness.get(*key).and_then(Value::as_bool) == Some(true))
     }
@@ -2101,6 +2145,16 @@ const DATABASE_READINESS_KEYS: &[&str] = &[
     "sqlite_ready",
     "query_ready",
 ];
+
+const READ_READINESS_KEYS: &[&str] = &[
+    "circle_reachable",
+    "auth_readable",
+    "storage_initialized",
+    "sqlite_ready",
+    "query_ready",
+];
+
+const WRITE_READINESS_KEYS: &[&str] = &["circle_reachable", "auth_readable", "owner_write_valid"];
 
 fn check_bundled_wasm(report: &mut StatusReport) {
     match resolve_wasm_path(false, None) {
@@ -2263,10 +2317,21 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                 match circle_info(session) {
                     Ok(info) => {
                         report.ready("circle_reachable", true);
-                        report.warn(
-                            "program info",
-                            format!("signed program info unavailable: {error}"),
-                        );
+                        if circle_info_allows_unsigned_read(&info) {
+                            report.ok(
+                                "program info",
+                                format!(
+                                    "using Circle metadata; signed program info unavailable: {error}"
+                                ),
+                            );
+                        } else {
+                            report.fail(
+                                "program info",
+                                format!(
+                                    "signed program info unavailable: {error}; Circle metadata is not public-read"
+                                ),
+                            );
+                        }
                         report.ok(
                             "circle",
                             linked_circle(&session.target().network, &session.target().circle),
@@ -2343,10 +2408,21 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                             report.ready("owner_write_valid", false);
                             report.warn("auth owner wallet", "current wallet is read-only")
                         }
-                        Err(error) => report.warn(
-                            "auth owner wallet",
-                            format!("could not derive wallet public key: {error:#}"),
-                        ),
+                        Err(error) => {
+                            report.ready("owner_write_valid", false);
+                            if session.target().read_mode.allows_unsigned_read() {
+                                let _ = error;
+                                report.ok(
+                                    "auth owner wallet",
+                                    "not configured; writes require the owner wallet",
+                                );
+                            } else {
+                                report.warn(
+                                    "auth owner wallet",
+                                    format!("could not derive wallet public key: {error:#}"),
+                                );
+                            }
+                        }
                     }
                 }
                 report.ok("auth db id", &auth.db_id);
@@ -3796,8 +3872,9 @@ fn limits_json(target: Option<Value>) -> Value {
             "restore_partial_apply": true,
         },
         "auth": {
-            "read_model": "sealed uses signed Octra view auth; public uses unsigned Octra circle view",
+            "read_model": "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view",
             "read_modes": ["sealed", "public"],
+            "read_mode_overrides": ["auto", "sealed", "public"],
             "sealed_reads": "octra_circleViewAuth",
             "public_reads": "octra_circleView",
             "write_model": "OSW1 owner write intent",
@@ -3827,7 +3904,7 @@ fn commands_json() -> Value {
         "commands": [
             {
                 "command": "octra-sqlite setup",
-                "purpose": "interactive wallet and network setup; can guide official wallet-generator import, attach, or hidden private-key paste",
+                "purpose": "interactive wallet and network setup; can guide official wallet-generator import, attach, or masked private-key paste",
                 "writes": false,
                 "json": false,
             },
@@ -3916,7 +3993,7 @@ fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite status [DATABASE] --ready",
-                "purpose": "exit nonzero unless live database readiness checks pass",
+                "purpose": "exit nonzero unless live read/query readiness checks pass",
                 "writes": false,
                 "json": true,
                 "envelope": "status",
@@ -4059,6 +4136,29 @@ fn session_options(args: &TargetArgs) -> ClientOptions {
 
 fn resolve_wallet_path(args: &TargetArgs, config: &Config) -> Option<PathBuf> {
     client_resolve_wallet_path(&session_options(args), config)
+}
+
+fn explicit_target_allows_unsigned_read(args: &TargetArgs, config: &Config) -> bool {
+    let Some(target) = args.target.as_deref() else {
+        return false;
+    };
+    let Ok(target) = resolve_target(target, config) else {
+        return false;
+    };
+    match target.read_mode {
+        ReadMode::Public => true,
+        ReadMode::Auto => client_build_session(&session_options(args))
+            .ok()
+            .and_then(|session| circle_info(&session).ok())
+            .is_some_and(|info| circle_info_allows_unsigned_read(&info)),
+        ReadMode::Sealed => false,
+    }
+}
+
+fn circle_info_allows_unsigned_read(info: &Value) -> bool {
+    info.get("privacy_class").and_then(Value::as_str) == Some("public")
+        && info.get("browser_mode").and_then(Value::as_str) == Some("gateway_allowed")
+        && info.get("resource_mode").and_then(Value::as_str) == Some("public_resources")
 }
 
 fn build_session(args: &TargetArgs) -> Result<Session> {
@@ -5349,9 +5449,13 @@ COMMIT;",
         assert_eq!(limits["result"]["limit_error"], "result_limit_exceeded");
         assert_eq!(
             limits["auth"]["read_model"],
-            "sealed uses signed Octra view auth; public uses unsigned Octra circle view"
+            "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view"
         );
         assert_eq!(limits["auth"]["read_modes"], json!(["sealed", "public"]));
+        assert_eq!(
+            limits["auth"]["read_mode_overrides"],
+            json!(["auto", "sealed", "public"])
+        );
         assert_eq!(limits["auth"]["write_model"], "OSW1 owner write intent");
         assert!(
             limits["trace"]["modes"]
@@ -5502,7 +5606,7 @@ COMMIT;",
     fn public_database_read_uri_is_shareable() {
         assert_eq!(
             database_read_uri("oct://devnet/octABC", ReadMode::Public),
-            "oct://devnet/octABC?read_mode=public"
+            "oct://devnet/octABC"
         );
         assert_eq!(
             database_read_uri("oct://devnet/octABC", ReadMode::Sealed),
@@ -5660,13 +5764,18 @@ COMMIT;",
     fn status_readiness_requires_all_database_items() {
         let mut report = StatusReport::new("status", true);
         report.init_database_readiness();
-        assert!(!report.database_ready());
+        assert!(!report.read_ready());
+        assert!(!report.write_ready());
         for key in DATABASE_READINESS_KEYS {
             report.ready(key, true);
         }
-        assert!(report.database_ready());
+        assert!(report.read_ready());
+        assert!(report.write_ready());
         report.ready("sqlite_ready", false);
-        assert!(!report.database_ready());
+        assert!(!report.read_ready());
+        assert!(report.write_ready());
+        report.ready("owner_write_valid", false);
+        assert!(!report.write_ready());
     }
 
     #[test]

@@ -1,5 +1,32 @@
 # Release Notes
 
+## 0.5.2
+
+This is a CLI readiness, raw-target, and install polish release over the
+`0.5.1` crates.io debut. The contract, wire formats, bundled SQLite engine,
+bundled Circle WASM, deployed event strings, and on-chain behavior are unchanged.
+
+## Changed
+
+- Raw Circle targets now detect the Octra read surface from Circle metadata, so
+  public-read databases can be opened with `oct://NETWORK/CIRCLE` without
+  adding `?read_mode=public`.
+- `status --json` now reports `read_ready` and `write_ready` separately. The
+  top-level `ready` field and `status --ready` gate track read/query readiness;
+  owner-write readiness is reported separately for public-read deployments.
+- Status output treats walletless public reads as a supported mode when Circle
+  metadata confirms the target is public-readable.
+- Interactive private-key paste now shows masked `*` feedback while keeping the
+  secret out of shell history.
+- README install guidance now names Rust/Cargo 1.87+ from a current Rust
+  toolchain and points users to `rustup` when Cargo is missing or too old.
+
+## Notes
+
+- No Circle redeploy is required for `0.5.2`.
+- The `0.5.2` release manifest records the same bundled Circle WASM hash as
+  `0.5.0` and `0.5.1`.
+
 ## 0.5.1
 
 This is a README, dependency, and packaging polish release. The contract, wire

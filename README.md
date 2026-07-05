@@ -29,8 +29,10 @@ executes the SQLite engine.
 
 ## CLI Quick Start
 
-You need Rust/Cargo 1.87+. The Circle WASM is bundled; no local WASM toolchain
-is required.
+You need Rust/Cargo 1.87+ from a current Rust toolchain. If `cargo` is missing,
+install Rust with [rustup](https://rustup.rs/); distro packages such as
+`apt install cargo` may be too old. The Circle WASM is bundled; no local WASM
+toolchain is required.
 
 ```sh
 cargo install octra-sqlite --locked
@@ -39,14 +41,14 @@ cargo install octra-sqlite --locked
 Read a public database immediately, no wallet required:
 
 ```sh
-octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public' \
+octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ' \
   "select id, name from artist order by id;"
 ```
 
 Open the same database in the interactive `sqlite>` shell:
 
 ```sh
-octra-sqlite open 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public'
+octra-sqlite open 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ'
 ```
 
 Create a database when you have a funded Octra wallet:
@@ -75,7 +77,7 @@ use octra_sqlite::{Client, Result};
 fn main() -> Result<()> {
     let client = Client::default();
     let db = client.database(
-        "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public",
+        "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
     )?;
     let rows = db.query("select id, name from artist order by id;")?;
     println!("{} rows", rows.row_count);
@@ -114,9 +116,10 @@ octra-sqlite new public_art --read-mode public --schema examples/artists.sql
 ```
 
 Public-read SQL queries use unsigned `octra_circleView`; anyone can query the
-public data. Writes remain owner-signed OSW1 calls in both read modes. When
-using a raw URI instead of a saved database name, mark public reads explicitly
-with `?read_mode=public`.
+public data. Writes remain owner-signed OSW1 calls in both read modes. Raw
+Circle targets detect the Octra read surface automatically; use
+`?read_mode=sealed` or `?read_mode=public` only when you need an explicit
+override.
 
 ## Wallets
 
@@ -145,9 +148,9 @@ surface, [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs,
 and release manifests publish the bundled WASM hash plus live devnet proof
 metadata.
 
-The `0.5.1` crate uses the same bundled Circle WASM as `0.5.0`. The current
+The `0.5.2` crate uses the same bundled Circle WASM as `0.5.0`. The current
 release manifest is
-[release/octra-sqlite-0.5.1.json](./release/octra-sqlite-0.5.1.json).
+[release/octra-sqlite-0.5.2.json](./release/octra-sqlite-0.5.2.json).
 
 ```text
 Rust CLI/client -> Octra RPC -> Circle wasm_v1
@@ -191,7 +194,7 @@ URI.
 | `octra-sqlite limits [DATABASE]` | Show SQL, restore, transaction, auth, and trace limits. |
 | `octra-sqlite commands` | Show supported CLI commands and JSON envelopes. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, storage, and SQLite health. |
-| `octra-sqlite status [DATABASE] --ready` | Exit nonzero unless live database readiness checks pass. |
+| `octra-sqlite status [DATABASE] --ready` | Exit nonzero unless live read/query readiness checks pass. |
 | `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status and optional integrity/write checks. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
 | `octra-sqlite database list` | List saved database names. |

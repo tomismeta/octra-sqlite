@@ -261,14 +261,15 @@ Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
 embedded typed SQLite query result.
 
-`status --json` includes readiness booleans for automation:
-`circle_reachable`, `auth_readable`, `owner_write_valid`,
-`storage_initialized`, `sqlite_ready`, and `query_ready`. Values are `null`
-when live checks are skipped or not reached.
+`status --json` includes `ready`, `read_ready`, `write_ready`, and readiness
+booleans for automation: `circle_reachable`, `auth_readable`,
+`owner_write_valid`, `storage_initialized`, `sqlite_ready`, and `query_ready`.
+Values are `null` when live checks are skipped or not reached.
 
-Use `status DATABASE --ready` as the operational gate. With `--json`, it prints
-the same single status envelope and exits nonzero when any readiness item is not
-`true`.
+Use `status DATABASE --ready` as the read/query operational gate. With `--json`,
+it prints the same single status envelope and exits nonzero when `read_ready` is
+not `true`. `write_ready` is separate so walletless public-read databases can be
+healthy for reads while still reporting that owner writes are unavailable.
 
 `wallet status --json` reports wallet path, file permissions, caller
 address, active target, and read/write relationship to the target Circle. It
