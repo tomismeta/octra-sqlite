@@ -1,8 +1,8 @@
 [package]
 name = "octra-sqlite"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.88"
 license = "MIT"
 description = "Real SQLite inside an Octra Circle, with a Rust CLI and client library"
 repository = "https://github.com/tomismeta/octra-sqlite"
@@ -77,5 +77,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 ureq = { version = "3.3", default-features = false, features = ["json", "rustls"], optional = true }
-wasmtime = { version = "39", optional = true }
+wasmtime = { version = "36.0.8", optional = true }
 zeroize = "1"

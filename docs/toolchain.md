@@ -6,7 +6,7 @@ and `octra-sqlite deploy` use that artifact by default.
 
 ## User Requirements
 
-- Rust/Cargo 1.87 or newer for the CLI. `rustup stable` is recommended; distro
+- Rust/Cargo 1.88 or newer for the CLI. `rustup stable` is recommended; distro
   packages can lag behind the lockfile. Cargo must support lockfile version 4.
 - The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.
@@ -44,7 +44,7 @@ code_hash 36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.5.1.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.5.2.json` and checked by
 `octra-sqlite status`.
 
 ## Optional Rebuild

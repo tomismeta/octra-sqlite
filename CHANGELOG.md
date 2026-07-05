@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.2
+
+- Made raw Circle targets detect the Octra read surface from Circle metadata, so
+  public-read databases can be opened with `oct://NETWORK/CIRCLE` without
+  adding `?read_mode=public`.
+- Split `status --json` readiness into `read_ready` and `write_ready`. The
+  top-level `ready` and `status --ready` gate now track read/query readiness,
+  while owner-write capability is reported separately.
+- Reduced setup/wallet warning noise for explicit public-capable targets:
+  walletless public reads are reported as a supported mode, not a broken owner
+  setup.
+- Preserved malformed wallet-load errors on public-read sessions, so public
+  reads can continue without hiding why signed operations are unavailable.
+- Added masked feedback for interactive private-key paste while keeping input
+  out of shell history.
+- Added `cargo audit` to CI for published-crate supply-chain checks.
+- Raised the documented MSRV to Rust/Cargo 1.88+ so the lockfile can use
+  patched HTTP cookie/time dependencies without a supply-chain audit ignore.
+- Kept the bundled Circle WASM, OSR1/OSW1 wire formats, deployed event strings,
+  and on-chain contract behavior unchanged from `0.5.1`.
+
 ## 0.5.1
 
 - Refactored the README for public package readers: CLI and Rust client quick

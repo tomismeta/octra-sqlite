@@ -30,6 +30,10 @@ jobs:
         run: cargo build --locked --no-default-features --lib
       - name: HTTP client without CLI
         run: cargo check --locked --no-default-features --features http
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Supply-chain audit
+        run: cargo audit
       - name: Script syntax
         run: find scripts -name '*.sh' -exec bash -n {} \;
       - name: Check bundled WASM artifact

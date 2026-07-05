@@ -85,7 +85,7 @@ pub fn parse_database_target(
                 .to_string(),
             circle: value.to_string(),
             rpc: default_rpc,
-            read_mode: ReadMode::Sealed,
+            read_mode: ReadMode::Auto,
         });
     }
     Err(Error::new(format!(
@@ -95,7 +95,7 @@ pub fn parse_database_target(
 
 fn read_mode_from_query(rest: &str) -> Result<ReadMode> {
     let Some((_, query)) = rest.split_once('?') else {
-        return Ok(ReadMode::Sealed);
+        return Ok(ReadMode::Auto);
     };
     for pair in query.split('&') {
         let Some((key, value)) = pair.split_once('=') else {
@@ -110,7 +110,7 @@ fn read_mode_from_query(rest: &str) -> Result<ReadMode> {
             };
         }
     }
-    Ok(ReadMode::Sealed)
+    Ok(ReadMode::Auto)
 }
 
 #[cfg(test)]
@@ -124,7 +124,7 @@ mod tests {
         assert_eq!(target.network, "devnet");
         assert_eq!(target.circle, "octABC");
         assert_eq!(target.rpc, "http://rpc");
-        assert_eq!(target.read_mode, ReadMode::Sealed);
+        assert_eq!(target.read_mode, ReadMode::Auto);
     }
 
     #[test]
@@ -132,7 +132,7 @@ mod tests {
         let target = parse_database_target("octABC", Some("devnet"), None).unwrap();
         assert_eq!(target.network, "devnet");
         assert_eq!(target.circle, "octABC");
-        assert_eq!(target.read_mode, ReadMode::Sealed);
+        assert_eq!(target.read_mode, ReadMode::Auto);
     }
 
     #[test]

@@ -25,7 +25,7 @@
 //! fn main() -> Result<()> {
 //!     let client = Client::default();
 //!     let db = client.database(
-//!         "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public",
+//!         "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
 //!     )?;
 //!     let rows = db.query("select id, name from artist order by id;")?;
 //!     println!("{} rows", rows.row_count);
@@ -36,7 +36,8 @@
 //! Sealed databases use signed Octra view auth for reads. Public-read
 //! databases use unsigned Octra Circle views for SQL reads while keeping writes
 //! owner-signed through OSW1 owner write intent. Pass a saved database name or a
-//! full `oct://NETWORK/<circle>?read_mode=public` URI to [`Client::database`].
+//! full `oct://NETWORK/<circle>` URI to [`Client::database`]. The client
+//! detects the Circle's Octra read surface unless `read_mode` is explicitly set.
 //!
 //! Feature flags:
 //!

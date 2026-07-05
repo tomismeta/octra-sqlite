@@ -184,10 +184,10 @@ pub(super) fn wait_for_receipt_with<T: Transport>(
 ) -> Result<Value> {
     for _ in 0..45 {
         let result = rpc_call(transport, session, "contract_receipt", json!([tx_hash]));
-        if let Ok(receipt) = result {
-            if !receipt.is_null() {
-                return Ok(receipt);
-            }
+        if let Ok(receipt) = result
+            && !receipt.is_null()
+        {
+            return Ok(receipt);
         }
         std::thread::sleep(Duration::from_secs(2));
     }

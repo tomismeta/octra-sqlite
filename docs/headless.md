@@ -37,7 +37,7 @@ printf '%s' "$OCTRA_PRIVATE_KEY_B64" | octra-sqlite wallet import --stdin --outp
 
 The import command strips whitespace, derives the Octra address, writes a
 normalized wallet JSON, and stores the file with restrictive permissions where
-the OS supports it. Interactive setup uses a hidden terminal prompt for private
+the OS supports it. Interactive setup uses a masked terminal prompt for private
 key paste; headless setup should use `--stdin` or a pre-provisioned file.
 Pre-provisioned files may use the official Octra wallet-generator shape
 (`address` plus `keyPair.publicKey` / `keyPair.secretKey`) or octra-sqlite's
@@ -89,7 +89,7 @@ OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status mai
 
 ## Server Checklist
 
-Install with Rust/Cargo 1.87 or newer. `rustup stable` is recommended because
+Install with Rust/Cargo 1.88 or newer. `rustup stable` is recommended because
 some Linux distributions ship older Cargo versions:
 
 ```sh
@@ -100,7 +100,7 @@ cargo install --path . --locked
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.5.1 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.5.2 --locked
 ```
 
 If installing into a shared path, make the binary executable by the service

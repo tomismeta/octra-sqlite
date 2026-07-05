@@ -47,6 +47,7 @@ pub struct ClientOptions {
 pub struct Session {
     target: DatabaseTarget,
     wallet_path: Option<PathBuf>,
+    wallet_load_error: Option<String>,
     rpc: String,
     rpc_override: bool,
     caller: String,
@@ -98,6 +99,10 @@ impl Session {
         self.wallet_path.as_deref()
     }
 
+    pub fn wallet_load_error(&self) -> Option<&str> {
+        self.wallet_load_error.as_deref()
+    }
+
     pub fn rpc(&self) -> &str {
         &self.rpc
     }
@@ -114,6 +119,7 @@ impl Session {
         Session {
             target,
             wallet_path: self.wallet_path.clone(),
+            wallet_load_error: self.wallet_load_error.clone(),
             rpc: self.rpc.clone(),
             rpc_override: self.rpc_override,
             caller: self.caller.clone(),
@@ -131,6 +137,7 @@ impl Session {
             rpc: open_database_rpc(&self.rpc, self.rpc_override, Some(target.rpc.clone())),
             target,
             wallet_path: self.wallet_path.clone(),
+            wallet_load_error: self.wallet_load_error.clone(),
             rpc_override: self.rpc_override,
             caller: self.caller.clone(),
             signer: self.signer.clone(),
@@ -158,6 +165,14 @@ impl Session {
     }
 
     fn signer(&self) -> Result<&LocalSigner> {
+        if let Some(error) = &self.wallet_load_error {
+            return Err(Error::with_kind(
+                ErrorKind::Wallet,
+                format!(
+                    "wallet failed to load; public reads can continue without it, but signed operations require a valid wallet: {error}"
+                ),
+            ));
+        }
         self.signer.as_deref().ok_or_else(|| {
             Error::with_kind(
                 ErrorKind::Wallet,
@@ -259,10 +274,11 @@ fn build_session_for_target(
     }
     let rpc_override = explicit_rpc.is_some();
     let wallet_path = resolve_wallet_path(options, config);
+    let mut wallet_load_error = None;
     let wallet = match load_wallet(wallet_path.as_deref()) {
         Ok(wallet) => wallet,
         Err(error) if target.read_mode.allows_unsigned_read() => {
-            let _ = error;
+            wallet_load_error = Some(error.to_string());
             Default::default()
         }
         Err(error) => return Err(error),
@@ -320,6 +336,7 @@ fn build_session_for_target(
     Ok(Session {
         target,
         wallet_path,
+        wallet_load_error,
         rpc,
         rpc_override,
         caller,
@@ -507,6 +524,32 @@ mod tests {
             session.public_key_b64().unwrap(),
             general_purpose::STANDARD.encode(public_key)
         );
+    }
+
+    #[test]
+    fn public_read_preserves_wallet_load_error_for_signed_operations() {
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-invalid-wallet-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, "{").unwrap();
+        let session = build_session(&ClientOptions {
+            target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+            wallet: Some(path.clone()),
+            rpc: Some("mock://rpc".to_string()),
+            ..ClientOptions::default()
+        })
+        .unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            session
+                .wallet_load_error()
+                .is_some_and(|error| error.contains("parsing wallet"))
+        );
+        let error = session.intent_public_key().unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Wallet);
+        assert!(error.to_string().contains("wallet failed to load"));
+        assert!(error.to_string().contains("parsing wallet"));
     }
 
     #[test]

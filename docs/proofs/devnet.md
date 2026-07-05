@@ -75,7 +75,7 @@ octra-sqlite status oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY
 octra-sqlite verify oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY --integrity
 octra-sqlite oct://devnet/octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY ".backup main proof.sqlite"
 sqlite3 proof.sqlite "pragma integrity_check;"
-octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ?read_mode=public' "select id, name from artist order by id;"
+octra-sqlite 'oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ' "select id, name from artist order by id;"
 ```
 
 `v0.2.1` public Remilia example Circle:

@@ -13,7 +13,9 @@ for building and auditing the bundled WASM.
 There is no separate agent command set. Humans use the readable CLI and
 `sqlite>` shell. Automation, agents, and services use the same commands with
 `--json`, `--json-summary`, `status --ready`, `commands --json`, and
-`limits --json`. Rust applications can use the client library directly.
+`limits --json`. `status --ready` is the read/query readiness gate; status JSON
+also reports `write_ready` for owner-write automation. Rust applications can use
+the client library directly.
 
 Runtime defaults live in `config/defaults.json`. The bundled defaults keep
 devnet active and preload devnet and mainnet URL profiles; user config overlays
@@ -33,7 +35,7 @@ octra-sqlite art "select * from artist;"
 `setup` configures wallet and network defaults only. It does not ask for or set
 a default database. If no wallet is found, it offers the same wallet setup flow
 as guided `new`: import `wallet.json` from the official Octra wallet generator,
-attach an existing plaintext wallet JSON, paste a private key into a hidden
+attach an existing plaintext wallet JSON, paste a private key into a masked
 prompt, or continue without a wallet for public-read queries only. The first
 successful `new` saves the created database and makes it the default.
 
@@ -68,10 +70,10 @@ defaults.
 `new --read-mode public` creates an explicit public-read Circle tuple
 (`public / gateway_allowed / public_resources`). Public-read SQL queries use
 `octra_circleView`; sealed databases keep `octra_circleViewAuth`. Saved public
-database metadata preserves that read mode. Raw `oct://` targets default to
-sealed unless the URI explicitly includes `?read_mode=public`; callers that
-want Circle-info probing can opt into `?read_mode=auto`. Writes stay
-owner-signed through OSW1 in both modes.
+database metadata preserves that read mode. Raw `oct://` targets detect the
+Octra read surface from Circle metadata unless the URI explicitly includes
+`?read_mode=sealed` or `?read_mode=public`. Writes stay owner-signed through
+OSW1 in both modes.
 
 Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
 then local `wallet.json` candidates. Wallet JSON may use the official Octra
@@ -145,7 +147,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.5.1.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.5.2.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.
