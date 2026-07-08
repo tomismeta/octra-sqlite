@@ -63,13 +63,13 @@ artifact circle/wasm/octra_sqlite_circle.wasm
 The same values are recorded in `release/octra-sqlite-0.6.0.json` and checked by
 `octra-sqlite status`.
 
-The release manifest also includes a small historical metadata catalog of
-blessed pre-0.6.0 Circle WASM epochs: release range, byte length, base WASM
-SHA-256, and GitHub source URL. The crate does not bundle those old WASM bytes.
-`upgrade` uses the catalog only to guide operators toward the correct previous
-artifact; actual rollback bytes still come from chain history, local artifacts,
-or `--previous-wasm`, and are accepted only after the reconstructed
-personalized hash matches the live program hash exactly.
+The release manifest JSON is also the source of truth for the small historical
+metadata catalog of blessed pre-0.6.0 Circle WASM epochs: release range, byte
+length, base WASM SHA-256, and GitHub source URL. The crate does not bundle
+those old WASM bytes. `upgrade` uses the catalog only to guide operators toward
+the correct previous artifact; actual rollback bytes still come from chain
+history, local artifacts, or `--previous-wasm`, and are accepted only after the
+reconstructed personalized hash matches the live program hash exactly.
 
 ## Optional Rebuild
 

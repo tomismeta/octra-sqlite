@@ -1,7 +1,6 @@
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-mod historical_wasm;
 mod output;
 mod portability;
 mod shell;
@@ -28,7 +27,6 @@ use crate::{
         tx::Tx,
     },
 };
-use historical_wasm::HISTORICAL_WASMS;
 use output::{
     OutputMode, dim, format_exec_result, format_field, format_json, format_result,
     format_status_line, hyperlink, print_exec_result, print_json, print_result, strong,
@@ -82,12 +80,21 @@ struct TextArtifact {
 }
 
 struct MatchedWasmArtifact {
-    releases: &'static str,
-    sqlite_version: &'static str,
-    sha256: &'static str,
+    releases: String,
+    sqlite_version: String,
+    sha256: String,
     bytes: u64,
-    source_url: &'static str,
+    source_url: String,
     exact_hash: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HistoricalWasmMetadata {
+    releases: String,
+    sqlite_version: String,
+    sha256: String,
+    bytes: u64,
+    source_url: String,
 }
 
 #[derive(Parser)]
@@ -2632,33 +2639,89 @@ fn match_historical_wasm(
     expected_hash: &str,
     code_bytes: Option<u64>,
 ) -> Option<MatchedWasmArtifact> {
-    for artifact in HISTORICAL_WASMS {
+    let catalog = historical_wasm_catalog().ok()?;
+    match_historical_wasm_in_catalog(&catalog, expected_hash, code_bytes)
+}
+
+fn match_historical_wasm_in_catalog(
+    catalog: &[HistoricalWasmMetadata],
+    expected_hash: &str,
+    code_bytes: Option<u64>,
+) -> Option<MatchedWasmArtifact> {
+    for artifact in catalog {
         if expected_hash == artifact.sha256 {
             return Some(MatchedWasmArtifact {
-                releases: artifact.releases,
-                sqlite_version: artifact.sqlite_version,
-                sha256: artifact.sha256,
+                releases: artifact.releases.clone(),
+                sqlite_version: artifact.sqlite_version.clone(),
+                sha256: artifact.sha256.clone(),
                 bytes: artifact.bytes,
-                source_url: artifact.source_url,
+                source_url: artifact.source_url.clone(),
                 exact_hash: true,
             });
         }
     }
     if let Some(code_bytes) = code_bytes
-        && let Some(artifact) = HISTORICAL_WASMS
-            .iter()
-            .find(|artifact| artifact.bytes == code_bytes)
+        && let Some(artifact) = catalog.iter().find(|artifact| artifact.bytes == code_bytes)
     {
         return Some(MatchedWasmArtifact {
-            releases: artifact.releases,
-            sqlite_version: artifact.sqlite_version,
-            sha256: artifact.sha256,
+            releases: artifact.releases.clone(),
+            sqlite_version: artifact.sqlite_version.clone(),
+            sha256: artifact.sha256.clone(),
             bytes: artifact.bytes,
-            source_url: artifact.source_url,
+            source_url: artifact.source_url.clone(),
             exact_hash: false,
         });
     }
     None
+}
+
+fn historical_wasm_catalog() -> Result<Vec<HistoricalWasmMetadata>> {
+    let artifact = resolve_release_manifest()?;
+    let manifest: Value = serde_json::from_str(&artifact.text)
+        .with_context(|| format!("parsing {}", artifact.source))?;
+    parse_historical_wasm_catalog(&manifest)
+}
+
+fn parse_historical_wasm_catalog(manifest: &Value) -> Result<Vec<HistoricalWasmMetadata>> {
+    let entries = manifest
+        .get("historical_wasm_catalog")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("release manifest missing historical_wasm_catalog array"))?;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| parse_historical_wasm_entry(index, entry))
+        .collect()
+}
+
+fn parse_historical_wasm_entry(index: usize, entry: &Value) -> Result<HistoricalWasmMetadata> {
+    let field = |name: &str| format!("historical_wasm_catalog[{index}].{name}");
+    Ok(HistoricalWasmMetadata {
+        releases: entry
+            .get("releases")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("releases")))?
+            .to_string(),
+        sqlite_version: entry
+            .get("sqlite_version")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("sqlite_version")))?
+            .to_string(),
+        sha256: entry
+            .get("sha256")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("sha256")))?
+            .to_string(),
+        bytes: entry
+            .get("bytes")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("{} missing or not an unsigned integer", field("bytes")))?,
+        source_url: entry
+            .get("source_url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("source_url")))?
+            .to_string(),
+    })
 }
 
 fn render_historical_wasm_match(code_hash: &str, match_: &MatchedWasmArtifact) -> String {
@@ -6197,15 +6260,16 @@ COMMIT;",
     }
 
     #[test]
-    fn historical_wasm_catalog_matches_manifest_hashes() {
+    fn historical_wasm_catalog_is_manifest_backed_metadata() {
         let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
+        let catalog = parse_historical_wasm_catalog(&manifest).unwrap();
         let entries = manifest["historical_wasm_catalog"].as_array().unwrap();
-        assert_eq!(entries.len(), HISTORICAL_WASMS.len());
+        assert_eq!(entries.len(), catalog.len());
         assert_eq!(
             manifest["upgrade_workflow"]["historical_wasm_catalog_mode"].as_str(),
             Some("metadata_only")
         );
-        for (entry, artifact) in entries.iter().zip(HISTORICAL_WASMS) {
+        for (entry, artifact) in entries.iter().zip(&catalog) {
             assert_eq!(artifact.sqlite_version, "3.53.2");
             assert!(artifact.bytes > 0);
             assert_eq!(artifact.sha256.len(), 64);
@@ -6214,15 +6278,27 @@ COMMIT;",
                     .source_url
                     .starts_with("https://raw.githubusercontent.com/")
             );
-            assert_eq!(entry["releases"].as_str(), Some(artifact.releases));
+            assert_eq!(entry["releases"].as_str(), Some(artifact.releases.as_str()));
             assert_eq!(
                 entry["sqlite_version"].as_str(),
-                Some(artifact.sqlite_version)
+                Some(artifact.sqlite_version.as_str())
             );
-            assert_eq!(entry["source_url"].as_str(), Some(artifact.source_url));
+            assert_eq!(
+                entry["source_url"].as_str(),
+                Some(artifact.source_url.as_str())
+            );
             assert_eq!(entry["bytes"].as_u64(), Some(artifact.bytes));
-            assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256));
+            assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256.as_str()));
         }
+
+        let exact = match_historical_wasm_in_catalog(&catalog, &catalog[2].sha256, None).unwrap();
+        assert_eq!(exact.releases, "0.3.0");
+        assert!(exact.exact_hash);
+
+        let byte_match =
+            match_historical_wasm_in_catalog(&catalog, "unknown", Some(609_475)).unwrap();
+        assert_eq!(byte_match.releases, "0.3.0");
+        assert!(!byte_match.exact_hash);
     }
 
     #[test]

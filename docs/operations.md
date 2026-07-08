@@ -137,10 +137,11 @@ target-engine state without writing. A real upgrade:
 For older owner-personalized deployments, rollback recovery can use either the
 local release artifacts, an already-personalized old WASM, or the previous
 release's base `circle/wasm/octra_sqlite_circle.wasm`. The release manifest
-catalogs historical base WASM SHA-256 values, byte lengths, and GitHub source
-URLs so the CLI can identify likely old epochs without bundling their bytes.
-The CLI patches provided base WASM bytes with live `auth_info` and accepts them
-only if the resulting hash matches the currently deployed program. Use
+JSON is the catalog source of truth for historical base WASM SHA-256 values,
+byte lengths, and GitHub source URLs so the CLI can identify likely old epochs
+without bundling their bytes. The CLI patches provided base WASM bytes with
+live `auth_info` and accepts them only if the resulting hash matches the
+currently deployed program. Use
 `--previous-wasm PATH` for one run or `OCTRA_SQLITE_PREVIOUS_WASM=PATH` for
 automation.
 

@@ -17,8 +17,9 @@ existing database Circles.
   recovered, transaction proof, and the from/to code-hash epoch boundary.
 - Operator-readable default bundle names containing network, Circle ID,
   previous SQLite version, and date.
-- A metadata-only historical WASM catalog for identifying known pre-0.6.0
-  release engines without bundling old engine bytes in the crate.
+- A release-manifest-backed, metadata-only historical WASM catalog for
+  identifying known pre-0.6.0 release engines without bundling old engine bytes
+  in the crate.
 - `upgrade --previous-wasm PATH` for explicit rollback recovery with custom or
   unknown old program bytes.
 
