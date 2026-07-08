@@ -82,10 +82,12 @@ struct TextArtifact {
 }
 
 struct MatchedWasmArtifact {
-    source: String,
-    bytes: Vec<u8>,
     releases: &'static str,
     sqlite_version: &'static str,
+    sha256: &'static str,
+    bytes: u64,
+    source_url: &'static str,
+    exact_hash: bool,
 }
 
 #[derive(Parser)]
@@ -2364,6 +2366,9 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                 .get("code_hash")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown");
+            let code_bytes = info
+                .get("code_bytes")
+                .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()));
             report.ok("program version", version);
             if let Some(owner) = program_owner(&info) {
                 report.ok("circle owner", owner);
@@ -2388,19 +2393,13 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                         );
                         report.engine_current(true);
                     }
-                    Ok(Some(personalized_hash)) => match auth_info(session)
-                        .ok()
-                        .as_ref()
-                        .and_then(|auth| match_historical_wasm(code_hash, Some(auth)))
+                    Ok(Some(personalized_hash)) => match match_historical_wasm(code_hash, code_bytes)
                     {
                         Some(match_) => {
                             report.engine_current(false);
                             report.warn(
                                 "program hash",
-                                format!(
-                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
-                                    match_.releases, match_.sqlite_version
-                                ),
+                                render_historical_wasm_match(code_hash, &match_),
                             );
                         }
                         None => report.fail(
@@ -2410,15 +2409,12 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                             ),
                         ),
                     },
-                    Ok(None) => match match_historical_wasm(code_hash, None) {
+                    Ok(None) => match match_historical_wasm(code_hash, code_bytes) {
                         Some(match_) => {
                             report.engine_current(false);
                             report.warn(
                                 "program hash",
-                                format!(
-                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
-                                    match_.releases, match_.sqlite_version
-                                ),
+                                render_historical_wasm_match(code_hash, &match_),
                             );
                         }
                         None => report.fail(
@@ -2426,19 +2422,12 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                             format!("{code_hash}; expected {expected_hash}"),
                         ),
                     },
-                    Err(error) => match auth_info(session)
-                        .ok()
-                        .as_ref()
-                        .and_then(|auth| match_historical_wasm(code_hash, Some(auth)))
-                    {
+                    Err(error) => match match_historical_wasm(code_hash, code_bytes) {
                         Some(match_) => {
                             report.engine_current(false);
                             report.warn(
                                 "program hash",
-                                format!(
-                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
-                                    match_.releases, match_.sqlite_version
-                                ),
+                                render_historical_wasm_match(code_hash, &match_),
                             );
                         }
                         None => report.fail(
@@ -2641,33 +2630,47 @@ fn personalized_wasm_hash(session: &Session) -> Result<Option<String>> {
 
 fn match_historical_wasm(
     expected_hash: &str,
-    auth: Option<&AuthInfo>,
+    code_bytes: Option<u64>,
 ) -> Option<MatchedWasmArtifact> {
     for artifact in HISTORICAL_WASMS {
         if expected_hash == artifact.sha256 {
             return Some(MatchedWasmArtifact {
-                source: format!("historical_release:{}", artifact.releases),
-                bytes: artifact.bytes.to_vec(),
                 releases: artifact.releases,
                 sqlite_version: artifact.sqlite_version,
-            });
-        }
-        let Some(auth) = auth else {
-            continue;
-        };
-        let mut personalized = artifact.bytes.to_vec();
-        if patch_wasm_auth_from_info(&mut personalized, auth).is_ok()
-            && sha256_hex(&personalized) == expected_hash
-        {
-            return Some(MatchedWasmArtifact {
-                source: format!("historical_release:{}:personalized", artifact.releases),
-                bytes: personalized,
-                releases: artifact.releases,
-                sqlite_version: artifact.sqlite_version,
+                sha256: artifact.sha256,
+                bytes: artifact.bytes,
+                source_url: artifact.source_url,
+                exact_hash: true,
             });
         }
     }
+    if let Some(code_bytes) = code_bytes
+        && let Some(artifact) = HISTORICAL_WASMS
+            .iter()
+            .find(|artifact| artifact.bytes == code_bytes)
+    {
+        return Some(MatchedWasmArtifact {
+            releases: artifact.releases,
+            sqlite_version: artifact.sqlite_version,
+            sha256: artifact.sha256,
+            bytes: artifact.bytes,
+            source_url: artifact.source_url,
+            exact_hash: false,
+        });
+    }
     None
+}
+
+fn render_historical_wasm_match(code_hash: &str, match_: &MatchedWasmArtifact) -> String {
+    let confidence = if match_.exact_hash {
+        "known historical WASM"
+    } else {
+        "possible historical WASM byte-size match"
+    };
+    format!(
+        "{code_hash} ({confidence} {}, SQLite {}; upgrade available; rollback source {})",
+        match_.releases, match_.sqlite_version, match_.source_url
+    )
 }
 
 fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
@@ -6195,9 +6198,30 @@ COMMIT;",
 
     #[test]
     fn historical_wasm_catalog_matches_manifest_hashes() {
-        for artifact in HISTORICAL_WASMS {
-            assert_eq!(sha256_hex(artifact.bytes), artifact.sha256);
+        let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
+        let entries = manifest["historical_wasm_catalog"].as_array().unwrap();
+        assert_eq!(entries.len(), HISTORICAL_WASMS.len());
+        assert_eq!(
+            manifest["upgrade_workflow"]["historical_wasm_catalog_mode"].as_str(),
+            Some("metadata_only")
+        );
+        for (entry, artifact) in entries.iter().zip(HISTORICAL_WASMS) {
             assert_eq!(artifact.sqlite_version, "3.53.2");
+            assert!(artifact.bytes > 0);
+            assert_eq!(artifact.sha256.len(), 64);
+            assert!(
+                artifact
+                    .source_url
+                    .starts_with("https://raw.githubusercontent.com/")
+            );
+            assert_eq!(entry["releases"].as_str(), Some(artifact.releases));
+            assert_eq!(
+                entry["sqlite_version"].as_str(),
+                Some(artifact.sqlite_version)
+            );
+            assert_eq!(entry["source_url"].as_str(), Some(artifact.source_url));
+            assert_eq!(entry["bytes"].as_u64(), Some(artifact.bytes));
+            assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256));
         }
     }
 

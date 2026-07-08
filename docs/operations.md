@@ -125,8 +125,8 @@ target-engine state without writing. A real upgrade:
   owner;
 - patches the bundled WASM with the existing owner public key and database id;
 - recovers the currently deployed personalized WASM from local metadata, chain
-  transaction history, the embedded historical release catalog, local old
-  release artifacts, or an explicit `--previous-wasm` for rollback;
+  transaction history, local old release artifacts, or an explicit
+  `--previous-wasm` for rollback;
 - writes a private local upgrade bundle with a named `.sqlite` backup,
   `previous.wasm`, and `upgrade.json`;
 - aborts if storage generation or owner sequence changes before the program
@@ -135,12 +135,14 @@ target-engine state without writing. A real upgrade:
   the bundled engine.
 
 For older owner-personalized deployments, rollback recovery can use either the
-embedded historical release catalog, local release artifacts, an
-already-personalized old WASM, or the previous release's base
-`circle/wasm/octra_sqlite_circle.wasm`. The CLI patches base WASM bytes with
-live `auth_info` and accepts them only if the resulting hash matches the
-currently deployed program. Use `--previous-wasm PATH` for one run or
-`OCTRA_SQLITE_PREVIOUS_WASM=PATH` for custom or unknown old engines.
+local release artifacts, an already-personalized old WASM, or the previous
+release's base `circle/wasm/octra_sqlite_circle.wasm`. The release manifest
+catalogs historical base WASM SHA-256 values, byte lengths, and GitHub source
+URLs so the CLI can identify likely old epochs without bundling their bytes.
+The CLI patches provided base WASM bytes with live `auth_info` and accepts them
+only if the resulting hash matches the currently deployed program. Use
+`--previous-wasm PATH` for one run or `OCTRA_SQLITE_PREVIOUS_WASM=PATH` for
+automation.
 
 Rollback redeploys the `previous.wasm` from the bundle. It refuses to cross
 post-upgrade writes unless `--force-after-writes` is supplied, and forced

@@ -24,8 +24,9 @@
   the release manifest so the upgraded live WASM hash remains reproducible.
 - Embedded the bundled Circle WASM and release manifest in the binary so
   installed builds do not depend on the source/build directory at runtime.
-- Added an embedded historical WASM catalog plus `upgrade --previous-wasm PATH`
-  for rollback recovery from older owner-personalized deployments.
+- Added a metadata-only historical WASM catalog plus `upgrade --previous-wasm
+  PATH` for rollback recovery from older owner-personalized deployments without
+  bundling old WASM bytes in the crate.
 - Made `rollback.clean` nullable when live counters are unavailable, while
   keeping rollback fail-closed.
 - Added `engine_current` and `upgrade_needed` status JSON fields so healthy old

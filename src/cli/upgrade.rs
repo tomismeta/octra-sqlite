@@ -69,9 +69,7 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         recover_live_wasm(&session, &before, args.previous_wasm.as_deref())?
     };
     if !already_current && rollback.is_none() && !args.allow_no_rollback {
-        bail!(
-            "could not recover the currently deployed WASM for rollback; pass --previous-wasm PATH, set OCTRA_SQLITE_PREVIOUS_WASM, or pass --allow-no-rollback to continue without rollback bytes"
-        );
+        bail!("{}", rollback_recovery_error(&before));
     }
 
     let dry_run = args.dry_run;
@@ -598,9 +596,6 @@ fn recover_live_wasm(
     if let Some(recovered) = recover_wasm_from_local_base_artifacts(before, expected_hash)? {
         return Ok(Some(recovered));
     }
-    if let Some(recovered) = recover_wasm_from_historical_catalog(before, expected_hash) {
-        return Ok(Some(recovered));
-    }
     Ok(None)
 }
 
@@ -667,19 +662,6 @@ fn recover_wasm_from_local_base_artifacts(
     Ok(None)
 }
 
-fn recover_wasm_from_historical_catalog(
-    before: &UpgradeSnapshot,
-    expected_hash: &str,
-) -> Option<RecoveredWasm> {
-    let matched = match_historical_wasm(expected_hash, Some(&before.auth))?;
-    Some(RecoveredWasm {
-        bytes: matched.bytes,
-        hash: expected_hash.to_string(),
-        source: matched.source,
-        tx_hash: None,
-    })
-}
-
 fn local_wasm_artifact_candidates() -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Ok(path) = env::var("OCTRA_SQLITE_PREVIOUS_WASM") {
@@ -696,6 +678,28 @@ fn local_wasm_artifact_candidates() -> Vec<PathBuf> {
         collect_cargo_registry_wasms(&registry, &mut paths);
     }
     paths
+}
+
+fn rollback_recovery_error(before: &UpgradeSnapshot) -> String {
+    let base = "could not recover the currently deployed WASM for rollback; pass --previous-wasm PATH, set OCTRA_SQLITE_PREVIOUS_WASM, or pass --allow-no-rollback to continue without rollback bytes";
+    match match_historical_wasm(&before.code_hash, before.code_bytes) {
+        Some(match_) => {
+            let confidence = if match_.exact_hash {
+                "matches"
+            } else {
+                "may match"
+            };
+            format!(
+                "{base}. Live program {confidence} historical metadata for {} (SQLite {}, {} bytes). Fetch or provide the previous base WASM with sha256 {} from {} and rerun with --previous-wasm PATH.",
+                match_.releases,
+                match_.sqlite_version,
+                match_.bytes,
+                match_.sha256,
+                match_.source_url
+            )
+        }
+        None => base.to_string(),
+    }
 }
 
 fn collect_cargo_registry_wasms(root: &Path, paths: &mut Vec<PathBuf>) {
@@ -1429,38 +1433,28 @@ mod tests {
     }
 
     #[test]
-    fn historical_catalog_wasm_is_personalized_for_rollback_recovery() {
-        let owner_pubkey = [7u8; 32];
-        let db_id = [9u8; 32];
-        let artifact = HISTORICAL_WASMS
-            .iter()
-            .find(|artifact| artifact.releases == "0.3.0")
-            .unwrap();
-        let mut personalized = artifact.bytes.to_vec();
-        patch_wasm_auth_bytes(&mut personalized, &owner_pubkey, &db_id).unwrap();
-        let expected_hash = sha256_hex(&personalized);
+    fn historical_catalog_guides_manual_rollback_recovery() {
         let snapshot = UpgradeSnapshot {
             program_info: json!({}),
             storage: json!({}),
             auth: AuthInfo {
                 configured: true,
-                db_id: hex::encode(db_id),
-                owner_pubkey: Some(hex::encode(owner_pubkey)),
+                db_id: "00".repeat(32),
+                owner_pubkey: Some("00".repeat(32)),
                 owner_sequence: Some(1),
             },
             sqlite_version: "3.53.2".to_string(),
-            code_hash: expected_hash.clone(),
-            code_bytes: Some(personalized.len() as u64),
+            code_hash: "fe418a43".to_string(),
+            code_bytes: Some(609_475),
             storage_generation: Some(1),
             owner_sequence: Some(1),
         };
 
-        let recovered = recover_wasm_from_historical_catalog(&snapshot, &expected_hash)
-            .expect("historical recovery");
+        let error = rollback_recovery_error(&snapshot);
 
-        assert_eq!(recovered.bytes, personalized);
-        assert_eq!(recovered.hash, expected_hash);
-        assert_eq!(recovered.source, "historical_release:0.3.0:personalized");
+        assert!(error.contains("0.3.0"));
+        assert!(error.contains("8158f507"));
+        assert!(error.contains("--previous-wasm PATH"));
     }
 
     #[test]

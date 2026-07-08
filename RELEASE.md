@@ -17,8 +17,8 @@ existing database Circles.
   recovered, transaction proof, and the from/to code-hash epoch boundary.
 - Operator-readable default bundle names containing network, Circle ID,
   previous SQLite version, and date.
-- An embedded historical WASM catalog for automatic rollback recovery from
-  known pre-0.6.0 release engines.
+- A metadata-only historical WASM catalog for identifying known pre-0.6.0
+  release engines without bundling old engine bytes in the crate.
 - `upgrade --previous-wasm PATH` for explicit rollback recovery with custom or
   unknown old program bytes.
 
@@ -44,9 +44,10 @@ existing database Circles.
 - Existing Circles are not upgraded automatically. Run `upgrade` or
   `upgrade DATABASE` with the owner wallet when you choose to move a Circle to
   the new engine.
-- Upgrade can reconstruct rollback bytes from chain history, the embedded
-  historical catalog, local old octra-sqlite release artifacts, or an explicit
-  previous WASM plus live `auth_info`.
+- Upgrade can reconstruct rollback bytes from chain history, local old
+  octra-sqlite release artifacts, or an explicit previous WASM plus live
+  `auth_info`. Historical catalog metadata points operators to the expected
+  tagged artifact and base WASM SHA-256 when manual recovery is needed.
 - Rollback is clean only before post-upgrade writes. `--write-smoke` proves
   writes on the new engine with a create/insert/drop cycle, but intentionally
   makes clean rollback unavailable.

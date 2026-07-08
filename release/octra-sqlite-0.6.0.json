@@ -12,35 +12,35 @@
     {
       "releases": "0.1.0-0.2.0",
       "sqlite_version": "3.53.2",
-      "path": "release/wasm/octra_sqlite_circle-f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf.wasm",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.0/circle/wasm/octra_sqlite_circle.wasm",
       "bytes": 607640,
       "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
     },
     {
       "releases": "0.2.1",
       "sqlite_version": "3.53.2",
-      "path": "release/wasm/octra_sqlite_circle-29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c.wasm",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.1/circle/wasm/octra_sqlite_circle.wasm",
       "bytes": 607800,
       "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
     },
     {
       "releases": "0.3.0",
       "sqlite_version": "3.53.2",
-      "path": "release/wasm/octra_sqlite_circle-8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea.wasm",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.0/circle/wasm/octra_sqlite_circle.wasm",
       "bytes": 609475,
       "sha256": "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea"
     },
     {
       "releases": "0.3.1-0.3.2",
       "sqlite_version": "3.53.2",
-      "path": "release/wasm/octra_sqlite_circle-39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b.wasm",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.2/circle/wasm/octra_sqlite_circle.wasm",
       "bytes": 609404,
       "sha256": "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b"
     },
     {
       "releases": "0.3.3-0.5.2",
       "sqlite_version": "3.53.2",
-      "path": "release/wasm/octra_sqlite_circle-36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d.wasm",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.5.2/circle/wasm/octra_sqlite_circle.wasm",
       "bytes": 609354,
       "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
     }
@@ -105,7 +105,7 @@
     "bundle_schema": "octra-sqlite.upgrade.bundle.v1",
     "default_bundle_name": "NETWORK-CIRCLE-sqlite-PREVIOUS_VERSION-YYYYMMDD",
     "backup_default": true,
-    "rollback_uses_historical_catalog": true,
+    "historical_wasm_catalog_mode": "metadata_only",
     "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
     "rollback_refuses_post_upgrade_writes_by_default": true,
     "epoch_boundary": "circle_program_update"

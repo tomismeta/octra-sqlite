@@ -200,10 +200,10 @@ an `upgrade.json` manifest.
 Default bundles are named with the network, Circle ID, previous SQLite version,
 and date, for example `devnet-oct...-sqlite-3.53.2-20260707`.
 
-For known historical octra-sqlite release engines, rollback recovery is
-automatic: the CLI personalizes the embedded historical WASM catalog with live
-`auth_info` and accepts only an exact live hash match. For custom or unknown
-engines, pass the previous release's base or personalized WASM explicitly:
+For known historical octra-sqlite release engines, the release manifest catalogs
+the base WASM SHA-256, byte length, and GitHub source URL. Rollback still needs
+actual old bytes from chain history, local artifacts, or `--previous-wasm`; the
+CLI accepts them only after they reproduce the live program hash exactly.
 
 ```sh
 octra-sqlite upgrade art --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm

@@ -37,7 +37,6 @@ include = [
     "/examples/remilia-read-api/main.rs",
     "/release/README.md",
     "/release/*.json",
-    "/release/wasm/*.wasm",
     "/scripts/audit-wasm.sh",
     "/scripts/build-wasm.sh",
     "/scripts/install-cli.sh",
