@@ -440,9 +440,9 @@ struct UpgradeArgs {
     /// Run an owner-signed write smoke after the program update.
     #[arg(long)]
     write_smoke: bool,
-    /// Continue if the previous live WASM cannot be recovered for rollback.
+    /// UNSAFE: continue without rollback bytes if the previous live WASM cannot be recovered.
     #[arg(long)]
-    allow_no_rollback: bool,
+    unsafe_no_rollback: bool,
     /// Previous personalized or base WASM to use when rollback bytes cannot be recovered from chain history.
     #[arg(long, value_name = "FILE")]
     previous_wasm: Option<PathBuf>,
@@ -5587,8 +5587,24 @@ COMMIT;",
                 assert_eq!(args.target.as_deref(), Some("art"));
                 assert!(args.dry_run);
                 assert!(args.json);
+                assert!(!args.unsafe_no_rollback);
                 assert!(args.previous_wasm.is_none());
                 assert!(args.rollback_bundle.is_none());
+            }
+            _ => panic!("expected upgrade command"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "upgrade",
+            "art",
+            "--unsafe-no-rollback",
+            "--dry-run",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert!(args.unsafe_no_rollback);
             }
             _ => panic!("expected upgrade command"),
         }

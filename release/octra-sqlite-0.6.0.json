@@ -107,6 +107,7 @@
     "backup_default": true,
     "historical_wasm_catalog_mode": "metadata_only",
     "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
+    "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
     "rollback_refuses_post_upgrade_writes_by_default": true,
     "epoch_boundary": "circle_program_update"
   },

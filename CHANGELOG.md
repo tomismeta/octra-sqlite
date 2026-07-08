@@ -27,6 +27,11 @@
 - Added a release-manifest-backed, metadata-only historical WASM catalog plus
   `upgrade --previous-wasm PATH` for rollback recovery from older
   owner-personalized deployments without bundling old WASM bytes in the crate.
+- Made the rollback-byte bypass explicit as `upgrade --unsafe-no-rollback`;
+  the normal upgrade path still refuses to apply without rollback bytes.
+- Renamed the full-SQL event opt-in to
+  `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT` so the permanence of SQL event tracing
+  is visible at the call site.
 - Made `rollback.clean` nullable when live counters are unavailable, while
   keeping rollback fail-closed.
 - Added `engine_current` and `upgrade_needed` status JSON fields so healthy old

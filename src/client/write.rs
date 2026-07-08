@@ -425,7 +425,7 @@ fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
 }
 
 fn trace_sql_event_enabled() -> bool {
-    env::var("OCTRA_SQLITE_TRACE_SQL_EVENT")
+    env::var("OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT")
         .ok()
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }

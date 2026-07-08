@@ -117,9 +117,10 @@ State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write
 intent that binds the Circle method, database id, sequence, and SQL before
 SQLite runs.
-Set
-`OCTRA_SQLITE_TRACE_SQL_EVENT=1` to use `exec_trace` and emit SQL text in
-addition to the default SQL hash event.
+Set `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1` to use `exec_trace` and emit full
+SQL text as a permanent `octra.sqlite.sql` on-chain event. On public-read
+databases, that event is public. The default `exec` path emits only the SQL
+hash event.
 
 `status`, `config`, and `database info` are the primary inspection commands.
 They should stay expressive enough that users do not need to inspect

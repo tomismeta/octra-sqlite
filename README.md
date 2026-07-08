@@ -205,6 +205,8 @@ the catalog source of truth: base WASM SHA-256, byte length, and GitHub source
 URL. Rollback still needs actual old bytes from chain history, local artifacts,
 or `--previous-wasm`; the CLI accepts them only after they reproduce the live
 program hash exactly.
+`--unsafe-no-rollback` is an emergency escape hatch only; without rollback
+bytes, the upgrade bundle cannot restore the previous Circle program.
 
 ```sh
 octra-sqlite upgrade art --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm

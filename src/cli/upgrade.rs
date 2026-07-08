@@ -68,7 +68,7 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     } else {
         recover_live_wasm(&session, &before, args.previous_wasm.as_deref())?
     };
-    if !already_current && rollback.is_none() && !args.allow_no_rollback {
+    if !already_current && rollback.is_none() && !args.unsafe_no_rollback {
         bail!("{}", rollback_recovery_error(&before));
     }
 
@@ -681,7 +681,7 @@ fn local_wasm_artifact_candidates() -> Vec<PathBuf> {
 }
 
 fn rollback_recovery_error(before: &UpgradeSnapshot) -> String {
-    let base = "could not recover the currently deployed WASM for rollback; pass --previous-wasm PATH, set OCTRA_SQLITE_PREVIOUS_WASM, or pass --allow-no-rollback to continue without rollback bytes";
+    let base = "could not recover the currently deployed WASM for rollback; pass --previous-wasm PATH or set OCTRA_SQLITE_PREVIOUS_WASM. To continue without rollback bytes, pass --unsafe-no-rollback; you will not be able to restore the previous program from this upgrade bundle.";
     match match_historical_wasm(&before.code_hash, before.code_bytes) {
         Some(match_) => {
             let confidence = if match_.exact_hash {

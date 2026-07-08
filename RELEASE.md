@@ -34,6 +34,12 @@ existing database Circles.
   file/env overrides still available for source builds and operators.
 - `rollback.clean` is nullable when live counters are unavailable; rollback
   remains fail-closed until reviewed.
+- The rollback-byte bypass is named `--unsafe-no-rollback`; it is an emergency
+  operator escape hatch and leaves the upgrade bundle unable to restore the
+  previous Circle program.
+- Full SQL event tracing now uses
+  `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1`, making the permanent on-chain event
+  behavior explicit in the opt-in name.
 - `status --json` reports `engine_current` and `upgrade_needed` separately from
   read/write readiness.
 - No-op upgrade preflight reports `status: "already_current"` and marks

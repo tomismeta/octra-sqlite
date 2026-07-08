@@ -108,7 +108,8 @@ Strict runbook for mainnet or high-value Circles:
 3. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
    `from.sqlite_version`, and `to.sqlite_version`.
 4. Require `rollback.available: true` before applying. Do not use
-   `--allow-no-rollback` on mainnet.
+   `--unsafe-no-rollback` on mainnet; without rollback bytes, the upgrade
+   bundle cannot restore the previous Circle program.
 5. Apply with `octra-sqlite upgrade DATABASE --yes --json`.
 6. Run `octra-sqlite status DATABASE --ready --json` and an application query.
 
