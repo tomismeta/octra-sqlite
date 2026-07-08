@@ -247,6 +247,9 @@ and `upgrade rollback BUNDLE --json`.
   "type": "upgrade",
   "schema": "octra-sqlite.cli.v1",
   "mode": "applied",
+  "status": "upgrade_needed",
+  "upgrade_required": true,
+  "dry_run": false,
   "database": {},
   "from": {
     "sqlite_version": "3.53.2",
@@ -294,11 +297,13 @@ and `upgrade rollback BUNDLE --json`.
 
 `upgrade` without a database argument opens the guided terminal workflow.
 `upgrade DATABASE --yes --json` is the non-interactive automation path. `mode`
-is `dry_run`, `planned`, `already_current`, or `applied`. The upgrade
-bundle manifest uses schema `octra-sqlite.upgrade.bundle.v1` and records the
-engine epoch boundary: previous code hash, new code hash, update transaction,
-backup metadata, and rollback guard. The JSON output never includes private
-keys or raw wallet JSON.
+is `dry_run`, `planned`, `already_current`, or `applied`. `status` is
+`already_current` when no program update is pending; in that case
+`upgrade_required` is `false` and rollback is not relevant. The upgrade bundle
+manifest uses schema `octra-sqlite.upgrade.bundle.v1` and records the engine
+epoch boundary: previous code hash, new code hash, update transaction, backup
+metadata, and rollback guard. The JSON output never includes private keys or
+raw wallet JSON.
 
 `verification.storage_generation_unchanged` and
 `verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`

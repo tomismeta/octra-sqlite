@@ -1075,15 +1075,26 @@ fn upgrade_plan_json(
         "ok": true,
         "type": "upgrade",
         "schema": "octra-sqlite.cli.v1",
-        "mode": if dry_run { "dry_run" } else if already_current { "already_current" } else { "planned" },
+        "mode": if already_current { "already_current" } else if dry_run { "dry_run" } else { "planned" },
+        "status": if already_current { "already_current" } else { "upgrade_needed" },
+        "upgrade_required": !already_current,
+        "dry_run": dry_run,
         "database": database_identity(session),
         "from": snapshot_program_json(before),
         "to": target_program_json(target_wasm),
-        "rollback": rollback_json(rollback, None, before, None),
+        "rollback": if already_current { rollback_not_needed_json() } else { rollback_json(rollback, None, before, None) },
         "bundle": bundle_paths.map(|paths| bundle_json(&paths.bundle_dir, Some(&paths.manifest))).unwrap_or(Value::Null),
         "backup": bundle_paths.map(|paths| json!({
             "path": paths.backup.display().to_string(),
         })).unwrap_or(Value::Null),
+    })
+}
+
+fn rollback_not_needed_json() -> Value {
+    json!({
+        "relevant": false,
+        "available": false,
+        "reason": "already_current",
     })
 }
 
@@ -1093,6 +1104,9 @@ fn upgrade_result_json(input: UpgradeResultInput<'_>) -> Value {
         "type": "upgrade",
         "schema": "octra-sqlite.cli.v1",
         "mode": "applied",
+        "status": "applied",
+        "upgrade_required": true,
+        "dry_run": false,
         "database": database_identity(input.session),
         "from": snapshot_program_json(input.before),
         "to": snapshot_program_json(input.after),
@@ -1318,7 +1332,9 @@ fn print_upgrade_plan(plan: &Value) {
     {
         print_field("program hash", format!("{from_hash} -> {to_hash}"));
     }
-    if let Some(available) = plan.pointer("/rollback/available").and_then(Value::as_bool) {
+    if plan.pointer("/rollback/relevant").and_then(Value::as_bool) == Some(false) {
+        print_field("rollback", "not needed");
+    } else if let Some(available) = plan.pointer("/rollback/available").and_then(Value::as_bool) {
         print_field("rollback available", available.to_string());
     }
     if let Some(path) = plan.pointer("/bundle/path").and_then(Value::as_str) {
@@ -1486,5 +1502,13 @@ mod tests {
             clean_rollback_state(&snapshot(Some(1), Some(1)), &snapshot(Some(1), None)),
             None
         );
+    }
+
+    #[test]
+    fn already_current_rollback_is_not_relevant() {
+        let rollback = rollback_not_needed_json();
+        assert_eq!(rollback["relevant"], false);
+        assert_eq!(rollback["available"], false);
+        assert_eq!(rollback["reason"], "already_current");
     }
 }

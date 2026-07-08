@@ -30,6 +30,8 @@
   keeping rollback fail-closed.
 - Added `engine_current` and `upgrade_needed` status JSON fields so healthy old
   engines are reported as upgrade candidates instead of generic failures.
+- Made no-op upgrade preflight report `status: "already_current"` and mark
+  rollback as not relevant.
 - Raised the documented MSRV to Rust/Cargo 1.96+ after downstream staging
   exposed 1.88 install incompatibility with the resolved CLI dependency set.
 - Kept OSR1/OSW1 wire formats, read modes, owner-write authorization, JSON

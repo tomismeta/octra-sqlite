@@ -100,6 +100,18 @@ octra-sqlite upgrade DATABASE
 octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
 ```
 
+Strict runbook for mainnet or high-value Circles:
+
+1. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
+2. If `status` is `already_current`, stop; rollback is not relevant because no
+   program update is pending.
+3. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
+   `from.sqlite_version`, and `to.sqlite_version`.
+4. Require `rollback.available: true` before applying. Do not use
+   `--allow-no-rollback` on mainnet.
+5. Apply with `octra-sqlite upgrade DATABASE --yes --json`.
+6. Run `octra-sqlite status DATABASE --ready --json` and an application query.
+
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
 bundle and backup paths, asks whether to keep the local backup, asks whether to
@@ -137,6 +149,8 @@ it performs a create/insert/drop write cycle on the new engine. It leaves no
 smoke table behind, but it still dirties production data and makes clean
 rollback unavailable. When the chain does not expose the counters needed to
 prove clean rollback, `rollback.clean` is `null`; rollback remains fail-closed.
+Rollback availability matters only when `from.code_hash` differs from
+`to.code_hash`; for `status: "already_current"`, rollback is irrelevant.
 
 For the `upgrade` command, `rollback` is reserved for `upgrade rollback
 BUNDLE`. If a saved database is literally named `rollback`, pass its raw

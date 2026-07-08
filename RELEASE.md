@@ -35,6 +35,8 @@ existing database Circles.
   remains fail-closed until reviewed.
 - `status --json` reports `engine_current` and `upgrade_needed` separately from
   read/write readiness.
+- No-op upgrade preflight reports `status: "already_current"` and marks
+  rollback as not relevant.
 - MSRV is now Rust/Cargo 1.96+.
 
 ## Notes
@@ -48,6 +50,8 @@ existing database Circles.
 - Rollback is clean only before post-upgrade writes. `--write-smoke` proves
   writes on the new engine with a create/insert/drop cycle, but intentionally
   makes clean rollback unavailable.
+- Rollback availability matters only when `from.code_hash` differs from
+  `to.code_hash`.
 - The release manifest records a devnet proof that creates a 0.5.2 public-read
   database, upgrades it to 3.53.3, rolls it back to 3.53.2, then upgrades it to
   3.53.3 again.

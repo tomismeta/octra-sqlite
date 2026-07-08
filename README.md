@@ -215,6 +215,10 @@ optional `--write-smoke` check performs a create/insert/drop write cycle
 against the new engine. It leaves no smoke table behind, but it still dirties
 the database and makes rollback require `--force-after-writes`.
 
+Rollback availability matters only when `from.code_hash` differs from
+`to.code_hash`. If `upgrade --dry-run` reports `status: "already_current"`,
+there is no upgrade to apply and rollback is not relevant.
+
 For `upgrade`, `rollback` is reserved for `upgrade rollback BUNDLE`. If a saved
 database is literally named `rollback`, pass its raw `oct://` URI instead.
 
