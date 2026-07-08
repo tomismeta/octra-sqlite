@@ -53,6 +53,11 @@ octra-sqlite restore DATABASE --file dump.sql
 octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite database default DATABASE
+octra-sqlite upgrade
+octra-sqlite upgrade DATABASE --dry-run
+octra-sqlite upgrade DATABASE --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
+octra-sqlite upgrade DATABASE
+octra-sqlite upgrade rollback BUNDLE
 octra-sqlite limits DATABASE
 octra-sqlite commands --json
 ```
@@ -90,6 +95,22 @@ storage pages exist; it verifies Circle ownership, deploys owner-personalized
 bundled WASM, and saves local bootstrap metadata without submitting SQL. Pair it
 with `restore --bootstrap-owner` to submit only the first storage-creating batch
 as an OSW1 owner-signed write, then return to the normal `auth_info` path.
+
+`upgrade` is the maintained operator path for bundled SQLite engine updates on
+an existing database Circle. Without a database argument it opens the guided
+workflow; with `DATABASE --yes --json` it is the automation path. It preserves
+Circle identity and SQLite pages, verifies Circle owner and OSW1 owner wallet
+alignment, backs up the database by default, writes a private local bundle,
+recovers rollback WASM when available, submits one `circle_program_update`, and
+verifies the new `sqlite_version()`. Older owner-personalized deployments can
+supply a previous base or personalized WASM with `--previous-wasm PATH`; the CLI
+accepts it only if the exact deployed hash can be reconstructed. `upgrade
+rollback BUNDLE` restores the previous verified program from that bundle and
+refuses to cross post-upgrade writes unless the operator explicitly passes
+`--force-after-writes`. `deploy` remains the lower level program-update tool;
+`upgrade` is the safe workflow. Within `upgrade`, `rollback` is reserved for
+rollback bundles; use a raw `oct://` URI if a saved database is literally named
+`rollback`.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write
@@ -147,7 +168,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.5.2.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.6.0.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

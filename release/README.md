@@ -3,7 +3,7 @@
 This directory contains machine-readable release manifests for audited,
 network-specific artifacts.
 
-`octra-sqlite-0.5.2.json` is the current release manifest checked by
+`octra-sqlite-0.6.0.json` is the current release manifest checked by
 `octra-sqlite status`.
 
 `octra-sqlite-0.1.0.json`, `octra-sqlite-0.2.0.json`,
@@ -16,4 +16,7 @@ release over the same Circle WASM proof and records a separate devnet
 public-read proof Circle. The `0.5.0` manifest is a Rust API ontology release
 over the same bundled Circle WASM proof. The `0.5.1` manifest is a README and
 packaging polish release for the crates.io debut. The `0.5.2` manifest is CLI
-readiness and raw-target polish over the same bundled Circle WASM proof.
+readiness and raw-target polish over the same bundled Circle WASM proof. The
+`0.6.0` manifest records the SQLite 3.53.3 WASM rebuild plus a devnet
+upgrade, rollback, final re-upgrade proof, and the current quick-start
+public-read Circle status.

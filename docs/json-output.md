@@ -236,6 +236,74 @@ Use `--json-summary` for compact restore output:
 }
 ```
 
+### `upgrade` and `upgrade_rollback`
+
+Produced by `upgrade DATABASE --json`, `upgrade DATABASE --dry-run --json`,
+and `upgrade rollback BUNDLE --json`.
+
+```json
+{
+  "ok": true,
+  "type": "upgrade",
+  "schema": "octra-sqlite.cli.v1",
+  "mode": "applied",
+  "database": {},
+  "from": {
+    "sqlite_version": "3.53.2",
+    "code_hash": "hex..."
+  },
+  "to": {
+    "sqlite_version": "3.53.3",
+    "code_hash": "hex..."
+  },
+  "target": {
+    "sqlite_version": "3.53.3",
+    "code_hash": "hex...",
+    "wasm": "embedded:circle/wasm/octra_sqlite_circle.wasm"
+  },
+  "backup": {
+    "skipped": false,
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/devnet-oct...-sqlite-3.53.2-20260707.sqlite",
+    "sha256": "hex..."
+  },
+  "rollback": {
+    "available": true,
+    "clean": true,
+    "wasm": "previous.wasm",
+    "guard": {
+      "storage_generation": 2,
+      "owner_sequence": 8
+    }
+  },
+  "transaction": {
+    "tx_hash": "abc...",
+    "tx_url": "https://..."
+  },
+  "verification": {
+    "sqlite_version": "3.53.3",
+    "storage_generation_unchanged": true,
+    "owner_sequence_unchanged": true
+  },
+  "bundle": {
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707",
+    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/upgrade.json"
+  }
+}
+```
+
+`upgrade` without a database argument opens the guided terminal workflow.
+`upgrade DATABASE --yes --json` is the non-interactive automation path. `mode`
+is `dry_run`, `planned`, `already_current`, or `applied`. The upgrade
+bundle manifest uses schema `octra-sqlite.upgrade.bundle.v1` and records the
+engine epoch boundary: previous code hash, new code hash, update transaction,
+backup metadata, and rollback guard. The JSON output never includes private
+keys or raw wallet JSON.
+
+`verification.storage_generation_unchanged` and
+`verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`
+means the live status surface did not return one side of the comparison, so the
+CLI does not turn an unknown counter into a false claim.
+
 ### `check`
 
 Produced by `check DATABASE --sql-file dump.sql --json`.

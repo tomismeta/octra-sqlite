@@ -89,18 +89,24 @@ OCTRA_SQLITE_CONFIG=/etc/octra-sqlite/config.json octra-sqlite wallet status mai
 
 ## Server Checklist
 
-Install with Rust/Cargo 1.88 or newer. `rustup stable` is recommended because
+Install with Rust/Cargo 1.96 or newer. `rustup stable` is recommended because
 some Linux distributions ship older Cargo versions:
 
 ```sh
 rustup toolchain install stable --profile minimal
-cargo install --path . --locked
+cargo install octra-sqlite --locked
 ```
 
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.5.2 --locked
+cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.6.0 --locked
+```
+
+Source checkout install:
+
+```sh
+cargo install --path . --locked
 ```
 
 If installing into a shared path, make the binary executable by the service

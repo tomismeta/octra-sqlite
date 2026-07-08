@@ -1,5 +1,54 @@
 # Release Notes
 
+## 0.6.0
+
+This is the first post-debut engine upgrade release. It rebuilds the bundled
+Circle WASM with SQLite 3.53.3 and adds a first-class upgrade workflow for
+existing database Circles.
+
+## Added
+
+- `octra-sqlite upgrade` for the guided terminal upgrade workflow.
+- `octra-sqlite upgrade DATABASE` for safe in-place Circle program upgrades.
+- `octra-sqlite upgrade DATABASE --dry-run` for preflight without writes.
+- `octra-sqlite upgrade rollback BUNDLE` for restoring the previous verified
+  personalized Circle program from an upgrade bundle.
+- Private upgrade bundles containing backup metadata, rollback WASM when
+  recovered, transaction proof, and the from/to code-hash epoch boundary.
+- Operator-readable default bundle names containing network, Circle ID,
+  previous SQLite version, and date.
+- `upgrade --previous-wasm PATH` for explicit rollback recovery when old
+  program bytes are not recoverable from chain history.
+
+## Changed
+
+- Bundled SQLite engine: 3.53.2 -> 3.53.3.
+- Bundled Circle WASM hash and byte length changed because of the SQLite engine
+  rebuild.
+- `--write-smoke` now removes its smoke table after the write cycle; it still
+  counts as a post-upgrade write and makes clean rollback unavailable.
+- Bundled Circle WASM and release manifest are embedded in the binary, with
+  file/env overrides still available for source builds and operators.
+- MSRV is now Rust/Cargo 1.96+.
+
+## Notes
+
+- Existing Circles are not upgraded automatically. Run `upgrade` or
+  `upgrade DATABASE` with the owner wallet when you choose to move a Circle to
+  the new engine.
+- Upgrade can reconstruct rollback bytes from an explicit previous WASM or
+  local old octra-sqlite release artifacts plus live `auth_info`.
+- Rollback is clean only before post-upgrade writes. `--write-smoke` proves
+  writes on the new engine with a create/insert/drop cycle, but intentionally
+  makes clean rollback unavailable.
+- The release manifest records a devnet proof that creates a 0.5.2 public-read
+  database, upgrades it to 3.53.3, rolls it back to 3.53.2, then upgrades it to
+  3.53.3 again.
+- The README quick-start public Circle is recorded separately and remains on
+  SQLite 3.53.2 until its owner upgrades it.
+- OSR1/OSW1 wire formats, read modes, owner-write authorization, CLI JSON
+  schema, and the Rust root API are unchanged from `0.5.2`.
+
 ## 0.5.2
 
 This is a CLI readiness, raw-target, and install polish release over the
