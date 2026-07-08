@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SQLITE_DIR="${SQLITE_DIR:-"$ROOT_DIR/vendor/sqlite/3.53.2"}"
+SQLITE_DIR="${SQLITE_DIR:-"$ROOT_DIR/vendor/sqlite/3.53.3"}"
 OUT="${OUT:-"$ROOT_DIR/circle/wasm/octra_sqlite_circle.wasm"}"
 CC="${CC:-clang}"
 
@@ -16,7 +16,7 @@ sha256_stream() {
 
 if [ ! -f "$SQLITE_DIR/sqlite3.c" ] || [ ! -f "$SQLITE_DIR/sqlite3.h" ]; then
   echo "SQLite amalgamation not found at $SQLITE_DIR" >&2
-  echo "Set SQLITE_DIR or vendor sqlite3.c/sqlite3.h under vendor/sqlite/3.53.2." >&2
+  echo "Set SQLITE_DIR or vendor sqlite3.c/sqlite3.h under vendor/sqlite/3.53.3." >&2
   exit 1
 fi
 

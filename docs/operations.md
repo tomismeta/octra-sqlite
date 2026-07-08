@@ -88,6 +88,104 @@ If the first write is submitted but post-write `auth_info` still fails,
 transaction summary, and `post_auth_info.error`, then exits nonzero. Do not
 publish or backfill the database until normal `status` passes.
 
+## Engine Upgrades
+
+Use `upgrade` for normal in-place SQLite engine updates:
+
+```sh
+octra-sqlite upgrade
+octra-sqlite upgrade DATABASE --dry-run
+octra-sqlite upgrade DATABASE --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
+octra-sqlite upgrade DATABASE
+octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
+```
+
+Strict runbook for mainnet or high-value Circles:
+
+1. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
+2. If `status` is `already_current`, stop; rollback is not relevant because no
+   program update is pending.
+3. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
+   `from.sqlite_version`, and `to.sqlite_version`.
+4. Require `rollback.available: true` before applying. Do not use
+   `--unsafe-no-rollback` on mainnet; without rollback bytes, the upgrade
+   bundle cannot restore the previous Circle program.
+5. Apply with `octra-sqlite upgrade DATABASE --yes --json`.
+6. Run `octra-sqlite status DATABASE --ready --json` and an application query.
+
+`upgrade` without a database opens the guided terminal workflow. It uses the
+saved default database when available, shows the preflight, prints the planned
+bundle and backup paths, asks whether to keep the local backup, asks whether to
+run write-smoke, then asks for final confirmation. Use `upgrade DATABASE --yes
+--json` for automation.
+
+`upgrade DATABASE --dry-run` reads live program, storage, auth, and
+target-engine state without writing. A real upgrade:
+
+- verifies that the active wallet is the Circle owner and the OSW1 database
+  owner;
+- patches the bundled WASM with the existing owner public key and database id;
+- recovers the currently deployed personalized WASM from local metadata, chain
+  transaction history, local old release artifacts, or an explicit
+  `--previous-wasm` for rollback;
+- writes a private local upgrade bundle with a named `.sqlite` backup,
+  `previous.wasm`, and `upgrade.json`;
+- aborts if storage generation or owner sequence changes before the program
+  update is submitted;
+- submits one `circle_program_update`, then verifies `sqlite_version()` against
+  the bundled engine.
+
+For older owner-personalized deployments, rollback recovery can use either the
+local release artifacts, an already-personalized old WASM, or the previous
+release's base `circle/wasm/octra_sqlite_circle.wasm`. The release manifest
+JSON is the catalog source of truth for historical base WASM SHA-256 values,
+byte lengths, and GitHub source URLs so the CLI can identify likely old epochs
+without bundling their bytes. The CLI patches provided base WASM bytes with
+live `auth_info` and accepts them only if the resulting hash matches the
+currently deployed program. Use
+`--previous-wasm PATH` for one run or `OCTRA_SQLITE_PREVIOUS_WASM=PATH` for
+automation.
+
+Rollback redeploys the `previous.wasm` from the bundle. It refuses to cross
+post-upgrade writes unless `--force-after-writes` is supplied, and forced
+rollback writes a fresh backup first. `--write-smoke` is intentionally opt-in:
+it performs a create/insert/drop write cycle on the new engine. It leaves no
+smoke table behind, but it still dirties production data and makes clean
+rollback unavailable. When the chain does not expose the counters needed to
+prove clean rollback, `rollback.clean` is `null`; rollback remains fail-closed.
+Rollback availability matters only when `from.code_hash` differs from
+`to.code_hash`; for `status: "already_current"`, rollback is irrelevant.
+
+For the `upgrade` command, `rollback` is reserved for `upgrade rollback
+BUNDLE`. If a saved database is literally named `rollback`, pass its raw
+`oct://` URI instead.
+
+For high-value migrations, the conservative alternative is blue-green: back up
+the old Circle, create a new Circle with the new release, restore into it, run
+application checks, then update the local database name or app configuration to
+the new Circle.
+
+Upgrade manifests define an engine epoch boundary. Replay byte identity is
+per-engine-version, so keep the `from`/`to` code hashes and update transaction
+with backups and traces.
+
+Released binaries use the embedded bundled WASM and release manifest by
+default. Use `--wasm PATH` or `OCTRA_SQLITE_WASM=PATH` only for deliberate
+custom deployments, and `OCTRA_SQLITE_MANIFEST=PATH` only when checking a
+specific external release manifest. Builders using `--build` can point
+`OCTRA_SQLITE_ROOT` at a source checkout when the current directory is not the
+repo.
+
+Default bundle names use the environment, Circle ID, previous SQLite version,
+and date only:
+
+```text
+~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/
+  devnet-oct...-sqlite-3.53.2-20260707.sqlite
+  previous.wasm
+  upgrade.json
+```
+
 ## Large Restore
 
 Prefer `restore` for SQL dumps, mirrors, and backfills:

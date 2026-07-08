@@ -1,0 +1,216 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.6.0",
+  "circle_program_version": "4",
+  "network": "devnet",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 610218,
+    "sha256": "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051"
+  },
+  "historical_wasm_catalog": [
+    {
+      "releases": "0.1.0-0.2.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607640,
+      "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
+    },
+    {
+      "releases": "0.2.1",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.1/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607800,
+      "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
+    },
+    {
+      "releases": "0.3.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609475,
+      "sha256": "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea"
+    },
+    {
+      "releases": "0.3.1-0.3.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609404,
+      "sha256": "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b"
+    },
+    {
+      "releases": "0.3.3-0.5.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.5.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609354,
+      "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+    }
+  ],
+  "sqlite": {
+    "version": "3.53.3",
+    "source_path": "vendor/sqlite/3.53.3/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530300",
+    "source_sha256": "d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86",
+    "upstream_sqlite3_c_sha3_256": "28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "portability": {
+    "backup": "page_stream_v1",
+    "dump": "sqlite_shell_compatible_sql",
+    "read": "sqlite_dump_restore_without_shell_wrappers",
+    "csv_import": "sqlite_cli_subset"
+  },
+  "typed_results": {
+    "codec": "OSR1",
+    "spec": "docs/spec/osr1.md"
+  },
+  "write_intents": {
+    "codec": "OSW1",
+    "wire_domain": "octra-sqlite.osw1.v1\\0",
+    "spec": "docs/spec/osw1.md"
+  },
+  "upgrade_workflow": {
+    "command": "octra-sqlite upgrade",
+    "direct_command": "octra-sqlite upgrade DATABASE",
+    "dry_run": "octra-sqlite upgrade DATABASE --dry-run",
+    "rollback": "octra-sqlite upgrade rollback BUNDLE",
+    "bundle_schema": "octra-sqlite.upgrade.bundle.v1",
+    "default_bundle_name": "NETWORK-CIRCLE-sqlite-PREVIOUS_VERSION-YYYYMMDD",
+    "backup_default": true,
+    "historical_wasm_catalog_mode": "metadata_only",
+    "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
+    "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
+    "rollback_refuses_post_upgrade_writes_by_default": true,
+    "epoch_boundary": "circle_program_update"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "deployment_kind": "upgrade_proof",
+    "database_uri": "oct://devnet/octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5",
+    "circle": "octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5",
+    "read_mode": "public",
+    "sqlite_version": "3.53.3",
+    "unpersonalized_sha256": "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051",
+    "personalized_sha256": "04c6f65d32684dcc50e5595f53508f870123d99161c9c3ea52276671c0b62f1c",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "c71217a0110be519e4f408c5951b9810842f1bce7b76a564ef6a39b392216d56",
+    "owner_pubkey_offset": 603954,
+    "db_id_offset": 603986,
+    "program_update_tx": "c376065c9d25d7f403a09deb6919bbf11eb2db815495c39beac16a977fc68774"
+  },
+  "public_read_proof": {
+    "status": "deployed_existing_circle",
+    "database_uri": "oct://devnet/octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "circle": "octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "browser_mode": "gateway_allowed",
+    "resource_mode": "public_resources",
+    "sqlite_version": "3.53.2",
+    "bundled_sqlite_version": "3.53.3",
+    "upgrade_required_for_bundled_engine": true,
+    "program_hash": "547c68b2d4ac2abe400e1ed28a6c107218f06bdead164f2984c218099da3902e",
+    "owner": "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "c3b4f6d245a55b6c19ef8f0c75039feb2d333f7609e2f8f44a83061051a1f180",
+    "circle_create_tx": "ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+    "initializer_tx": "a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b",
+    "unsigned_read": {
+      "wallet_required": false,
+      "caller": "oct11111111111111111111111111111111111111111111",
+      "query": "select id, name from artist order by id;",
+      "row_count": 5
+    },
+    "note": "The README quick-start public Circle remains on its deployed SQLite 3.53.2 engine until its owner upgrades it.",
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=ff81dc7219a1431e632ac4b61dc58fb1dc6d8296447c3ca1c5e558d8a376c8dc",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=a4be8aa38ceef62fae5cb3964cbae3d01f03f403300ed46ddca123fac9341b7b"
+    }
+  },
+  "devnet_upgrade_proof": {
+    "status": "deployed",
+    "database_name": "upgrade_060_old_20260707201832",
+    "database_uri": "oct://devnet/octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5",
+    "circle": "octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5",
+    "read_mode": "public",
+    "created_with": "octra-sqlite 0.5.2",
+    "created_sqlite_version": "3.53.2",
+    "created_program_hash": "ff4eb12193fc1a661275f443e280b53413960f4e19f1ac9d45d960df4772fa09",
+    "created_program_bytes": 609354,
+    "target_sqlite_version": "3.53.3",
+    "target_program_hash": "04c6f65d32684dcc50e5595f53508f870123d99161c9c3ea52276671c0b62f1c",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "c71217a0110be519e4f408c5951b9810842f1bce7b76a564ef6a39b392216d56",
+    "owner_pubkey_offset": 603954,
+    "db_id_offset": 603986,
+    "circle_create_tx": "ec18fd6ec9af099dffff1fd984414c8050f2247de29a28b02dc209c182fb89bd",
+    "initializer_tx": "3db00dac2c62728fd0e962c7cce9eadfcb21ad53a2dc5f5cb171df7195d3d627",
+    "first_upgrade_tx": "6938e5557861780c0efd7b253be65f11d0c9377f97780b373971f01b031a093b",
+    "rollback_tx": "d355f5b3b290e0c4a921b35076ad7f2916ff105d2a28bfb80013f0383ff5bc0f",
+    "final_upgrade_tx": "c376065c9d25d7f403a09deb6919bbf11eb2db815495c39beac16a977fc68774",
+    "backup": {
+      "bundle_name": "devnet-octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5-sqlite-3.53.2-20260707",
+      "file_name": "devnet-octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5-sqlite-3.53.2-20260707.sqlite",
+      "bytes": 8192,
+      "pages": 2,
+      "generation": 1,
+      "sha256": "72bc474598b468125a9d2fcbb2d614667fe733717066eb2905797ec7dae3ddb0",
+      "integrity_check": "ok"
+    },
+    "rollback": {
+      "available": true,
+      "clean": true,
+      "previous_program_hash": "ff4eb12193fc1a661275f443e280b53413960f4e19f1ac9d45d960df4772fa09",
+      "previous_program_bytes": 609354,
+      "bundle_schema": "octra-sqlite.upgrade.bundle.v1"
+    },
+    "final_status": {
+      "read_ready": true,
+      "write_ready": true,
+      "ready": true,
+      "sqlite_version": "3.53.3",
+      "row_count": 4
+    },
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=octF4T9t57JNF7h2MpSzTPih9i8sfxutkiyZwQgw49oa3Z5",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=ec18fd6ec9af099dffff1fd984414c8050f2247de29a28b02dc209c182fb89bd",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=3db00dac2c62728fd0e962c7cce9eadfcb21ad53a2dc5f5cb171df7195d3d627",
+      "first_upgrade": "https://devnet.octrascan.io/tx.html?hash=6938e5557861780c0efd7b253be65f11d0c9377f97780b373971f01b031a093b",
+      "rollback": "https://devnet.octrascan.io/tx.html?hash=d355f5b3b290e0c4a921b35076ad7f2916ff105d2a28bfb80013f0383ff5bc0f",
+      "final_upgrade": "https://devnet.octrascan.io/tx.html?hash=c376065c9d25d7f403a09deb6919bbf11eb2db815495c39beac16a977fc68774"
+    }
+  },
+  "client_release": {
+    "notes": "First post-debut engine upgrade release. Bundled Circle WASM is rebuilt with SQLite 3.53.3 and the CLI now includes a safe upgrade/rollback workflow for existing database Circles. OSR1/OSW1 wire formats, read modes, owner-write authorization, CLI JSON schema, and the Rust root API are unchanged from 0.5.2."
+  },
+  "status": "SQLite 3.53.3 bundled Circle WASM release with devnet upgrade, rollback, and final re-upgrade proof"
+}

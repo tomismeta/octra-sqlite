@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.6.0
+
+- Rebuilt the bundled Circle WASM with SQLite 3.53.3.
+- Added `octra-sqlite upgrade` as a setup-style guided workflow and
+  `octra-sqlite upgrade DATABASE` as the direct safe in-place engine upgrade
+  path for existing database Circles.
+- Added `upgrade --dry-run` for owner, storage, rollback, and target-engine
+  preflight without writing.
+- Added private local upgrade bundles containing the SQLite backup, recovered
+  previous personalized WASM when available, and an `upgrade.json` manifest
+  with the engine epoch boundary.
+- Named default upgrade bundles with network, Circle ID, previous SQLite
+  version, and date.
+- Added `octra-sqlite upgrade rollback BUNDLE` to restore the previous verified
+  Circle program from an upgrade bundle.
+- Made rollback refuse to cross post-upgrade writes unless
+  `--force-after-writes` is supplied; forced rollback takes a fresh backup
+  first.
+- Made `--write-smoke` clean up its smoke table after the write cycle while
+  still recording that clean rollback now requires `--force-after-writes`.
+- Restored public deployment/read proof sections and personalization fields in
+  the release manifest so the upgraded live WASM hash remains reproducible.
+- Embedded the bundled Circle WASM and release manifest in the binary so
+  installed builds do not depend on the source/build directory at runtime.
+- Added a release-manifest-backed, metadata-only historical WASM catalog plus
+  `upgrade --previous-wasm PATH` for rollback recovery from older
+  owner-personalized deployments without bundling old WASM bytes in the crate.
+- Made the rollback-byte bypass explicit as `upgrade --unsafe-no-rollback`;
+  the normal upgrade path still refuses to apply without rollback bytes.
+- Renamed the full-SQL event opt-in to
+  `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT` so the permanence of SQL event tracing
+  is visible at the call site.
+- Made `rollback.clean` nullable when live counters are unavailable, while
+  keeping rollback fail-closed.
+- Added `engine_current` and `upgrade_needed` status JSON fields so healthy old
+  engines are reported as upgrade candidates instead of generic failures.
+- Made no-op upgrade preflight report `status: "already_current"` and mark
+  rollback as not relevant.
+- Raised the documented MSRV to Rust/Cargo 1.96+ after downstream staging
+  exposed 1.88 install incompatibility with the resolved CLI dependency set.
+- Kept OSR1/OSW1 wire formats, read modes, owner-write authorization, JSON
+  envelope schema, and the Rust root API unchanged from `0.5.2`.
+
 ## 0.5.2
 
 - Made raw Circle targets detect the Octra read surface from Circle metadata, so

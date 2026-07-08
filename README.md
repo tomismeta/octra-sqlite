@@ -6,7 +6,7 @@
 [![docs.rs](https://docs.rs/octra-sqlite/badge.svg)](https://docs.rs/octra-sqlite)
 [![ci](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![sqlite](https://img.shields.io/badge/sqlite-3.53.2-0f766e)](https://sqlite.org/)
+[![sqlite](https://img.shields.io/badge/sqlite-3.53.3-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
 It gives you a SQLite-shaped CLI and a small Rust client for live Circle state:
@@ -29,13 +29,13 @@ executes the SQLite engine.
 
 ## CLI Quick Start
 
-You need Rust/Cargo 1.88+ from a current Rust toolchain. If `cargo` is missing,
+You need Rust/Cargo 1.96+ from a current Rust toolchain. If `cargo` is missing,
 install Rust with [rustup](https://rustup.rs/); distro packages such as
 `apt install cargo` may be too old. The Circle WASM is bundled; no local WASM
 toolchain is required.
 
 ```sh
-cargo install octra-sqlite --locked
+cargo +stable install octra-sqlite --locked
 ```
 
 Read a public database immediately, no wallet required:
@@ -68,7 +68,7 @@ setup.
 
 ```toml
 [dependencies]
-octra-sqlite = "0.5"
+octra-sqlite = "0.6"
 ```
 
 ```rust,no_run
@@ -143,14 +143,19 @@ official `wallet.json`, attach plaintext wallet JSON, or import the private key.
 ## Verifiability
 
 The crate ships `circle/wasm/octra_sqlite_circle.wasm` so users do not need a
-local WASM toolchain. `scripts/audit-wasm.sh` checks the Circle import/export
-surface, [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs,
-and release manifests publish the bundled WASM hash plus live devnet proof
+local WASM toolchain. Released binaries embed the bundled WASM and release
+manifest; source and operator overrides are explicit. `scripts/audit-wasm.sh`
+checks the Circle import/export surface,
+[docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs, and
+release manifests publish the bundled WASM hash plus live devnet proof
 metadata.
 
-The `0.5.2` crate uses the same bundled Circle WASM as `0.5.0`. The current
-release manifest is
-[release/octra-sqlite-0.5.2.json](./release/octra-sqlite-0.5.2.json).
+The `0.6.0` crate rebuilds the bundled Circle WASM with SQLite 3.53.3 and keeps
+the OSR1/OSW1 wire formats unchanged. The current release manifest is
+[release/octra-sqlite-0.6.0.json](./release/octra-sqlite-0.6.0.json).
+Existing Circles keep the engine they were deployed with until their owner runs
+`upgrade`; the manifest records both the 3.53.3 upgrade proof Circle and the
+current 3.53.2 quick-start public Circle.
 
 ```text
 Rust CLI/client -> Octra RPC -> Circle wasm_v1
@@ -165,7 +170,7 @@ backup, restore, and local developer experience.
 
 ## Stability
 
-MSRV is Rust 1.88. While the crate is `0.x`, the Rust API may change in minor
+MSRV is Rust 1.96. While the crate is `0.x`, the Rust API may change in minor
 versions. CLI JSON envelopes, `commands --json`, release manifests, and the
 OSR1/OSW1 wire formats are treated as stable automation surfaces and changed
 carefully.
@@ -173,6 +178,52 @@ carefully.
 `octra-sqlite` is still alpha software for Octra testing. Do not store secrets,
 production records, financial records, or irreplaceable data in alpha
 databases.
+
+## Upgrades
+
+Use `upgrade` when a new octra-sqlite release ships a new bundled SQLite
+engine:
+
+```sh
+octra-sqlite upgrade
+octra-sqlite upgrade art --dry-run
+octra-sqlite upgrade art
+octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
+```
+
+An upgrade preserves the Circle ID, SQLite pages, read mode, owner-write
+identity, and local database name. Before updating the Circle program, the CLI
+checks Circle ownership, verifies the OSW1 owner wallet, writes a local SQLite
+backup by default, and stores a private upgrade bundle with rollback WASM and
+an `upgrade.json` manifest.
+
+Default bundles are named with the network, Circle ID, previous SQLite version,
+and date, for example `devnet-oct...-sqlite-3.53.2-20260707`.
+
+For known historical octra-sqlite release engines, the release manifest JSON is
+the catalog source of truth: base WASM SHA-256, byte length, and GitHub source
+URL. Rollback still needs actual old bytes from chain history, local artifacts,
+or `--previous-wasm`; the CLI accepts them only after they reproduce the live
+program hash exactly.
+`--unsafe-no-rollback` is an emergency escape hatch only; without rollback
+bytes, the upgrade bundle cannot restore the previous Circle program.
+
+```sh
+octra-sqlite upgrade art --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
+```
+
+Rollback is clean only if no database writes happened after the upgrade and the
+live counters needed to prove that are available. The
+optional `--write-smoke` check performs a create/insert/drop write cycle
+against the new engine. It leaves no smoke table behind, but it still dirties
+the database and makes rollback require `--force-after-writes`.
+
+Rollback availability matters only when `from.code_hash` differs from
+`to.code_hash`. If `upgrade --dry-run` reports `status: "already_current"`,
+there is no upgrade to apply and rollback is not relevant.
+
+For `upgrade`, `rollback` is reserved for `upgrade rollback BUNDLE`. If a saved
+database is literally named `rollback`, pass its raw `oct://` URI instead.
 
 ## CLI Commands
 
@@ -196,6 +247,10 @@ URI.
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, storage, and SQLite health. |
 | `octra-sqlite status [DATABASE] --ready` | Exit nonzero unless live read/query readiness checks pass. |
 | `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status and optional integrity/write checks. |
+| `octra-sqlite upgrade` | Guided backup, upgrade, and verify workflow. |
+| `octra-sqlite upgrade DATABASE` | Backup, upgrade, and verify a database Circle against the bundled SQLite engine. |
+| `octra-sqlite upgrade DATABASE --dry-run` | Run upgrade preflight without writing. |
+| `octra-sqlite upgrade rollback BUNDLE` | Restore the previous verified Circle program from an upgrade bundle. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |
 | `octra-sqlite database list` | List saved database names. |
 | `octra-sqlite database info [DATABASE]` | Show database URI, Circle ID, network, and RPC. |

@@ -4,6 +4,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod output;
 mod portability;
 mod shell;
+mod upgrade;
 use crate::{
     client::{
         AuthInfo, ClientOptions, Config, DatabaseMetadata, Error, ErrorKind, RpcTraceMode,
@@ -14,9 +15,9 @@ use crate::{
             build_session as client_build_session, circle_info, discover_wallet_path, exec_sql,
             next_nonce, program_info, query_typed, query_typed_traced,
             resolve_database_target as client_resolve_database_target,
-            resolve_wallet_path as client_resolve_wallet_path, submit_tx, view,
-            wait_for_transaction, wallet_caller, wallet_file_material,
-            wallet_material_from_private_key,
+            resolve_wallet_path as client_resolve_wallet_path, submit_tx, transaction,
+            transactions_by_address, view, wait_for_transaction, wallet_caller,
+            wallet_file_material, wallet_material_from_private_key,
         },
         write_config,
     },
@@ -53,17 +54,48 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.5.2.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.0.json";
+const EMBEDDED_WASM_BYTES: &[u8] = include_bytes!("../../circle/wasm/octra_sqlite_circle.wasm");
+const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.0.json");
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d";
-const EXPECTED_WASM_BYTES: usize = 609_354;
+    "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051";
+const EXPECTED_WASM_BYTES: usize = 610_218;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
-const SQLITE_VERSION: &str = "3.53.2";
+const SQLITE_VERSION: &str = "3.53.3";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
 const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
+const UPGRADE_BUNDLE_SCHEMA: &str = "octra-sqlite.upgrade.bundle.v1";
+
+struct WasmArtifact {
+    source: String,
+    bytes: Vec<u8>,
+}
+
+struct TextArtifact {
+    source: String,
+    text: String,
+}
+
+struct MatchedWasmArtifact {
+    releases: String,
+    sqlite_version: String,
+    sha256: String,
+    bytes: u64,
+    source_url: String,
+    exact_hash: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HistoricalWasmMetadata {
+    releases: String,
+    sqlite_version: String,
+    sha256: String,
+    bytes: u64,
+    source_url: String,
+}
 
 #[derive(Parser)]
 #[command(name = "octra-sqlite", version)]
@@ -110,6 +142,8 @@ enum Commands {
     CommandList(CommandsArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
+    /// Safely upgrade an existing octra-sqlite Circle to the bundled engine.
+    Upgrade(UpgradeArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
     Status(StatusArgs),
     /// Show local wallet, RPC, network, and database configuration.
@@ -384,6 +418,64 @@ struct DeployArgs {
 }
 
 #[derive(Args)]
+struct UpgradeArgs {
+    /// Database to upgrade, or `rollback` to restore a bundle's previous program.
+    #[arg(value_name = "DATABASE|rollback")]
+    target: Option<String>,
+    /// Bundle directory when using `upgrade rollback`.
+    #[arg(value_name = "BUNDLE")]
+    rollback_bundle: Option<PathBuf>,
+    /// Run preflight and print the plan without writing backup files or updating the Circle.
+    #[arg(long)]
+    dry_run: bool,
+    /// Directory where the upgrade bundle should be written.
+    #[arg(long)]
+    backup_dir: Option<PathBuf>,
+    /// Skip the local SQLite backup before upgrade.
+    #[arg(long)]
+    skip_backup: bool,
+    /// Fail if local sqlite3 integrity_check cannot be run.
+    #[arg(long)]
+    require_integrity: bool,
+    /// Run an owner-signed write smoke after the program update.
+    #[arg(long)]
+    write_smoke: bool,
+    /// UNSAFE: continue without rollback bytes if the previous live WASM cannot be recovered.
+    #[arg(long)]
+    unsafe_no_rollback: bool,
+    /// Previous personalized or base WASM to use when rollback bytes cannot be recovered from chain history.
+    #[arg(long, value_name = "FILE")]
+    previous_wasm: Option<PathBuf>,
+    /// For rollback only: allow redeploying the old engine after post-upgrade writes.
+    #[arg(long)]
+    force_after_writes: bool,
+    /// OU budget for Circle program update.
+    #[arg(long, default_value = "200000")]
+    ou: String,
+    /// Do not prompt for confirmation.
+    #[arg(long)]
+    yes: bool,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+    /// Wallet JSON path. Auto-detects ./wallet.json when omitted.
+    #[arg(long)]
+    wallet: Option<PathBuf>,
+    /// Octra RPC URL.
+    #[arg(long)]
+    rpc: Option<String>,
+    /// Caller wallet address override.
+    #[arg(long)]
+    caller: Option<String>,
+    /// Private key override, base64 or hex.
+    #[arg(long)]
+    private_key_b64: Option<String>,
+    /// Public key override, base64.
+    #[arg(long)]
+    public_key_b64: Option<String>,
+}
+
+#[derive(Args)]
 struct VerifyArgs {
     #[command(flatten)]
     target: TargetArgs,
@@ -559,6 +651,7 @@ pub fn run_with_exit_code() -> Result<i32> {
             )
             .map(|_| 0)
         }
+        Commands::Upgrade(args) => upgrade::cmd_upgrade(args).map(|_| 0),
         Commands::Status(args) => cmd_status(args, "status"),
         Commands::Config(args) => cmd_config(args).map(|_| 0),
         Commands::Wallet { command } => cmd_wallet(command).map(|_| 0),
@@ -577,6 +670,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "limits",
         "commands",
         "verify",
+        "upgrade",
         "status",
         "config",
         "wallet",
@@ -2037,6 +2131,7 @@ struct StatusReport {
     json: bool,
     failures: usize,
     warnings: usize,
+    engine_current: Option<bool>,
     items: Vec<Value>,
     readiness: Map<String, Value>,
 }
@@ -2048,6 +2143,7 @@ impl StatusReport {
             json,
             failures: 0,
             warnings: 0,
+            engine_current: None,
             items: Vec::new(),
             readiness: Map::new(),
         }
@@ -2083,6 +2179,10 @@ impl StatusReport {
         self.readiness.insert(key.to_string(), Value::Bool(ready));
     }
 
+    fn engine_current(&mut self, current: bool) {
+        self.engine_current = Some(current);
+    }
+
     fn init_database_readiness(&mut self) {
         for key in DATABASE_READINESS_KEYS {
             self.readiness.insert(key.to_string(), Value::Null);
@@ -2097,6 +2197,7 @@ impl StatusReport {
         let read_ready = self.read_ready();
         let write_ready = self.write_ready();
         let ok = self.failures == 0 && (!require_ready || read_ready);
+        let upgrade_needed = self.engine_current.map(|current| !current);
         if self.json {
             let mut readiness = self.readiness;
             readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
@@ -2108,6 +2209,8 @@ impl StatusReport {
                 "ready": read_ready,
                 "read_ready": read_ready,
                 "write_ready": write_ready,
+                "engine_current": self.engine_current,
+                "upgrade_needed": upgrade_needed,
                 "failures": self.failures,
                 "warnings": self.warnings,
                 "readiness": readiness,
@@ -2121,11 +2224,16 @@ impl StatusReport {
             println!("{}", format_status_line("fail", "read_ready", "false"));
             Ok(1)
         } else {
+            let upgrade_suffix = upgrade_needed
+                .filter(|needed| *needed)
+                .map(|_| " upgrade_needed=true")
+                .unwrap_or("");
             println!(
-                "{} read_ready={} write_ready={}",
+                "{} read_ready={} write_ready={}{}",
                 dim(format!("{label}:")),
                 read_ready,
-                write_ready
+                write_ready,
+                upgrade_suffix
             );
             Ok(0)
         }
@@ -2164,70 +2272,60 @@ const READ_READINESS_KEYS: &[&str] = &[
 const WRITE_READINESS_KEYS: &[&str] = &["circle_reachable", "auth_readable", "owner_write_valid"];
 
 fn check_bundled_wasm(report: &mut StatusReport) {
-    match resolve_wasm_path(false, None) {
-        Ok(path) => match fs::read(&path) {
-            Ok(bytes) => {
-                let hash = sha256_hex(&bytes);
-                if bytes.len() == EXPECTED_WASM_BYTES {
-                    report.ok("wasm bytes", format!("{} bytes", bytes.len()));
-                } else {
-                    report.fail(
-                        "wasm bytes",
-                        format!(
-                            "{} bytes at {}; expected {}",
-                            bytes.len(),
-                            path.display(),
-                            EXPECTED_WASM_BYTES
-                        ),
-                    );
-                }
-                if hash == EXPECTED_WASM_SHA256 {
-                    report.ok("wasm sha256", hash);
-                } else {
-                    report.fail(
-                        "wasm sha256",
-                        format!(
-                            "{hash} at {}; expected {EXPECTED_WASM_SHA256}",
-                            path.display()
-                        ),
-                    );
-                }
+    match resolve_wasm_artifact(false, None) {
+        Ok(artifact) => {
+            let hash = sha256_hex(&artifact.bytes);
+            if artifact.bytes.len() == EXPECTED_WASM_BYTES {
+                report.ok(
+                    "wasm bytes",
+                    format!("{} bytes ({})", artifact.bytes.len(), artifact.source),
+                );
+            } else {
+                report.fail(
+                    "wasm bytes",
+                    format!(
+                        "{} bytes at {}; expected {}",
+                        artifact.bytes.len(),
+                        artifact.source,
+                        EXPECTED_WASM_BYTES
+                    ),
+                );
             }
-            Err(error) => report.fail("wasm", format!("reading {}: {error}", path.display())),
-        },
+            if hash == EXPECTED_WASM_SHA256 {
+                report.ok("wasm sha256", hash);
+            } else {
+                report.fail(
+                    "wasm sha256",
+                    format!(
+                        "{hash} at {}; expected {EXPECTED_WASM_SHA256}",
+                        artifact.source
+                    ),
+                );
+            }
+        }
         Err(error) => report.fail("wasm", error.to_string()),
     }
 }
 
 fn check_release_manifest(report: &mut StatusReport) {
-    let Some(path) = find_project_file(RELEASE_MANIFEST_REL) else {
-        report.fail(
-            "release manifest",
-            format!("missing {RELEASE_MANIFEST_REL}"),
-        );
-        return;
-    };
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
+    let artifact = match resolve_release_manifest() {
+        Ok(artifact) => artifact,
         Err(error) => {
-            report.fail(
-                "release manifest",
-                format!("reading {}: {error}", path.display()),
-            );
+            report.fail("release manifest", error.to_string());
             return;
         }
     };
-    let manifest: Value = match serde_json::from_str(&text) {
+    let manifest: Value = match serde_json::from_str(&artifact.text) {
         Ok(value) => value,
         Err(error) => {
             report.fail(
                 "release manifest",
-                format!("parsing {}: {error}", path.display()),
+                format!("parsing {}: {error}", artifact.source),
             );
             return;
         }
     };
-    report.ok("release manifest", path.display().to_string());
+    report.ok("release manifest", artifact.source);
     let manifest_hash = manifest
         .pointer("/wasm/sha256")
         .and_then(Value::as_str)
@@ -2275,6 +2373,9 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                 .get("code_hash")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown");
+            let code_bytes = info
+                .get("code_bytes")
+                .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()));
             report.ok("program version", version);
             if let Some(owner) = program_owner(&info) {
                 report.ok("circle owner", owner);
@@ -2289,6 +2390,7 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
             }
             if code_hash == expected_hash {
                 report.ok("program hash", code_hash);
+                report.engine_current(true);
             } else if expected_hash == EXPECTED_WASM_SHA256 {
                 match personalized_wasm_hash(session) {
                     Ok(Some(personalized_hash)) if code_hash == personalized_hash => {
@@ -2296,21 +2398,50 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                             "program hash",
                             format!("{code_hash} (owner-personalized bundled WASM)"),
                         );
+                        report.engine_current(true);
                     }
-                    Ok(Some(personalized_hash)) => report.fail(
-                        "program hash",
-                        format!(
-                            "{code_hash}; expected {expected_hash} or owner-personalized {personalized_hash}"
+                    Ok(Some(personalized_hash)) => match match_historical_wasm(code_hash, code_bytes)
+                    {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                render_historical_wasm_match(code_hash, &match_),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!(
+                                "{code_hash}; expected {expected_hash} or owner-personalized {personalized_hash}"
+                            ),
                         ),
-                    ),
-                    Ok(None) => report.fail(
-                        "program hash",
-                        format!("{code_hash}; expected {expected_hash}"),
-                    ),
-                    Err(error) => report.fail(
-                        "program hash",
-                        format!("{code_hash}; expected {expected_hash}; personalized check failed: {error:#}"),
-                    ),
+                    },
+                    Ok(None) => match match_historical_wasm(code_hash, code_bytes) {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                render_historical_wasm_match(code_hash, &match_),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!("{code_hash}; expected {expected_hash}"),
+                        ),
+                    },
+                    Err(error) => match match_historical_wasm(code_hash, code_bytes) {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                render_historical_wasm_match(code_hash, &match_),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!("{code_hash}; expected {expected_hash}; personalized check failed: {error:#}"),
+                        ),
+                    },
                 }
             } else {
                 report.fail(
@@ -2498,11 +2629,111 @@ fn personalized_wasm_hash(session: &Session) -> Result<Option<String>> {
             .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?,
     )?;
     let db_id = hex_to_32("db_id", &auth.db_id)?;
-    let wasm_path = resolve_wasm_path(false, None)?;
-    let mut wasm =
-        fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
+    let artifact = resolve_wasm_artifact(false, None)?;
+    let mut wasm = artifact.bytes;
     patch_wasm_auth_bytes(&mut wasm, &owner_pubkey, &db_id)?;
     Ok(Some(sha256_hex(&wasm)))
+}
+
+fn match_historical_wasm(
+    expected_hash: &str,
+    code_bytes: Option<u64>,
+) -> Option<MatchedWasmArtifact> {
+    let catalog = historical_wasm_catalog().ok()?;
+    match_historical_wasm_in_catalog(&catalog, expected_hash, code_bytes)
+}
+
+fn match_historical_wasm_in_catalog(
+    catalog: &[HistoricalWasmMetadata],
+    expected_hash: &str,
+    code_bytes: Option<u64>,
+) -> Option<MatchedWasmArtifact> {
+    for artifact in catalog {
+        if expected_hash == artifact.sha256 {
+            return Some(MatchedWasmArtifact {
+                releases: artifact.releases.clone(),
+                sqlite_version: artifact.sqlite_version.clone(),
+                sha256: artifact.sha256.clone(),
+                bytes: artifact.bytes,
+                source_url: artifact.source_url.clone(),
+                exact_hash: true,
+            });
+        }
+    }
+    if let Some(code_bytes) = code_bytes
+        && let Some(artifact) = catalog.iter().find(|artifact| artifact.bytes == code_bytes)
+    {
+        return Some(MatchedWasmArtifact {
+            releases: artifact.releases.clone(),
+            sqlite_version: artifact.sqlite_version.clone(),
+            sha256: artifact.sha256.clone(),
+            bytes: artifact.bytes,
+            source_url: artifact.source_url.clone(),
+            exact_hash: false,
+        });
+    }
+    None
+}
+
+fn historical_wasm_catalog() -> Result<Vec<HistoricalWasmMetadata>> {
+    let artifact = resolve_release_manifest()?;
+    let manifest: Value = serde_json::from_str(&artifact.text)
+        .with_context(|| format!("parsing {}", artifact.source))?;
+    parse_historical_wasm_catalog(&manifest)
+}
+
+fn parse_historical_wasm_catalog(manifest: &Value) -> Result<Vec<HistoricalWasmMetadata>> {
+    let entries = manifest
+        .get("historical_wasm_catalog")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("release manifest missing historical_wasm_catalog array"))?;
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| parse_historical_wasm_entry(index, entry))
+        .collect()
+}
+
+fn parse_historical_wasm_entry(index: usize, entry: &Value) -> Result<HistoricalWasmMetadata> {
+    let field = |name: &str| format!("historical_wasm_catalog[{index}].{name}");
+    Ok(HistoricalWasmMetadata {
+        releases: entry
+            .get("releases")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("releases")))?
+            .to_string(),
+        sqlite_version: entry
+            .get("sqlite_version")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("sqlite_version")))?
+            .to_string(),
+        sha256: entry
+            .get("sha256")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("sha256")))?
+            .to_string(),
+        bytes: entry
+            .get("bytes")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("{} missing or not an unsigned integer", field("bytes")))?,
+        source_url: entry
+            .get("source_url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("{} missing or not a string", field("source_url")))?
+            .to_string(),
+    })
+}
+
+fn render_historical_wasm_match(code_hash: &str, match_: &MatchedWasmArtifact) -> String {
+    let confidence = if match_.exact_hash {
+        "known historical WASM"
+    } else {
+        "possible historical WASM byte-size match"
+    };
+    format!(
+        "{code_hash} ({confidence} {}, SQLite {}; upgrade available; rollback source {})",
+        match_.releases, match_.sqlite_version, match_.source_url
+    )
 }
 
 fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
@@ -2539,9 +2770,8 @@ fn create_circle(
     network: &str,
     read_mode: ReadMode,
 ) -> Result<CreatedCircle> {
-    let wasm_path = resolve_wasm_for_new(args)?;
-    let mut wasm =
-        fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
+    let artifact = resolve_wasm_for_new(args)?;
+    let mut wasm = artifact.bytes;
     let auth_patch = patch_wasm_auth_for_owner(&mut wasm, session)?;
     let code_hash = sha256_hex(&wasm);
     let code_b64 = general_purpose::STANDARD.encode(&wasm);
@@ -2723,31 +2953,57 @@ fn derive_db_id(session: &Session, owner_pubkey: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-fn resolve_wasm_for_new(args: &NewArgs) -> Result<PathBuf> {
-    resolve_wasm_path(args.build, args.wasm.as_deref())
+fn resolve_wasm_for_new(args: &NewArgs) -> Result<WasmArtifact> {
+    resolve_wasm_artifact(args.build, args.wasm.as_deref())
 }
 
-fn resolve_wasm_path(build: bool, wasm: Option<&Path>) -> Result<PathBuf> {
+fn resolve_wasm_artifact(build: bool, wasm: Option<&Path>) -> Result<WasmArtifact> {
     if build {
         build_wasm_from_checkout()?;
+        if let Some(path) = find_project_file(DEFAULT_WASM_REL) {
+            return read_wasm_artifact(path);
+        }
+        bail!("could not find built WASM artifact at {DEFAULT_WASM_REL}");
     }
     if let Some(path) = wasm {
-        return require_file(path.to_path_buf(), "custom WASM");
+        return read_wasm_artifact(require_file(path.to_path_buf(), "custom WASM")?);
     }
     if let Ok(path) = env::var("OCTRA_SQLITE_WASM") {
-        return require_file(PathBuf::from(path), "OCTRA_SQLITE_WASM");
+        return read_wasm_artifact(require_file(PathBuf::from(path), "OCTRA_SQLITE_WASM")?);
     }
-    if let Some(path) = find_project_file(DEFAULT_WASM_REL) {
-        return Ok(path);
-    }
-    bail!(
-        "could not find bundled {DEFAULT_WASM_REL}; restore the repo artifact, pass --wasm, set OCTRA_SQLITE_WASM, or pass --build from a checkout with a WASI clang"
-    )
+    Ok(WasmArtifact {
+        source: format!("embedded:{DEFAULT_WASM_REL}"),
+        bytes: EMBEDDED_WASM_BYTES.to_vec(),
+    })
 }
 
-fn resolve_bundled_wasm_path() -> Result<PathBuf> {
-    find_project_file(DEFAULT_WASM_REL).ok_or_else(|| {
-        anyhow!("could not find bundled {DEFAULT_WASM_REL}; restore the repo artifact")
+fn resolve_bundled_wasm_artifact() -> Result<WasmArtifact> {
+    resolve_wasm_artifact(false, None)
+}
+
+fn read_wasm_artifact(path: PathBuf) -> Result<WasmArtifact> {
+    let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(WasmArtifact {
+        source: path.display().to_string(),
+        bytes,
+    })
+}
+
+fn resolve_release_manifest() -> Result<TextArtifact> {
+    if let Ok(path) = env::var("OCTRA_SQLITE_MANIFEST") {
+        return read_text_artifact(require_file(PathBuf::from(path), "OCTRA_SQLITE_MANIFEST")?);
+    }
+    Ok(TextArtifact {
+        source: format!("embedded:{RELEASE_MANIFEST_REL}"),
+        text: EMBEDDED_RELEASE_MANIFEST.to_string(),
+    })
+}
+
+fn read_text_artifact(path: PathBuf) -> Result<TextArtifact> {
+    let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(TextArtifact {
+        source: path.display().to_string(),
+        text,
     })
 }
 
@@ -2793,10 +3049,12 @@ fn find_project_file(relative: &str) -> Option<PathBuf> {
 
 fn project_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
+    if let Ok(root) = env::var("OCTRA_SQLITE_ROOT") {
+        roots.push(PathBuf::from(root));
+    }
     if let Ok(cwd) = env::current_dir() {
         roots.push(cwd);
     }
-    roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
     if let Ok(exe) = env::current_exe()
         && let Some(dir) = exe.parent()
     {
@@ -3349,9 +3607,8 @@ fn find_bootstrap_owner_metadata(session: &Session) -> Result<BootstrapOwnerMeta
 }
 
 fn bootstrap_owner_personalized_hash(metadata: &BootstrapOwnerMetadata) -> Result<String> {
-    let wasm_path = resolve_bundled_wasm_path()?;
-    let mut wasm =
-        fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
+    let artifact = resolve_bundled_wasm_artifact()?;
+    let mut wasm = artifact.bytes;
     let owner_pubkey = hex_to_32("owner_pubkey", &metadata.owner_pubkey)?;
     let db_id = hex_to_32("db_id", &metadata.db_id)?;
     patch_wasm_auth_bytes(&mut wasm, &owner_pubkey, &db_id)?;
@@ -4036,6 +4293,33 @@ fn commands_json() -> Value {
                 "envelope": "verify",
             },
             {
+                "command": "octra-sqlite upgrade",
+                "purpose": "guided backup, upgrade, and verify workflow for an existing database Circle",
+                "writes": true,
+                "json": false,
+            },
+            {
+                "command": "octra-sqlite upgrade DATABASE",
+                "purpose": "backup, upgrade, and verify an existing database Circle against the bundled SQLite engine",
+                "writes": true,
+                "json": true,
+                "envelope": "upgrade",
+            },
+            {
+                "command": "octra-sqlite upgrade DATABASE --dry-run",
+                "purpose": "run owner, rollback, storage, and target-engine preflight without writing",
+                "writes": false,
+                "json": true,
+                "envelope": "upgrade",
+            },
+            {
+                "command": "octra-sqlite upgrade rollback BUNDLE",
+                "purpose": "restore the previous verified Circle program from an upgrade bundle",
+                "writes": true,
+                "json": true,
+                "envelope": "upgrade_rollback",
+            },
+            {
                 "command": "octra-sqlite config",
                 "purpose": "show local config, networks, RPC, explorer, and saved databases",
                 "writes": false,
@@ -4109,6 +4393,8 @@ fn commands_json() -> Value {
             "wallet_attach",
             "wallet_import",
             "verify",
+            "upgrade",
+            "upgrade_rollback",
             "database_list",
             "database_info",
             "error"
@@ -4686,13 +4972,13 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         public_key_b64: args.public_key_b64.clone(),
     };
     let session = build_session(&target_args)?;
-    let wasm_path = if args.bootstrap_owner {
-        resolve_bundled_wasm_path()?
+    let artifact = if args.bootstrap_owner {
+        resolve_bundled_wasm_artifact()?
     } else {
-        resolve_wasm_path(args.build, args.wasm.as_deref())?
+        resolve_wasm_artifact(args.build, args.wasm.as_deref())?
     };
-    let mut wasm =
-        fs::read(&wasm_path).with_context(|| format!("reading {}", wasm_path.display()))?;
+    let wasm_source = artifact.source.clone();
+    let mut wasm = artifact.bytes;
     if args.bootstrap_owner && args.allow_unconfigured {
         bail!("--bootstrap-owner and --allow-unconfigured are mutually exclusive");
     }
@@ -4756,10 +5042,7 @@ fn cmd_deploy(args: DeployArgs) -> Result<()> {
         "circle".to_string(),
         Value::String(session.target().circle.clone()),
     );
-    out.insert(
-        "wasm".to_string(),
-        Value::String(wasm_path.display().to_string()),
-    );
+    out.insert("wasm".to_string(), Value::String(wasm_source));
     out.insert("code_bytes".to_string(), Value::Number(wasm.len().into()));
     out.insert("code_hash".to_string(), Value::String(code_hash.clone()));
     out.insert(
@@ -4832,6 +5115,24 @@ fn save_bootstrap_owner_metadata(
     code_bytes: usize,
     tx_hash: Option<String>,
 ) -> Result<Vec<String>> {
+    save_database_metadata(
+        session,
+        &patch.owner_pubkey_hex,
+        &patch.db_id_hex,
+        code_hash,
+        code_bytes,
+        tx_hash,
+    )
+}
+
+fn save_database_metadata(
+    session: &Session,
+    owner_pubkey: &str,
+    db_id: &str,
+    code_hash: &str,
+    code_bytes: usize,
+    tx_hash: Option<String>,
+) -> Result<Vec<String>> {
     let mut config = load_config().unwrap_or_default();
     let uri = canonical_database_uri(session.target());
     let mut keys = config
@@ -4871,8 +5172,8 @@ fn save_bootstrap_owner_metadata(
                 browser_mode: deploy_tuple(session.target().read_mode).1.to_string(),
                 resource_mode: deploy_tuple(session.target().read_mode).2.to_string(),
                 owner: session.caller().to_string(),
-                owner_pubkey: patch.owner_pubkey_hex.clone(),
-                db_id: patch.db_id_hex.clone(),
+                owner_pubkey: owner_pubkey.to_string(),
+                db_id: db_id.to_string(),
                 code_hash: code_hash.to_string(),
                 code_bytes,
                 create_tx: create_tx.clone(),
@@ -5278,6 +5579,141 @@ COMMIT;",
     }
 
     #[test]
+    fn upgrade_parses_apply_and_rollback_workflows() {
+        let cli =
+            Cli::try_parse_from(["octra-sqlite", "upgrade", "art", "--dry-run", "--json"]).unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert_eq!(args.target.as_deref(), Some("art"));
+                assert!(args.dry_run);
+                assert!(args.json);
+                assert!(!args.unsafe_no_rollback);
+                assert!(args.previous_wasm.is_none());
+                assert!(args.rollback_bundle.is_none());
+            }
+            _ => panic!("expected upgrade command"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "upgrade",
+            "art",
+            "--unsafe-no-rollback",
+            "--dry-run",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert!(args.unsafe_no_rollback);
+            }
+            _ => panic!("expected upgrade command"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "upgrade",
+            "art",
+            "--previous-wasm",
+            "/tmp/old.wasm",
+            "--dry-run",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert_eq!(
+                    args.previous_wasm.as_deref(),
+                    Some(Path::new("/tmp/old.wasm"))
+                );
+            }
+            _ => panic!("expected upgrade command"),
+        }
+
+        let cli = Cli::try_parse_from([
+            "octra-sqlite",
+            "upgrade",
+            "rollback",
+            "/tmp/octra-sqlite-upgrade",
+            "--yes",
+            "--json",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert_eq!(args.target.as_deref(), Some("rollback"));
+                assert_eq!(
+                    args.rollback_bundle.as_deref(),
+                    Some(Path::new("/tmp/octra-sqlite-upgrade"))
+                );
+                assert!(args.yes);
+                assert!(args.json);
+            }
+            _ => panic!("expected upgrade command"),
+        }
+    }
+
+    #[test]
+    fn default_release_artifacts_are_embedded() {
+        if env::var_os("OCTRA_SQLITE_WASM").is_none() {
+            let artifact = resolve_bundled_wasm_artifact().unwrap();
+            assert_eq!(artifact.source, format!("embedded:{DEFAULT_WASM_REL}"));
+            assert_eq!(sha256_hex(&artifact.bytes), EXPECTED_WASM_SHA256);
+        }
+        if env::var_os("OCTRA_SQLITE_MANIFEST").is_none() {
+            let artifact = resolve_release_manifest().unwrap();
+            assert_eq!(artifact.source, format!("embedded:{RELEASE_MANIFEST_REL}"));
+            assert!(artifact.text.contains("\"release\": \"0.6.0\""));
+        }
+    }
+
+    #[test]
+    fn upgrade_without_database_enters_guided_workflow() {
+        let cli = Cli::try_parse_from(["octra-sqlite", "upgrade"]).unwrap();
+        match cli.command {
+            Commands::Upgrade(args) => {
+                assert!(args.target.is_none());
+                assert!(args.rollback_bundle.is_none());
+                assert!(!args.yes);
+                assert!(!args.json);
+            }
+            _ => panic!("expected upgrade command"),
+        }
+    }
+
+    #[test]
+    fn upgrade_bundle_label_uses_current_version_and_utc_date_only() {
+        assert_eq!(upgrade::utc_date_label(0), "19700101",);
+        assert_eq!(
+            upgrade::upgrade_bundle_label("devnet", "octABC", "3.53.2", 0),
+            "devnet-octABC-sqlite-3.53.2-19700101",
+        );
+        assert_eq!(
+            upgrade::upgrade_bundle_label("dev/net", "oct ABC", "3.53.2", 0),
+            "dev-net-oct-ABC-sqlite-3.53.2-19700101",
+        );
+    }
+
+    #[test]
+    fn upgrade_recovers_wasm_from_nested_transaction_message() {
+        let bytes = b"fake wasm";
+        let hash = sha256_hex(bytes);
+        let tx = json!({
+            "tx_hash": "tx1",
+            "message": serde_json::to_string(&json!({
+                "code_b64": general_purpose::STANDARD.encode(bytes),
+            })).unwrap(),
+        });
+        let recovered = upgrade::wasm_from_json(&tx, &hash).unwrap().unwrap();
+        assert_eq!(recovered, bytes);
+        assert_eq!(upgrade::find_tx_hash_with_code(&tx).as_deref(), Some("tx1"));
+    }
+
+    #[test]
+    fn upgrade_write_smoke_cleans_up_after_itself() {
+        assert!(upgrade::UPGRADE_WRITE_SMOKE_SQL.contains("insert into"));
+        assert!(upgrade::UPGRADE_WRITE_SMOKE_SQL.contains("drop table"));
+    }
+
+    #[test]
     fn restore_accepts_owner_bootstrap_for_explicit_uri() {
         let cli = Cli::try_parse_from([
             "octra-sqlite",
@@ -5529,6 +5965,23 @@ COMMIT;",
                 .as_array()
                 .unwrap()
                 .contains(&json!("new"))
+        );
+        assert!(
+            commands["json_envelopes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("upgrade"))
+        );
+        assert!(
+            commands["commands"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|command| {
+                    command.get("command").and_then(Value::as_str)
+                        == Some("octra-sqlite upgrade DATABASE")
+                        && command.get("envelope").and_then(Value::as_str) == Some("upgrade")
+                })
         );
         assert!(
             !commands["json_envelopes"]
@@ -5806,6 +6259,62 @@ COMMIT;",
         assert!(report.write_ready());
         report.ready("owner_write_valid", false);
         assert!(!report.write_ready());
+    }
+
+    #[test]
+    fn status_tracks_upgrade_needed_separately_from_readiness() {
+        let mut report = StatusReport::new("status", true);
+        report.init_database_readiness();
+        for key in DATABASE_READINESS_KEYS {
+            report.ready(key, true);
+        }
+        report.engine_current(false);
+
+        assert!(report.read_ready());
+        assert!(report.write_ready());
+        assert_eq!(report.engine_current, Some(false));
+    }
+
+    #[test]
+    fn historical_wasm_catalog_is_manifest_backed_metadata() {
+        let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
+        let catalog = parse_historical_wasm_catalog(&manifest).unwrap();
+        let entries = manifest["historical_wasm_catalog"].as_array().unwrap();
+        assert_eq!(entries.len(), catalog.len());
+        assert_eq!(
+            manifest["upgrade_workflow"]["historical_wasm_catalog_mode"].as_str(),
+            Some("metadata_only")
+        );
+        for (entry, artifact) in entries.iter().zip(&catalog) {
+            assert_eq!(artifact.sqlite_version, "3.53.2");
+            assert!(artifact.bytes > 0);
+            assert_eq!(artifact.sha256.len(), 64);
+            assert!(
+                artifact
+                    .source_url
+                    .starts_with("https://raw.githubusercontent.com/")
+            );
+            assert_eq!(entry["releases"].as_str(), Some(artifact.releases.as_str()));
+            assert_eq!(
+                entry["sqlite_version"].as_str(),
+                Some(artifact.sqlite_version.as_str())
+            );
+            assert_eq!(
+                entry["source_url"].as_str(),
+                Some(artifact.source_url.as_str())
+            );
+            assert_eq!(entry["bytes"].as_u64(), Some(artifact.bytes));
+            assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256.as_str()));
+        }
+
+        let exact = match_historical_wasm_in_catalog(&catalog, &catalog[2].sha256, None).unwrap();
+        assert_eq!(exact.releases, "0.3.0");
+        assert!(exact.exact_hash);
+
+        let byte_match =
+            match_historical_wasm_in_catalog(&catalog, "unknown", Some(609_475)).unwrap();
+        assert_eq!(byte_match.releases, "0.3.0");
+        assert!(!byte_match.exact_hash);
     }
 
     #[test]

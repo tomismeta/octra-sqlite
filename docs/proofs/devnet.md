@@ -159,7 +159,7 @@ non-owner wallet: oct6NBfpTfR9zHdDy5UftWk3FstMYpjp47gDgcTQF5EAxvY
 rejection reason: wasm export returned 403
 ```
 
-When `OCTRA_SQLITE_TRACE_SQL_EVENT=1` is set, successful writes also emit:
+When `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1` is set, successful writes also emit:
 
 ```text
 event: octra.sqlite.sql

@@ -1,5 +1,73 @@
 # Release Notes
 
+## 0.6.0
+
+This is the first post-debut engine upgrade release. It rebuilds the bundled
+Circle WASM with SQLite 3.53.3 and adds a first-class upgrade workflow for
+existing database Circles.
+
+## Added
+
+- `octra-sqlite upgrade` for the guided terminal upgrade workflow.
+- `octra-sqlite upgrade DATABASE` for safe in-place Circle program upgrades.
+- `octra-sqlite upgrade DATABASE --dry-run` for preflight without writes.
+- `octra-sqlite upgrade rollback BUNDLE` for restoring the previous verified
+  personalized Circle program from an upgrade bundle.
+- Private upgrade bundles containing backup metadata, rollback WASM when
+  recovered, transaction proof, and the from/to code-hash epoch boundary.
+- Operator-readable default bundle names containing network, Circle ID,
+  previous SQLite version, and date.
+- A release-manifest-backed, metadata-only historical WASM catalog for
+  identifying known pre-0.6.0 release engines without bundling old engine bytes
+  in the crate.
+- `upgrade --previous-wasm PATH` for explicit rollback recovery with custom or
+  unknown old program bytes.
+
+## Changed
+
+- Bundled SQLite engine: 3.53.2 -> 3.53.3.
+- Bundled Circle WASM hash and byte length changed because of the SQLite engine
+  rebuild.
+- `--write-smoke` now removes its smoke table after the write cycle; it still
+  counts as a post-upgrade write and makes clean rollback unavailable.
+- Bundled Circle WASM and release manifest are embedded in the binary, with
+  file/env overrides still available for source builds and operators.
+- `rollback.clean` is nullable when live counters are unavailable; rollback
+  remains fail-closed until reviewed.
+- The rollback-byte bypass is named `--unsafe-no-rollback`; it is an emergency
+  operator escape hatch and leaves the upgrade bundle unable to restore the
+  previous Circle program.
+- Full SQL event tracing now uses
+  `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1`, making the permanent on-chain event
+  behavior explicit in the opt-in name.
+- `status --json` reports `engine_current` and `upgrade_needed` separately from
+  read/write readiness.
+- No-op upgrade preflight reports `status: "already_current"` and marks
+  rollback as not relevant.
+- MSRV is now Rust/Cargo 1.96+.
+
+## Notes
+
+- Existing Circles are not upgraded automatically. Run `upgrade` or
+  `upgrade DATABASE` with the owner wallet when you choose to move a Circle to
+  the new engine.
+- Upgrade can reconstruct rollback bytes from chain history, local old
+  octra-sqlite release artifacts, or an explicit previous WASM plus live
+  `auth_info`. Historical catalog metadata points operators to the expected
+  tagged artifact and base WASM SHA-256 when manual recovery is needed.
+- Rollback is clean only before post-upgrade writes. `--write-smoke` proves
+  writes on the new engine with a create/insert/drop cycle, but intentionally
+  makes clean rollback unavailable.
+- Rollback availability matters only when `from.code_hash` differs from
+  `to.code_hash`.
+- The release manifest records a devnet proof that creates a 0.5.2 public-read
+  database, upgrades it to 3.53.3, rolls it back to 3.53.2, then upgrades it to
+  3.53.3 again.
+- The README quick-start public Circle is recorded separately and remains on
+  SQLite 3.53.2 until its owner upgrades it.
+- OSR1/OSW1 wire formats, read modes, owner-write authorization, CLI JSON
+  schema, and the Rust root API are unchanged from `0.5.2`.
+
 ## 0.5.2
 
 This is a CLI readiness, raw-target, and install polish release over the

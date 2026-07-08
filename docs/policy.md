@@ -63,9 +63,10 @@ event: octra.sqlite.error
 value: sqlite_exec_failed:<sqlite error>
 ```
 
-Set `OCTRA_SQLITE_TRACE_SQL_EVENT=1` to use `exec_trace` and emit the full SQL
-text as an additional `octra.sqlite.sql` event. This is useful for demos and
-proofs, but the default keeps SQL text out of events.
+Set `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1` to use `exec_trace` and emit full
+SQL text as an additional `octra.sqlite.sql` on-chain event. This is permanent,
+and public-read databases make that event public. The default keeps SQL text
+out of events and emits only the SQL hash event.
 
 ## Native Policy Roadmap
 

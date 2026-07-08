@@ -236,6 +236,85 @@ Use `--json-summary` for compact restore output:
 }
 ```
 
+### `upgrade` and `upgrade_rollback`
+
+Produced by `upgrade DATABASE --json`, `upgrade DATABASE --dry-run --json`,
+and `upgrade rollback BUNDLE --json`.
+
+```json
+{
+  "ok": true,
+  "type": "upgrade",
+  "schema": "octra-sqlite.cli.v1",
+  "mode": "applied",
+  "status": "upgrade_needed",
+  "upgrade_required": true,
+  "dry_run": false,
+  "database": {},
+  "from": {
+    "sqlite_version": "3.53.2",
+    "code_hash": "hex..."
+  },
+  "to": {
+    "sqlite_version": "3.53.3",
+    "code_hash": "hex..."
+  },
+  "target": {
+    "sqlite_version": "3.53.3",
+    "code_hash": "hex...",
+    "wasm": "embedded:circle/wasm/octra_sqlite_circle.wasm"
+  },
+  "backup": {
+    "skipped": false,
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/devnet-oct...-sqlite-3.53.2-20260707.sqlite",
+    "sha256": "hex..."
+  },
+  "rollback": {
+    "available": true,
+    "clean": null,
+    "clean_reason": "counter_unknown",
+    "wasm": "previous.wasm",
+    "guard": {
+      "storage_generation": 2,
+      "owner_sequence": null
+    }
+  },
+  "transaction": {
+    "tx_hash": "abc...",
+    "tx_url": "https://..."
+  },
+  "verification": {
+    "sqlite_version": "3.53.3",
+    "storage_generation_unchanged": true,
+    "owner_sequence_unchanged": true
+  },
+  "bundle": {
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707",
+    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/upgrade.json"
+  }
+}
+```
+
+`upgrade` without a database argument opens the guided terminal workflow.
+`upgrade DATABASE --yes --json` is the non-interactive automation path. `mode`
+is `dry_run`, `planned`, `already_current`, or `applied`. `status` is
+`already_current` when no program update is pending; in that case
+`upgrade_required` is `false` and rollback is not relevant. The upgrade bundle
+manifest uses schema `octra-sqlite.upgrade.bundle.v1` and records the engine
+epoch boundary: previous code hash, new code hash, update transaction, backup
+metadata, and rollback guard. The JSON output never includes private keys or
+raw wallet JSON.
+
+`verification.storage_generation_unchanged` and
+`verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`
+means the live status surface did not return one side of the comparison, so the
+CLI does not turn an unknown counter into a false claim.
+
+`rollback.clean` is also `true`, `false`, or `null`. `null` means rollback bytes
+are available but clean rollback could not be proven from live counters;
+rollback remains fail-closed unless the operator explicitly reviews and uses
+`--force-after-writes`.
+
 ### `check`
 
 Produced by `check DATABASE --sql-file dump.sql --json`.
@@ -265,6 +344,11 @@ embedded typed SQLite query result.
 booleans for automation: `circle_reachable`, `auth_readable`,
 `owner_write_valid`, `storage_initialized`, `sqlite_ready`, and `query_ready`.
 Values are `null` when live checks are skipped or not reached.
+
+It also reports `engine_current` and `upgrade_needed`. A known historical
+octra-sqlite engine can be read/write healthy while `engine_current` is `false`
+and `upgrade_needed` is `true`; that is an upgrade signal, not a generic
+readiness failure.
 
 Use `status DATABASE --ready` as the read/query operational gate. With `--json`,
 it prints the same single status envelope and exits nonzero when `read_ready` is

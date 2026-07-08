@@ -9,7 +9,7 @@ use super::{
         view_with, wait_for_transaction_with,
     },
     safety::Operation,
-    transport::{HttpTransport, RpcTraceMode},
+    transport::{HttpTransport, RpcTraceMode, Transport},
     write::{prepare_write_with, sign_write, submit_signed_write_with},
 };
 
@@ -28,6 +28,8 @@ pub(crate) use super::wallet::{
 use crate::protocol::tx::Tx;
 #[cfg(feature = "http")]
 use serde_json::Value;
+#[cfg(feature = "http")]
+use serde_json::json;
 
 #[cfg(feature = "http")]
 pub fn view(session: &Session, method: &str, params: Vec<Value>) -> Result<Value> {
@@ -119,4 +121,25 @@ pub fn submit_tx(session: &Session, tx: Tx, no_wait: bool) -> Result<Value> {
 pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     wait_for_transaction_with(&transport, session, tx_hash)
+}
+
+#[cfg(feature = "http")]
+pub fn transaction(session: &Session, tx_hash: &str) -> Result<Value> {
+    let transport = HttpTransport::default();
+    transport.call(session.rpc(), "octra_transaction", json!([tx_hash]))
+}
+
+#[cfg(feature = "http")]
+pub fn transactions_by_address(
+    session: &Session,
+    address: &str,
+    limit: u64,
+    offset: u64,
+) -> Result<Value> {
+    let transport = HttpTransport::default();
+    transport.call(
+        session.rpc(),
+        "octra_transactionsByAddress",
+        json!([address, limit, offset]),
+    )
 }

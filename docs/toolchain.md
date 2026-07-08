@@ -6,8 +6,10 @@ and `octra-sqlite deploy` use that artifact by default.
 
 ## User Requirements
 
-- Rust/Cargo 1.88 or newer for the CLI. `rustup stable` is recommended; distro
-  packages can lag behind the lockfile. Cargo must support lockfile version 4.
+- Rust/Cargo 1.96 or newer for the CLI. `rustup stable` is recommended; distro
+  packages can lag behind the lockfile. Use `cargo +stable ...` or
+  `rustup default stable` when a server still defaults to an older toolchain.
+  Cargo must support lockfile version 4.
 - The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured
@@ -16,6 +18,19 @@ and `octra-sqlite deploy` use that artifact by default.
 
 Users do not need Docker, Python, WABT, WASI, a C compiler, or local `sqlite3`
 for the cold start path.
+
+When copying source to a server, prefer a Git-native archive so platform
+sidecar files are not included:
+
+```sh
+git archive --format=tar HEAD | tar -x -C /opt/octra-sqlite/source
+```
+
+If you must create a tarball on macOS, disable AppleDouble files:
+
+```sh
+COPYFILE_DISABLE=1 tar -cf octra-sqlite.tar .
+```
 
 ## Builder Requirements
 
@@ -38,14 +53,23 @@ The current bundled Circle WASM artifact is:
 
 ```text
 compiler Homebrew clang version 22.1.8
-sqlite_sha256 d8cbe58389cb5b375e81fe9b456fe55098180975a7c06e9b934ce36906b75b21
-code_bytes 609354
-code_hash 36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d
+sqlite_sha256 d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86
+sqlite3_c_upstream_sha3_256 28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7
+code_bytes 610218
+code_hash 3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.5.2.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.6.0.json` and checked by
 `octra-sqlite status`.
+
+The release manifest JSON is also the source of truth for the small historical
+metadata catalog of blessed pre-0.6.0 Circle WASM epochs: release range, byte
+length, base WASM SHA-256, and GitHub source URL. The crate does not bundle
+those old WASM bytes. `upgrade` uses the catalog only to guide operators toward
+the correct previous artifact; actual rollback bytes still come from chain
+history, local artifacts, or `--previous-wasm`, and are accepted only after the
+reconstructed personalized hash matches the live program hash exactly.
 
 ## Optional Rebuild
 
