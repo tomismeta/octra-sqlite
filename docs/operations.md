@@ -113,8 +113,8 @@ target-engine state without writing. A real upgrade:
   owner;
 - patches the bundled WASM with the existing owner public key and database id;
 - recovers the currently deployed personalized WASM from local metadata, chain
-  transaction history, an explicit `--previous-wasm`, or local old release
-  artifacts for rollback;
+  transaction history, the embedded historical release catalog, local old
+  release artifacts, or an explicit `--previous-wasm` for rollback;
 - writes a private local upgrade bundle with a named `.sqlite` backup,
   `previous.wasm`, and `upgrade.json`;
 - aborts if storage generation or owner sequence changes before the program
@@ -123,18 +123,20 @@ target-engine state without writing. A real upgrade:
   the bundled engine.
 
 For older owner-personalized deployments, rollback recovery can use either the
-already-personalized old WASM or the previous release's base
-`circle/wasm/octra_sqlite_circle.wasm`. The CLI patches a base WASM with live
-`auth_info` and accepts it only if the resulting hash matches the currently
-deployed program. Use `--previous-wasm PATH` for one run or
-`OCTRA_SQLITE_PREVIOUS_WASM=PATH` for automation.
+embedded historical release catalog, local release artifacts, an
+already-personalized old WASM, or the previous release's base
+`circle/wasm/octra_sqlite_circle.wasm`. The CLI patches base WASM bytes with
+live `auth_info` and accepts them only if the resulting hash matches the
+currently deployed program. Use `--previous-wasm PATH` for one run or
+`OCTRA_SQLITE_PREVIOUS_WASM=PATH` for custom or unknown old engines.
 
 Rollback redeploys the `previous.wasm` from the bundle. It refuses to cross
 post-upgrade writes unless `--force-after-writes` is supplied, and forced
 rollback writes a fresh backup first. `--write-smoke` is intentionally opt-in:
 it performs a create/insert/drop write cycle on the new engine. It leaves no
 smoke table behind, but it still dirties production data and makes clean
-rollback unavailable.
+rollback unavailable. When the chain does not expose the counters needed to
+prove clean rollback, `rollback.clean` is `null`; rollback remains fail-closed.
 
 For the `upgrade` command, `rollback` is reserved for `upgrade rollback
 BUNDLE`. If a saved database is literally named `rollback`, pass its raw

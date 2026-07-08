@@ -17,8 +17,10 @@ existing database Circles.
   recovered, transaction proof, and the from/to code-hash epoch boundary.
 - Operator-readable default bundle names containing network, Circle ID,
   previous SQLite version, and date.
-- `upgrade --previous-wasm PATH` for explicit rollback recovery when old
-  program bytes are not recoverable from chain history.
+- An embedded historical WASM catalog for automatic rollback recovery from
+  known pre-0.6.0 release engines.
+- `upgrade --previous-wasm PATH` for explicit rollback recovery with custom or
+  unknown old program bytes.
 
 ## Changed
 
@@ -29,6 +31,10 @@ existing database Circles.
   counts as a post-upgrade write and makes clean rollback unavailable.
 - Bundled Circle WASM and release manifest are embedded in the binary, with
   file/env overrides still available for source builds and operators.
+- `rollback.clean` is nullable when live counters are unavailable; rollback
+  remains fail-closed until reviewed.
+- `status --json` reports `engine_current` and `upgrade_needed` separately from
+  read/write readiness.
 - MSRV is now Rust/Cargo 1.96+.
 
 ## Notes
@@ -36,8 +42,9 @@ existing database Circles.
 - Existing Circles are not upgraded automatically. Run `upgrade` or
   `upgrade DATABASE` with the owner wallet when you choose to move a Circle to
   the new engine.
-- Upgrade can reconstruct rollback bytes from an explicit previous WASM or
-  local old octra-sqlite release artifacts plus live `auth_info`.
+- Upgrade can reconstruct rollback bytes from chain history, the embedded
+  historical catalog, local old octra-sqlite release artifacts, or an explicit
+  previous WASM plus live `auth_info`.
 - Rollback is clean only before post-upgrade writes. `--write-smoke` proves
   writes on the new engine with a create/insert/drop cycle, but intentionally
   makes clean rollback unavailable.

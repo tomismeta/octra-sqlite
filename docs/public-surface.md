@@ -102,15 +102,16 @@ workflow; with `DATABASE --yes --json` it is the automation path. It preserves
 Circle identity and SQLite pages, verifies Circle owner and OSW1 owner wallet
 alignment, backs up the database by default, writes a private local bundle,
 recovers rollback WASM when available, submits one `circle_program_update`, and
-verifies the new `sqlite_version()`. Older owner-personalized deployments can
-supply a previous base or personalized WASM with `--previous-wasm PATH`; the CLI
-accepts it only if the exact deployed hash can be reconstructed. `upgrade
-rollback BUNDLE` restores the previous verified program from that bundle and
-refuses to cross post-upgrade writes unless the operator explicitly passes
-`--force-after-writes`. `deploy` remains the lower level program-update tool;
-`upgrade` is the safe workflow. Within `upgrade`, `rollback` is reserved for
-rollback bundles; use a raw `oct://` URI if a saved database is literally named
-`rollback`.
+verifies the new `sqlite_version()`. Older owner-personalized deployments are
+matched against an embedded historical release catalog; custom or unknown old
+engines can supply a previous base or personalized WASM with
+`--previous-wasm PATH`. The CLI accepts rollback bytes only if the exact
+deployed hash can be reconstructed. `upgrade rollback BUNDLE` restores the
+previous verified program from that bundle and refuses to cross post-upgrade
+writes unless the operator explicitly passes `--force-after-writes`. `deploy`
+remains the lower level program-update tool; `upgrade` is the safe workflow.
+Within `upgrade`, `rollback` is reserved for rollback bundles; use a raw
+`oct://` URI if a saved database is literally named `rollback`.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write

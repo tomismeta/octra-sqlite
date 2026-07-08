@@ -268,11 +268,12 @@ and `upgrade rollback BUNDLE --json`.
   },
   "rollback": {
     "available": true,
-    "clean": true,
+    "clean": null,
+    "clean_reason": "counter_unknown",
     "wasm": "previous.wasm",
     "guard": {
       "storage_generation": 2,
-      "owner_sequence": 8
+      "owner_sequence": null
     }
   },
   "transaction": {
@@ -304,6 +305,11 @@ keys or raw wallet JSON.
 means the live status surface did not return one side of the comparison, so the
 CLI does not turn an unknown counter into a false claim.
 
+`rollback.clean` is also `true`, `false`, or `null`. `null` means rollback bytes
+are available but clean rollback could not be proven from live counters;
+rollback remains fail-closed unless the operator explicitly reviews and uses
+`--force-after-writes`.
+
 ### `check`
 
 Produced by `check DATABASE --sql-file dump.sql --json`.
@@ -333,6 +339,11 @@ embedded typed SQLite query result.
 booleans for automation: `circle_reachable`, `auth_readable`,
 `owner_write_valid`, `storage_initialized`, `sqlite_ready`, and `query_ready`.
 Values are `null` when live checks are skipped or not reached.
+
+It also reports `engine_current` and `upgrade_needed`. A known historical
+octra-sqlite engine can be read/write healthy while `engine_current` is `false`
+and `upgrade_needed` is `true`; that is an upgrade signal, not a generic
+readiness failure.
 
 Use `status DATABASE --ready` as the read/query operational gate. With `--json`,
 it prints the same single status envelope and exits nonzero when `read_ready` is

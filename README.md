@@ -35,7 +35,7 @@ install Rust with [rustup](https://rustup.rs/); distro packages such as
 toolchain is required.
 
 ```sh
-cargo install octra-sqlite --locked
+cargo +stable install octra-sqlite --locked
 ```
 
 Read a public database immediately, no wallet required:
@@ -200,15 +200,17 @@ an `upgrade.json` manifest.
 Default bundles are named with the network, Circle ID, previous SQLite version,
 and date, for example `devnet-oct...-sqlite-3.53.2-20260707`.
 
-If rollback bytes cannot be recovered automatically for an older
-owner-personalized deployment, pass the previous release's base or personalized
-WASM explicitly:
+For known historical octra-sqlite release engines, rollback recovery is
+automatic: the CLI personalizes the embedded historical WASM catalog with live
+`auth_info` and accepts only an exact live hash match. For custom or unknown
+engines, pass the previous release's base or personalized WASM explicitly:
 
 ```sh
 octra-sqlite upgrade art --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
 ```
 
-Rollback is clean only if no database writes happened after the upgrade. The
+Rollback is clean only if no database writes happened after the upgrade and the
+live counters needed to prove that are available. The
 optional `--write-smoke` check performs a create/insert/drop write cycle
 against the new engine. It leaves no smoke table behind, but it still dirties
 the database and makes rollback require `--force-after-writes`.

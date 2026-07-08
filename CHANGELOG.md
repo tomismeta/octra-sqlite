@@ -24,8 +24,12 @@
   the release manifest so the upgraded live WASM hash remains reproducible.
 - Embedded the bundled Circle WASM and release manifest in the binary so
   installed builds do not depend on the source/build directory at runtime.
-- Added `upgrade --previous-wasm PATH` and local base-WASM reconstruction for
-  rollback recovery from older owner-personalized deployments.
+- Added an embedded historical WASM catalog plus `upgrade --previous-wasm PATH`
+  for rollback recovery from older owner-personalized deployments.
+- Made `rollback.clean` nullable when live counters are unavailable, while
+  keeping rollback fail-closed.
+- Added `engine_current` and `upgrade_needed` status JSON fields so healthy old
+  engines are reported as upgrade candidates instead of generic failures.
 - Raised the documented MSRV to Rust/Cargo 1.96+ after downstream staging
   exposed 1.88 install incompatibility with the resolved CLI dependency set.
 - Kept OSR1/OSW1 wire formats, read modes, owner-write authorization, JSON

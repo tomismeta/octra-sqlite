@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+mod historical_wasm;
 mod output;
 mod portability;
 mod shell;
@@ -27,6 +28,7 @@ use crate::{
         tx::Tx,
     },
 };
+use historical_wasm::HISTORICAL_WASMS;
 use output::{
     OutputMode, dim, format_exec_result, format_field, format_json, format_result,
     format_status_line, hyperlink, print_exec_result, print_json, print_result, strong,
@@ -77,6 +79,13 @@ struct WasmArtifact {
 struct TextArtifact {
     source: String,
     text: String,
+}
+
+struct MatchedWasmArtifact {
+    source: String,
+    bytes: Vec<u8>,
+    releases: &'static str,
+    sqlite_version: &'static str,
 }
 
 #[derive(Parser)]
@@ -2113,6 +2122,7 @@ struct StatusReport {
     json: bool,
     failures: usize,
     warnings: usize,
+    engine_current: Option<bool>,
     items: Vec<Value>,
     readiness: Map<String, Value>,
 }
@@ -2124,6 +2134,7 @@ impl StatusReport {
             json,
             failures: 0,
             warnings: 0,
+            engine_current: None,
             items: Vec::new(),
             readiness: Map::new(),
         }
@@ -2159,6 +2170,10 @@ impl StatusReport {
         self.readiness.insert(key.to_string(), Value::Bool(ready));
     }
 
+    fn engine_current(&mut self, current: bool) {
+        self.engine_current = Some(current);
+    }
+
     fn init_database_readiness(&mut self) {
         for key in DATABASE_READINESS_KEYS {
             self.readiness.insert(key.to_string(), Value::Null);
@@ -2173,6 +2188,7 @@ impl StatusReport {
         let read_ready = self.read_ready();
         let write_ready = self.write_ready();
         let ok = self.failures == 0 && (!require_ready || read_ready);
+        let upgrade_needed = self.engine_current.map(|current| !current);
         if self.json {
             let mut readiness = self.readiness;
             readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
@@ -2184,6 +2200,8 @@ impl StatusReport {
                 "ready": read_ready,
                 "read_ready": read_ready,
                 "write_ready": write_ready,
+                "engine_current": self.engine_current,
+                "upgrade_needed": upgrade_needed,
                 "failures": self.failures,
                 "warnings": self.warnings,
                 "readiness": readiness,
@@ -2197,11 +2215,16 @@ impl StatusReport {
             println!("{}", format_status_line("fail", "read_ready", "false"));
             Ok(1)
         } else {
+            let upgrade_suffix = upgrade_needed
+                .filter(|needed| *needed)
+                .map(|_| " upgrade_needed=true")
+                .unwrap_or("");
             println!(
-                "{} read_ready={} write_ready={}",
+                "{} read_ready={} write_ready={}{}",
                 dim(format!("{label}:")),
                 read_ready,
-                write_ready
+                write_ready,
+                upgrade_suffix
             );
             Ok(0)
         }
@@ -2355,6 +2378,7 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
             }
             if code_hash == expected_hash {
                 report.ok("program hash", code_hash);
+                report.engine_current(true);
             } else if expected_hash == EXPECTED_WASM_SHA256 {
                 match personalized_wasm_hash(session) {
                     Ok(Some(personalized_hash)) if code_hash == personalized_hash => {
@@ -2362,21 +2386,66 @@ fn check_live_target(report: &mut StatusReport, session: &Session, expected_hash
                             "program hash",
                             format!("{code_hash} (owner-personalized bundled WASM)"),
                         );
+                        report.engine_current(true);
                     }
-                    Ok(Some(personalized_hash)) => report.fail(
-                        "program hash",
-                        format!(
-                            "{code_hash}; expected {expected_hash} or owner-personalized {personalized_hash}"
+                    Ok(Some(personalized_hash)) => match auth_info(session)
+                        .ok()
+                        .as_ref()
+                        .and_then(|auth| match_historical_wasm(code_hash, Some(auth)))
+                    {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                format!(
+                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
+                                    match_.releases, match_.sqlite_version
+                                ),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!(
+                                "{code_hash}; expected {expected_hash} or owner-personalized {personalized_hash}"
+                            ),
                         ),
-                    ),
-                    Ok(None) => report.fail(
-                        "program hash",
-                        format!("{code_hash}; expected {expected_hash}"),
-                    ),
-                    Err(error) => report.fail(
-                        "program hash",
-                        format!("{code_hash}; expected {expected_hash}; personalized check failed: {error:#}"),
-                    ),
+                    },
+                    Ok(None) => match match_historical_wasm(code_hash, None) {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                format!(
+                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
+                                    match_.releases, match_.sqlite_version
+                                ),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!("{code_hash}; expected {expected_hash}"),
+                        ),
+                    },
+                    Err(error) => match auth_info(session)
+                        .ok()
+                        .as_ref()
+                        .and_then(|auth| match_historical_wasm(code_hash, Some(auth)))
+                    {
+                        Some(match_) => {
+                            report.engine_current(false);
+                            report.warn(
+                                "program hash",
+                                format!(
+                                    "{code_hash} (known historical WASM {}, SQLite {}; upgrade available)",
+                                    match_.releases, match_.sqlite_version
+                                ),
+                            );
+                        }
+                        None => report.fail(
+                            "program hash",
+                            format!("{code_hash}; expected {expected_hash}; personalized check failed: {error:#}"),
+                        ),
+                    },
                 }
             } else {
                 report.fail(
@@ -2568,6 +2637,37 @@ fn personalized_wasm_hash(session: &Session) -> Result<Option<String>> {
     let mut wasm = artifact.bytes;
     patch_wasm_auth_bytes(&mut wasm, &owner_pubkey, &db_id)?;
     Ok(Some(sha256_hex(&wasm)))
+}
+
+fn match_historical_wasm(
+    expected_hash: &str,
+    auth: Option<&AuthInfo>,
+) -> Option<MatchedWasmArtifact> {
+    for artifact in HISTORICAL_WASMS {
+        if expected_hash == artifact.sha256 {
+            return Some(MatchedWasmArtifact {
+                source: format!("historical_release:{}", artifact.releases),
+                bytes: artifact.bytes.to_vec(),
+                releases: artifact.releases,
+                sqlite_version: artifact.sqlite_version,
+            });
+        }
+        let Some(auth) = auth else {
+            continue;
+        };
+        let mut personalized = artifact.bytes.to_vec();
+        if patch_wasm_auth_from_info(&mut personalized, auth).is_ok()
+            && sha256_hex(&personalized) == expected_hash
+        {
+            return Some(MatchedWasmArtifact {
+                source: format!("historical_release:{}:personalized", artifact.releases),
+                bytes: personalized,
+                releases: artifact.releases,
+                sqlite_version: artifact.sqlite_version,
+            });
+        }
+    }
+    None
 }
 
 fn hex_to_32(label: &str, text: &str) -> Result<[u8; 32]> {
@@ -6077,6 +6177,28 @@ COMMIT;",
         assert!(report.write_ready());
         report.ready("owner_write_valid", false);
         assert!(!report.write_ready());
+    }
+
+    #[test]
+    fn status_tracks_upgrade_needed_separately_from_readiness() {
+        let mut report = StatusReport::new("status", true);
+        report.init_database_readiness();
+        for key in DATABASE_READINESS_KEYS {
+            report.ready(key, true);
+        }
+        report.engine_current(false);
+
+        assert!(report.read_ready());
+        assert!(report.write_ready());
+        assert_eq!(report.engine_current, Some(false));
+    }
+
+    #[test]
+    fn historical_wasm_catalog_matches_manifest_hashes() {
+        for artifact in HISTORICAL_WASMS {
+            assert_eq!(sha256_hex(artifact.bytes), artifact.sha256);
+            assert_eq!(artifact.sqlite_version, "3.53.2");
+        }
     }
 
     #[test]

@@ -7,7 +7,9 @@ and `octra-sqlite deploy` use that artifact by default.
 ## User Requirements
 
 - Rust/Cargo 1.96 or newer for the CLI. `rustup stable` is recommended; distro
-  packages can lag behind the lockfile. Cargo must support lockfile version 4.
+  packages can lag behind the lockfile. Use `cargo +stable ...` or
+  `rustup default stable` when a server still defaults to an older toolchain.
+  Cargo must support lockfile version 4.
 - The stock `sqlite3` CLI only for local export/integrity workflows: `.dump`,
   `.fullschema`, and `verify --integrity`.
 - A funded Octra wallet for writes and deploy/update calls on the configured
@@ -60,6 +62,11 @@ artifact circle/wasm/octra_sqlite_circle.wasm
 
 The same values are recorded in `release/octra-sqlite-0.6.0.json` and checked by
 `octra-sqlite status`.
+
+The release package also includes `release/wasm/*.wasm`, a small historical
+catalog of blessed pre-0.6.0 Circle WASM artifacts. `upgrade` uses this catalog
+only to reconstruct rollback bytes for known old deployments, and only after
+the reconstructed personalized hash matches the live program hash exactly.
 
 ## Optional Rebuild
 

@@ -19,4 +19,6 @@ packaging polish release for the crates.io debut. The `0.5.2` manifest is CLI
 readiness and raw-target polish over the same bundled Circle WASM proof. The
 `0.6.0` manifest records the SQLite 3.53.3 WASM rebuild plus a devnet
 upgrade, rollback, final re-upgrade proof, and the current quick-start
-public-read Circle status.
+public-read Circle status. `release/wasm/*.wasm` contains the blessed
+historical WASM catalog used by `upgrade` to reconstruct rollback bytes for
+known pre-0.6.0 deployments.

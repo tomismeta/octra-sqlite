@@ -153,11 +153,7 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     let update = submit_program_update(&session, &target_wasm.bytes, &args.ou, &target_wasm.hash)?;
     let after = upgrade_snapshot(&session).context("reading database state after upgrade")?;
     ensure_sqlite_version(&after, SQLITE_VERSION)?;
-    let clean_rollback =
-        optional_counter_unchanged(guard.storage_generation, after.storage_generation)
-            .unwrap_or(false)
-            && optional_counter_unchanged(guard.owner_sequence, after.owner_sequence)
-                .unwrap_or(false);
+    let clean_rollback = clean_rollback_state(&guard, &after);
 
     let write_smoke = if args.write_smoke {
         let result = with_explorer(
@@ -237,7 +233,7 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
                 .unwrap_or_else(|| "skipped".to_string()),
         );
         print_field("bundle", bundle_paths.bundle_dir.display().to_string());
-        print_field("rollback ready", clean_rollback.to_string());
+        print_field("rollback clean", rollback_clean_label(clean_rollback));
         print_field(
             "verify",
             format!("octra-sqlite status {} --ready", requested),
@@ -255,7 +251,7 @@ struct UpgradeManifestInput<'a> {
     previous_wasm_path: Option<&'a Path>,
     backup: &'a Value,
     update: &'a ProgramUpdateOutcome,
-    clean_rollback: bool,
+    clean_rollback: Option<bool>,
     write_smoke: Option<&'a Value>,
     saved_metadata: &'a [String],
 }
@@ -269,7 +265,7 @@ struct UpgradeResultInput<'a> {
     backup: &'a Value,
     update: &'a ProgramUpdateOutcome,
     manifest: &'a Value,
-    clean_rollback: bool,
+    clean_rollback: Option<bool>,
     previous_wasm_path: Option<&'a Path>,
     write_smoke: Option<Value>,
     saved_metadata: Vec<String>,
@@ -602,6 +598,9 @@ fn recover_live_wasm(
     if let Some(recovered) = recover_wasm_from_local_base_artifacts(before, expected_hash)? {
         return Ok(Some(recovered));
     }
+    if let Some(recovered) = recover_wasm_from_historical_catalog(before, expected_hash) {
+        return Ok(Some(recovered));
+    }
     Ok(None)
 }
 
@@ -666,6 +665,19 @@ fn recover_wasm_from_local_base_artifacts(
         }
     }
     Ok(None)
+}
+
+fn recover_wasm_from_historical_catalog(
+    before: &UpgradeSnapshot,
+    expected_hash: &str,
+) -> Option<RecoveredWasm> {
+    let matched = match_historical_wasm(expected_hash, Some(&before.auth))?;
+    Some(RecoveredWasm {
+        bytes: matched.bytes,
+        hash: expected_hash.to_string(),
+        source: matched.source,
+        tx_hash: None,
+    })
 }
 
 fn local_wasm_artifact_candidates() -> Vec<PathBuf> {
@@ -989,6 +1001,26 @@ fn optional_counter_unchanged(before: Option<u64>, after: Option<u64>) -> Option
     Some(before? == after?)
 }
 
+fn clean_rollback_state(before: &UpgradeSnapshot, after: &UpgradeSnapshot) -> Option<bool> {
+    let storage = optional_counter_unchanged(before.storage_generation, after.storage_generation);
+    let owner = optional_counter_unchanged(before.owner_sequence, after.owner_sequence);
+    if storage == Some(false) || owner == Some(false) {
+        Some(false)
+    } else if storage == Some(true) && owner == Some(true) {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn rollback_clean_label(clean: Option<bool>) -> &'static str {
+    match clean {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "unknown",
+    }
+}
+
 fn submit_program_update(
     session: &Session,
     wasm: &[u8],
@@ -1070,7 +1102,7 @@ fn upgrade_result_json(input: UpgradeResultInput<'_>) -> Value {
             input.rollback,
             input.previous_wasm_path,
             input.after,
-            Some(input.clean_rollback)
+            input.clean_rollback
         ),
         "transaction": program_update_json(input.session, input.update),
         "verification": {
@@ -1098,7 +1130,7 @@ fn upgrade_manifest_json(input: UpgradeManifestInput<'_>) -> Value {
             input.rollback,
             input.previous_wasm_path,
             input.after,
-            Some(input.clean_rollback),
+            input.clean_rollback,
         ),
         "transaction": program_update_json(input.session, input.update),
         "write_smoke": input.write_smoke,
@@ -1163,6 +1195,7 @@ fn rollback_json(
             "tx_hash": recovered.tx_hash,
             "wasm": wasm_path.map(|path| path.file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_else(|| path.display().to_string())),
             "clean": clean,
+            "clean_reason": rollback_clean_reason(clean),
             "guard": {
                 "storage_generation": guard_snapshot.storage_generation,
                 "owner_sequence": guard_snapshot.owner_sequence,
@@ -1172,6 +1205,14 @@ fn rollback_json(
             "available": false,
             "reason": "previous_wasm_not_recovered",
         }),
+    }
+}
+
+fn rollback_clean_reason(clean: Option<bool>) -> Option<&'static str> {
+    match clean {
+        Some(true) => None,
+        Some(false) => Some("counter_changed"),
+        None => Some("counter_unknown"),
     }
 }
 
@@ -1372,11 +1413,78 @@ mod tests {
     }
 
     #[test]
+    fn historical_catalog_wasm_is_personalized_for_rollback_recovery() {
+        let owner_pubkey = [7u8; 32];
+        let db_id = [9u8; 32];
+        let artifact = HISTORICAL_WASMS
+            .iter()
+            .find(|artifact| artifact.releases == "0.3.0")
+            .unwrap();
+        let mut personalized = artifact.bytes.to_vec();
+        patch_wasm_auth_bytes(&mut personalized, &owner_pubkey, &db_id).unwrap();
+        let expected_hash = sha256_hex(&personalized);
+        let snapshot = UpgradeSnapshot {
+            program_info: json!({}),
+            storage: json!({}),
+            auth: AuthInfo {
+                configured: true,
+                db_id: hex::encode(db_id),
+                owner_pubkey: Some(hex::encode(owner_pubkey)),
+                owner_sequence: Some(1),
+            },
+            sqlite_version: "3.53.2".to_string(),
+            code_hash: expected_hash.clone(),
+            code_bytes: Some(personalized.len() as u64),
+            storage_generation: Some(1),
+            owner_sequence: Some(1),
+        };
+
+        let recovered = recover_wasm_from_historical_catalog(&snapshot, &expected_hash)
+            .expect("historical recovery");
+
+        assert_eq!(recovered.bytes, personalized);
+        assert_eq!(recovered.hash, expected_hash);
+        assert_eq!(recovered.source, "historical_release:0.3.0:personalized");
+    }
+
+    #[test]
     fn optional_counter_comparison_is_unknown_when_missing() {
         assert_eq!(optional_counter_unchanged(Some(1), Some(1)), Some(true));
         assert_eq!(optional_counter_unchanged(Some(1), Some(2)), Some(false));
         assert_eq!(optional_counter_unchanged(Some(1), None), None);
         assert_eq!(optional_counter_unchanged(None, Some(1)), None);
         assert_eq!(optional_counter_unchanged(None, None), None);
+    }
+
+    #[test]
+    fn clean_rollback_is_unknown_when_counter_is_missing() {
+        let snapshot = |storage_generation, owner_sequence| UpgradeSnapshot {
+            program_info: json!({}),
+            storage: json!({}),
+            auth: AuthInfo {
+                configured: true,
+                db_id: "00".repeat(32),
+                owner_pubkey: Some("00".repeat(32)),
+                owner_sequence,
+            },
+            sqlite_version: "3.53.2".to_string(),
+            code_hash: "hash".to_string(),
+            code_bytes: Some(1),
+            storage_generation,
+            owner_sequence,
+        };
+
+        assert_eq!(
+            clean_rollback_state(&snapshot(Some(1), Some(1)), &snapshot(Some(1), Some(1))),
+            Some(true)
+        );
+        assert_eq!(
+            clean_rollback_state(&snapshot(Some(1), Some(1)), &snapshot(Some(2), Some(1))),
+            Some(false)
+        );
+        assert_eq!(
+            clean_rollback_state(&snapshot(Some(1), Some(1)), &snapshot(Some(1), None)),
+            None
+        );
     }
 }

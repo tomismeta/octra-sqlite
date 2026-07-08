@@ -94,19 +94,20 @@ some Linux distributions ship older Cargo versions:
 
 ```sh
 rustup toolchain install stable --profile minimal
-cargo install octra-sqlite --locked
+rustup default stable
+cargo +stable install octra-sqlite --locked
 ```
 
 Pinned release install:
 
 ```sh
-cargo install --git https://github.com/tomismeta/octra-sqlite --tag v0.6.0 --locked
+cargo +stable install --git https://github.com/tomismeta/octra-sqlite --tag v0.6.0 --locked
 ```
 
 Source checkout install:
 
 ```sh
-cargo install --path . --locked
+cargo +stable install --path . --locked
 ```
 
 If installing into a shared path, make the binary executable by the service
