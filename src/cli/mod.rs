@@ -70,6 +70,7 @@ const MAX_DB_PAGES: usize = 8_069;
 const SQLITE_PAGE_BYTES: usize = 4_096;
 const MAX_DB_FILE_BYTES: usize = 33_050_624;
 const STABLE_STORAGE_LIMIT_BYTES: usize = 33_554_432;
+const MAX_DIRTY_PAGES_PER_EXEC: usize = 1_024;
 const MAX_QUERY_VDBE_STEPS: usize = 5_000_000;
 const MAX_EXEC_VDBE_STEPS: usize = 25_000_000;
 const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
@@ -3723,6 +3724,10 @@ fn cmd_limits(args: LimitsArgs) -> Result<()> {
     print_field("max database pages", MAX_DB_PAGES.to_string());
     print_field("max database bytes", MAX_DB_FILE_BYTES.to_string());
     print_field(
+        "max dirty pages per exec",
+        MAX_DIRTY_PAGES_PER_EXEC.to_string(),
+    );
+    print_field(
         "query work limit",
         format!("{MAX_QUERY_VDBE_STEPS} VDBE steps"),
     );
@@ -4204,6 +4209,7 @@ fn limits_json(target: Option<Value>) -> Value {
             "max_pages": MAX_DB_PAGES,
             "max_file_bytes": MAX_DB_FILE_BYTES,
             "stable_storage_limit_bytes": STABLE_STORAGE_LIMIT_BYTES,
+            "max_dirty_pages_per_exec": MAX_DIRTY_PAGES_PER_EXEC,
             "assumes_dedicated_circle_storage": true,
             "accounting": "Circle stable storage counts key and value bytes; the database limit reserves current VFS metadata and manifest overhead",
         },
@@ -5814,6 +5820,10 @@ COMMIT;",
                 Some(MAX_DB_FILE_BYTES as u64)
             );
             assert_eq!(
+                manifest["storage"]["max_dirty_pages_per_exec"].as_u64(),
+                Some(MAX_DIRTY_PAGES_PER_EXEC as u64)
+            );
+            assert_eq!(
                 manifest["execution"]["max_query_vdbe_steps"].as_u64(),
                 Some(MAX_QUERY_VDBE_STEPS as u64)
             );
@@ -6067,6 +6077,10 @@ COMMIT;",
         assert_eq!(limits["result"]["max_rows"], MAX_RESULT_ROWS);
         assert_eq!(limits["storage"]["max_pages"], MAX_DB_PAGES);
         assert_eq!(limits["storage"]["max_file_bytes"], MAX_DB_FILE_BYTES);
+        assert_eq!(
+            limits["storage"]["max_dirty_pages_per_exec"],
+            MAX_DIRTY_PAGES_PER_EXEC
+        );
         assert_eq!(MAX_DB_PAGES * SQLITE_PAGE_BYTES, MAX_DB_FILE_BYTES);
         assert_eq!((STABLE_STORAGE_LIMIT_BYTES - 109) / 4_158, MAX_DB_PAGES);
         assert_eq!(

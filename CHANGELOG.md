@@ -9,6 +9,10 @@
   of SQLite file data under Octra's 33.55 MB key-plus-value storage cap, while
   retaining 8,192 legacy VFS read slots. Upgrade preflight refuses a legacy
   database that is already larger than the target engine can write.
+- Exposed the 1,024-dirty-page per-exec limit in human and JSON capability
+  output, with bulk-update guidance.
+- Made upgrade preflight read durable owner sequence from `storage_info` when
+  storage-independent `auth_info` omits it.
 - Made config parsing, nonce decoding, receipt confirmation, query row counts,
   and OSR1 decoding fail closed; OSR1 now rejects oversized counts, invalid
   UTF-8, non-finite reals, and allocation/offset overflow.
@@ -25,6 +29,8 @@
   where applicable; RPC tracing now refuses to overwrite an existing file.
 - Made sealed-read and write-transaction visibility explicit in human output,
   manifests, `limits --json`, README, security guidance, and operations docs.
+- Documented that public-read access permits full database backup and that
+  foreign-key enforcement is currently off.
 - Kept SQLite 3.53.3, OSR1/OSW1 wire formats, owner-write authorization, root
   Rust API, and the eight-import/five-export WASM surface unchanged.
 

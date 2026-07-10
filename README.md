@@ -333,6 +333,7 @@ and local snapshot rendering commands such as `.dump` and `.fullschema`. The
 - [Headless setup](./docs/headless.md)
 - [JSON output](./docs/json-output.md)
 - [Operations](./docs/operations.md)
+- [Roadmap](./docs/roadmap.md)
 - [Storage model](./docs/storage-model.md)
 - [Toolchain and builds](./docs/toolchain.md)
 - [OSR1 typed results](./docs/spec/osr1.md)

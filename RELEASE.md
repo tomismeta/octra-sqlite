@@ -11,6 +11,9 @@ bounds SQLite work and enforces the exact current stable-storage capacity.
 - Deterministic query and exec VDBE work budgets with stable error codes.
 - Exact VFS capacity facts in `storage_info`, `limits --json`, and the release
   manifest.
+- Durable owner-sequence comparison from `storage_info` when the
+  storage-independent `auth_info` response omits it.
+- The 1,024-dirty-page transaction ceiling in human and JSON limits.
 - Durable upgrade manifest states: `prepared`, `applied`, and `complete`.
 - Machine-readable confidentiality facts.
 
@@ -27,7 +30,10 @@ bounds SQLite work and enforces the exact current stable-storage capacity.
 ### Security Boundary
 
 - Sealed reads authenticate a wallet; they are not encrypted or owner-only.
+- Public reads permit complete SQLite-file export through `backup_chunk`.
 - Write SQL and values remain visible in Octra transaction history.
+- Foreign-key enforcement is currently off and cannot be enabled through user
+  SQL.
 - SQLite work is bounded inside the contract. Runtime-wide WASM fuel remains
   an Octra protocol responsibility.
 

@@ -277,12 +277,12 @@ and `upgrade rollback BUNDLE --json`.
   },
   "rollback": {
     "available": true,
-    "clean": null,
-    "clean_reason": "counter_unknown",
+    "clean": true,
+    "clean_reason": null,
     "wasm": "previous.wasm",
     "guard": {
       "storage_generation": 2,
-      "owner_sequence": null
+      "owner_sequence": 41
     }
   },
   "transaction": {
@@ -322,6 +322,11 @@ interrupted after the chain changes.
 `verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`
 means the live status surface did not return one side of the comparison, so the
 CLI does not turn an unknown counter into a false claim.
+
+Upgrade preflight reads `storage_info.owner_sequence` when the
+storage-independent `auth_info` response omits it, so supported historical and
+current engines can prove the comparison without rewriting the old Circle
+first.
 
 `rollback.clean` is also `true`, `false`, or `null`. `null` means rollback bytes
 are available but clean rollback could not be proven from live counters;
@@ -381,7 +386,9 @@ CLI/SQLite/schema versions, SQL byte and VDBE work limits, result row/response
 limits, exact VFS capacity, restore behavior, read/write auth facts,
 confidentiality facts, and available trace modes. In particular,
 `confidentiality.encrypted` and `confidentiality.sealed_owner_only` are `false`,
-and write SQL is marked visible in transaction history.
+write SQL is marked visible in transaction history, and
+`storage.max_dirty_pages_per_exec` distinguishes per-write capacity from total
+database capacity.
 
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery

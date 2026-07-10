@@ -81,6 +81,8 @@ Octra read surface from Circle metadata unless the URI explicitly includes
 OSW1 in both modes.
 Sealed reads are authenticated, not encrypted or owner-only. Write SQL and
 values remain visible in Octra transaction history.
+Public reads include `backup_chunk`, so public access permits reconstruction of
+the complete SQLite file rather than only selected queries.
 
 Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
 then local `wallet.json` candidates. Wallet JSON may use the official Octra

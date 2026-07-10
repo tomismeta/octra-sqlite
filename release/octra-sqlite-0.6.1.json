@@ -122,17 +122,19 @@
     "historical_wasm_catalog_mode": "metadata_only",
     "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
     "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
-    "rollback_refuses_post_upgrade_writes_by_default": true
+    "rollback_refuses_post_upgrade_writes_by_default": true,
+    "owner_sequence_source": "auth_info when available with storage_info fallback"
   },
   "verification": {
     "local_wasm_behavior_tests": 16,
     "unbounded_query_budget_proven": true,
     "unbounded_exec_budget_proven": true,
+    "upgrade_owner_sequence_fallback_proven": true,
     "wasm_audit": "passed",
     "devnet": "pending"
   },
   "client_release": {
-    "notes": "Hardening release candidate. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
+    "notes": "Hardening release candidate. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, durable upgrade owner-sequence comparison, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
   },
   "status": "Unreleased 0.6.1 candidate; local proof complete and devnet proof pending"
 }

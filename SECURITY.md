@@ -33,6 +33,10 @@ part of the signed Octra transaction message and remain visible in transaction
 history. `exec` keeps full SQL out of the optional SQL event, but it cannot make
 the containing transaction private.
 
+Public-read mode also exposes `backup_chunk`. Anyone who can query a public
+database can reconstruct its complete SQLite file; public means full logical
+export, not only access to selected application queries.
+
 Do not put secrets or confidential records in a Circle database unless Octra
 adds a documented encryption and access-control layer that covers this exact
 execution path.
@@ -43,6 +47,10 @@ The Circle program applies deterministic SQLite progress-handler budgets to
 queries and writes. These bound SQLite virtual-machine work even when a query
 produces few rows. Runtime-wide WASM fuel or time metering remains an Octra
 protocol responsibility; the contract cannot meter work outside SQLite.
+
+One write can stage at most 1,024 distinct dirty SQLite pages. Broad updates,
+index builds, or other write-heavy statements can reach that transaction limit
+before the database reaches its total file-size limit.
 
 Local config, backups, upgrade bundles, wallet files written by the CLI, and
 RPC traces are created with owner-only permissions on Unix. Trace creation

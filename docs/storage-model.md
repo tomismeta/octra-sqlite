@@ -33,6 +33,11 @@ but new writes cannot grow beyond the current 8069-page stable layout. This
 capacity assumes the Circle's stable storage is dedicated to this VFS; unrelated
 keys reduce the space available to SQLite.
 
+The file-size and dirty-page limits are independent. A single statement that
+changes more than 1024 distinct pages fails even when the database is well below
+its total file-size ceiling. Bulk updates should use deterministic primary-key
+ranges so each accepted `exec` stays bounded and retryable.
+
 ## Write Path
 
 `exec` opens SQLite through the page VFS, starts `begin immediate`, runs the user

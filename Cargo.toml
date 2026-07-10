@@ -27,6 +27,7 @@ include = [
     "/docs/library-boundary.md",
     "/docs/operations.md",
     "/docs/public-surface.md",
+    "/docs/roadmap.md",
     "/docs/spec/**",
     "/docs/storage-model.md",
     "/docs/toolchain.md",

@@ -589,16 +589,22 @@ fn upgrade_snapshot(session: &Session) -> Result<UpgradeSnapshot> {
         .to_string();
     let code_bytes = program_info.get("code_bytes").and_then(json_u64_relaxed);
     let storage_generation = storage.get("generation").and_then(json_u64_relaxed);
+    let owner_sequence = upgrade_owner_sequence(&auth, &storage);
     Ok(UpgradeSnapshot {
         program_info,
         storage,
-        owner_sequence: auth.owner_sequence,
+        owner_sequence,
         auth,
         sqlite_version,
         code_hash,
         code_bytes,
         storage_generation,
     })
+}
+
+fn upgrade_owner_sequence(auth: &AuthInfo, storage: &Value) -> Option<u64> {
+    auth.owner_sequence
+        .or_else(|| storage.get("owner_sequence").and_then(json_u64_relaxed))
 }
 
 fn ensure_upgrade_owner(session: &Session, snapshot: &UpgradeSnapshot) -> Result<()> {
@@ -1639,6 +1645,25 @@ mod tests {
         assert_eq!(
             clean_rollback_state(&snapshot(Some(1), Some(1)), &snapshot(Some(1), None)),
             None
+        );
+    }
+
+    #[test]
+    fn owner_sequence_falls_back_to_historical_storage_info() {
+        let mut auth = AuthInfo {
+            configured: true,
+            db_id: "00".repeat(32),
+            owner_pubkey: Some("00".repeat(32)),
+            owner_sequence: None,
+        };
+        assert_eq!(
+            upgrade_owner_sequence(&auth, &json!({"owner_sequence": 41})),
+            Some(41)
+        );
+        auth.owner_sequence = Some(42);
+        assert_eq!(
+            upgrade_owner_sequence(&auth, &json!({"owner_sequence": 41})),
+            Some(42)
         );
     }
 

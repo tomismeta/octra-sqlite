@@ -37,6 +37,10 @@ read data intended to be public. Writes still use owner-signed OSW1 calls. For
 public apps, prefer application-level rate limits or query allowlists at the app
 edge; the database Circle is a public SQL read surface.
 
+Public mode also includes the read-only `backup_chunk` method. A walletless
+reader can reconstruct the complete SQLite file, so public mode must be treated
+as a full database export surface.
+
 Saved database metadata carries the read mode. Raw `oct://` targets detect the
 Octra read surface from Circle metadata:
 
@@ -194,6 +198,14 @@ and date only:
   upgrade.json
 ```
 
+## Foreign Keys
+
+SQLite foreign-key enforcement is currently off. The Circle authorizer rejects
+user `PRAGMA` statements, and restore skips dump wrappers such as
+`PRAGMA foreign_keys=OFF`; applications must not assume declared foreign-key
+constraints are enforced. Changing this requires a deliberate engine policy,
+not a restore-time toggle.
+
 ## Large Restore
 
 Prefer `restore` for SQL dumps, mirrors, and backfills:
@@ -253,6 +265,8 @@ Current operational limits:
 - The current generation-manifest VFS supports 8,069 pages of 4,096 bytes, or
   33.05 MB of SQLite file data, within Octra's 33.55 MB stable-storage cap when
   the Circle storage is dedicated to the SQLite VFS.
+- One `exec` can dirty at most 1,024 distinct pages. Chunk broad updates by a
+  stable primary-key range and verify each accepted transaction.
 - Large result payloads can fail with `response_too_large`; select fewer columns
   or add a narrower `where` / `limit`.
 - Large scripts are split into multiple signed writes.
