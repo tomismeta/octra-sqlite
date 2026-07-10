@@ -55,16 +55,16 @@ The current bundled Circle WASM artifact is:
 compiler Homebrew clang version 22.1.8
 sqlite_sha256 d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86
 sqlite3_c_upstream_sha3_256 28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7
-code_bytes 610218
-code_hash 3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051
+code_bytes 611456
+code_hash c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.6.0.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.6.1.json` and checked by
 `octra-sqlite status`.
 
 The release manifest JSON is also the source of truth for the small historical
-metadata catalog of blessed pre-0.6.0 Circle WASM epochs: release range, byte
+metadata catalog of blessed previous Circle WASM epochs: release range, byte
 length, base WASM SHA-256, and GitHub source URL. The crate does not bundle
 those old WASM bytes. `upgrade` uses the catalog only to guide operators toward
 the correct previous artifact; actual rollback bytes still come from chain

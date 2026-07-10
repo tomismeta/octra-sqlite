@@ -1,6 +1,8 @@
 use super::error::Result;
 #[cfg(feature = "http")]
 use super::error::{Error, ErrorKind};
+#[cfg(feature = "http")]
+use crate::private_file::create_new;
 use serde_json::Value;
 #[cfg(feature = "http")]
 use serde_json::json;
@@ -8,7 +10,6 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 #[cfg(feature = "http")]
 use std::{
-    fs::OpenOptions,
     io::Write,
     path::Path,
     sync::{Arc, Mutex},
@@ -83,17 +84,12 @@ impl HttpTransport {
                 )
             })?;
         }
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(path)
-            .map_err(|error| {
-                Error::with_kind(
-                    ErrorKind::Io,
-                    format!("opening RPC trace {}: {error}", path.display()),
-                )
-            })?;
+        let file = create_new(path).map_err(|error| {
+            Error::with_kind(
+                ErrorKind::Io,
+                format!("opening RPC trace {}: {error}", path.display()),
+            )
+        })?;
         transport.trace = Some(Arc::new(Mutex::new(RpcTraceWriter {
             file,
             sequence: 0,
@@ -491,6 +487,36 @@ mod tests {
             Some("real rpc error"),
         );
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn trace_writer_refuses_to_replace_an_existing_file() {
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-rpc-trace-existing-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "keep\n").unwrap();
+        assert!(HttpTransport::with_trace_jsonl(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "keep\n");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn trace_writer_creates_private_files() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-rpc-trace-private-{}.jsonl",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let _transport = HttpTransport::with_trace_jsonl(&path).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         let _ = std::fs::remove_file(path);
     }
 

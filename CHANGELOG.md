@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.1
+
+- Added deterministic SQLite progress-handler budgets: 5,000,000 VDBE steps
+  per query and 25,000,000 per exec, with stable limit errors and rollback on
+  exhausted writes.
+- Corrected current generation-manifest capacity to 8,069 pages and 33.05 MB
+  of SQLite file data under Octra's 33.55 MB key-plus-value storage cap, while
+  retaining 8,192 legacy VFS read slots. Upgrade preflight refuses a legacy
+  database that is already larger than the target engine can write.
+- Made config parsing, nonce decoding, receipt confirmation, query row counts,
+  and OSR1 decoding fail closed; OSR1 now rejects oversized counts, invalid
+  UTF-8, non-finite reals, and allocation/offset overflow.
+- Routed public `ProgramInfo` reads through the unsigned Octra RPC and made
+  explicit URI read modes take precedence over saved metadata.
+- Removed the ambient WASM deployment override. Normal upgrades now use only
+  the integrity-checked embedded release artifact; deliberate custom deploys
+  require explicit command flags.
+- Made upgrade bundles durable before chain submission with atomic
+  `prepared -> applied -> complete` manifest transitions.
+- Replaced fixed smoke tables with unique collision-safe tables; verify always
+  attempts a confirmed cleanup and reports cleanup failure.
+- Made config, backup, upgrade-manifest, and RPC-trace files private and atomic
+  where applicable; RPC tracing now refuses to overwrite an existing file.
+- Made sealed-read and write-transaction visibility explicit in human output,
+  manifests, `limits --json`, README, security guidance, and operations docs.
+- Kept SQLite 3.53.3, OSR1/OSW1 wire formats, owner-write authorization, root
+  Rust API, and the eight-import/five-export WASM surface unchanged.
+
 ## 0.6.0
 
 - Rebuilt the bundled Circle WASM with SQLite 3.53.3.

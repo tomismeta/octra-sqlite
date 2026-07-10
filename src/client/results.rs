@@ -37,11 +37,12 @@ impl QueryResult {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        let row_count = value
-            .get("row_count")
-            .and_then(Value::as_u64)
-            .map(|count| count as usize)
-            .unwrap_or(rows.len());
+        let row_count = match value.get("row_count").and_then(Value::as_u64) {
+            Some(count) => usize::try_from(count).map_err(|_| {
+                Error::with_kind(ErrorKind::Decode, "query result row_count exceeds usize")
+            })?,
+            None => rows.len(),
+        };
         if row_count != rows.len() {
             return Err(Error::with_kind(
                 ErrorKind::Decode,
@@ -160,7 +161,7 @@ pub struct AuthInfo {
 
 pub(super) fn ensure_receipt_success(receipt: &Value) -> Result<()> {
     let sql_error = event_values(receipt, "octra.sqlite.error");
-    let failed = receipt.get("success").and_then(Value::as_bool) == Some(false)
+    let failed = receipt.get("success").and_then(Value::as_bool) != Some(true)
         || receipt.get("error").is_some_and(|error| !error.is_null())
         || sql_error.is_some();
     if failed {
@@ -259,5 +260,11 @@ mod tests {
                 .to_string()
                 .contains("database error (sqlite_exec_failed): no such table: correction")
         );
+    }
+
+    #[test]
+    fn receipt_without_explicit_success_fails_closed() {
+        let error = ensure_receipt_success(&json!({"events": []})).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Receipt);
     }
 }

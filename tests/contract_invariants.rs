@@ -1,4 +1,5 @@
 const CONTRACT: &str = include_str!("../circle/source/octra_sqlite_circle.c");
+const BUILD_WASM: &str = include_str!("../scripts/build-wasm.sh");
 
 #[test]
 fn octra_host_import_surface_stays_minimal() {
@@ -71,6 +72,14 @@ fn query_tail_detection_uses_sqlite_prepare_not_a_comment_parser() {
             .count()
             >= 1
     );
+}
+
+#[test]
+fn sqlite_execution_budgets_cannot_be_compiled_out() {
+    assert!(!BUILD_WASM.contains("SQLITE_OMIT_PROGRESS_CALLBACK"));
+    assert!(CONTRACT.contains("sqlite3_progress_handler"));
+    assert!(CONTRACT.contains("query_budget_exceeded"));
+    assert!(CONTRACT.contains("exec_budget_exceeded"));
 }
 
 fn define_value(name: &str) -> &'static str {

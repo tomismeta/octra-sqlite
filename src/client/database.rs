@@ -322,6 +322,11 @@ mod tests {
                         vector["payload_b64"].as_str().unwrap()
                     )))
                 }
+                "octra_circleProgramInfo" | "octra_circleProgramInfoAuth" => Ok(json!({
+                    "version": "wasm-v1",
+                    "code_hash": "abc",
+                    "code_bytes": 123,
+                })),
                 "octra_balance" => Ok(json!({ "pending_nonce": 41 })),
                 "octra_submit" => Ok(json!({ "tx_hash": "abc123" })),
                 "contract_receipt" => Ok(self.receipt.lock().unwrap().clone()),
@@ -415,6 +420,47 @@ mod tests {
         assert_eq!(
             calls.lock().unwrap().as_slice(),
             ["octra_circleInfo", "octra_circleView"]
+        );
+    }
+
+    #[test]
+    fn public_program_info_uses_unsigned_rpc_without_wallet() {
+        let transport = MockTransport::default();
+        let calls = transport.calls.clone();
+        let db = Database::open_with_transport(
+            ClientOptions {
+                target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+                rpc: Some("mock://rpc".to_string()),
+                ..ClientOptions::default()
+            },
+            transport,
+        )
+        .unwrap();
+        let info = db.program_info().unwrap();
+        assert_eq!(info.code_hash.as_deref(), Some("abc"));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["octra_circleProgramInfo"]
+        );
+    }
+
+    #[test]
+    fn auto_program_info_detects_public_circle_without_wallet() {
+        let transport = MockTransport::public_read_circle();
+        let calls = transport.calls.clone();
+        let db = Database::open_with_transport(
+            ClientOptions {
+                target: Some("oct://devnet/octABC".to_string()),
+                rpc: Some("mock://rpc".to_string()),
+                ..ClientOptions::default()
+            },
+            transport,
+        )
+        .unwrap();
+        assert_eq!(db.program_info().unwrap().code_hash.as_deref(), Some("abc"));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["octra_circleInfo", "octra_circleProgramInfo"]
         );
     }
 

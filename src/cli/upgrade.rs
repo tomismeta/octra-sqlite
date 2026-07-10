@@ -1,10 +1,5 @@
 use super::*;
 
-pub(super) const UPGRADE_WRITE_SMOKE_SQL: &str =
-    "create table if not exists octra_sqlite_upgrade_smoke(id integer primary key, checked_at text not null);
-insert into octra_sqlite_upgrade_smoke(checked_at) values (datetime('now'));
-drop table octra_sqlite_upgrade_smoke;";
-
 struct UpgradeSnapshot {
     program_info: Value,
     storage: Value,
@@ -63,6 +58,9 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     let target_wasm = prepare_upgrade_wasm(&before.auth)?;
 
     let already_current = before.code_hash == target_wasm.hash;
+    if !already_current {
+        ensure_target_storage_capacity(&before.storage)?;
+    }
     let rollback = if already_current {
         None
     } else {
@@ -136,7 +134,7 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     create_private_dir(&bundle_paths.bundle_dir)?;
     if let Some(recovered) = rollback.as_ref() {
         let path = bundle_paths.previous_wasm.clone();
-        write_private_bytes(&path, &recovered.bytes, true)?;
+        write_private_bytes(&path, &recovered.bytes)?;
         previous_wasm_path = Some(path);
     }
 
@@ -148,20 +146,92 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     let guard = upgrade_snapshot(&session).context("reading database state after backup")?;
     ensure_upgrade_guard_unchanged(&before, &guard, "pre-upgrade")?;
 
-    let update = submit_program_update(&session, &target_wasm.bytes, &args.ou, &target_wasm.hash)?;
-    let after = upgrade_snapshot(&session).context("reading database state after upgrade")?;
-    ensure_sqlite_version(&after, SQLITE_VERSION)?;
-    let clean_rollback = clean_rollback_state(&guard, &after);
+    let manifest_file = bundle_paths.manifest.clone();
+    let manifest_created_at = unix_seconds();
+    let prepared_manifest = prepared_upgrade_manifest_json(PreparedUpgradeManifestInput {
+        session: &session,
+        before: &before,
+        target_wasm: &target_wasm,
+        rollback: rollback.as_ref(),
+        previous_wasm_path: previous_wasm_path.as_deref(),
+        backup: &backup_json,
+        guard: &guard,
+        created_at_unix: manifest_created_at,
+    });
+    create_private_json(&manifest_file, &prepared_manifest)?;
+
+    let update = submit_program_update(&session, &target_wasm.bytes, &args.ou, &target_wasm.hash)
+        .with_context(|| {
+            format!(
+                "program update submission or confirmation failed; chain state may have changed; prepared recovery manifest is at {}",
+                manifest_file.display()
+            )
+        })?;
+    let after = upgrade_snapshot(&session).with_context(|| {
+        format!(
+            "program update may be applied; could not read post-upgrade state; prepared recovery manifest is at {}",
+            manifest_file.display()
+        )
+    })?;
+    ensure_sqlite_version(&after, SQLITE_VERSION).with_context(|| {
+        format!(
+            "program update is applied but verification failed; prepared recovery manifest is at {}",
+            manifest_file.display()
+        )
+    })?;
+    let applied_clean_rollback = clean_rollback_state(&guard, &after);
+
+    let applied_manifest = upgrade_manifest_json(UpgradeManifestInput {
+        status: "applied",
+        created_at_unix: manifest_created_at,
+        session: &session,
+        before: &before,
+        after: &after,
+        target_wasm: &target_wasm,
+        rollback: rollback.as_ref(),
+        previous_wasm_path: previous_wasm_path.as_deref(),
+        backup: &backup_json,
+        update: &update,
+        clean_rollback: applied_clean_rollback,
+        write_smoke: None,
+        saved_metadata: &[],
+    });
+    replace_private_json(&manifest_file, &applied_manifest).with_context(|| {
+        format!(
+            "program update is applied; could not record applied state; prepared recovery manifest remains at {}",
+            manifest_file.display()
+        )
+    })?;
 
     let write_smoke = if args.write_smoke {
+        let table = smoke_table_name("upgrade", &session);
+        let sql = upgrade_write_smoke_sql(&table);
         let result = with_explorer(
-            exec_sql(&session, UPGRADE_WRITE_SMOKE_SQL, false)?,
+            exec_sql(&session, &sql, false).with_context(|| {
+                format!(
+                    "program update is applied; write smoke failed; recovery manifest remains at {}",
+                    manifest_file.display()
+                )
+            })?,
             &session,
         );
         Some(write_envelope(&session, result, Some(3)))
     } else {
         None
     };
+    let final_after = if write_smoke.is_some() {
+        let snapshot = upgrade_snapshot(&session).with_context(|| {
+            format!(
+                "program update is applied; could not read state after write smoke; recovery manifest remains at {}",
+                manifest_file.display()
+            )
+        })?;
+        ensure_sqlite_version(&snapshot, SQLITE_VERSION)?;
+        snapshot
+    } else {
+        after
+    };
+    let clean_rollback = clean_rollback_state(&guard, &final_after);
 
     let saved_metadata = save_database_metadata(
         &session,
@@ -170,12 +240,20 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         &target_wasm.hash,
         target_wasm.bytes.len(),
         update.tx_hash.clone(),
-    )?;
+    )
+    .with_context(|| {
+        format!(
+            "program update is applied; local database metadata was not finalized; recovery manifest remains at {}",
+            manifest_file.display()
+        )
+    })?;
 
     let manifest = upgrade_manifest_json(UpgradeManifestInput {
+        status: "complete",
+        created_at_unix: manifest_created_at,
         session: &session,
         before: &before,
-        after: &after,
+        after: &final_after,
         target_wasm: &target_wasm,
         rollback: rollback.as_ref(),
         previous_wasm_path: previous_wasm_path.as_deref(),
@@ -185,13 +263,17 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         write_smoke: write_smoke.as_ref(),
         saved_metadata: &saved_metadata,
     });
-    let manifest_file = bundle_paths.manifest.clone();
-    write_private_json(&manifest_file, &manifest, true)?;
+    replace_private_json(&manifest_file, &manifest).with_context(|| {
+        format!(
+            "program update is applied; the applied recovery manifest remains at {}",
+            manifest_file.display()
+        )
+    })?;
 
     let mut envelope = upgrade_result_json(UpgradeResultInput {
         session: &session,
         before: &before,
-        after: &after,
+        after: &final_after,
         target_wasm: &target_wasm,
         rollback: rollback.as_ref(),
         backup: &backup_json,
@@ -240,7 +322,17 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     Ok(())
 }
 
+fn upgrade_write_smoke_sql(table: &str) -> String {
+    format!(
+        "create table {table}(id integer primary key, checked_at text not null);\n\
+         insert into {table}(checked_at) values (datetime('now'));\n\
+         drop table {table};"
+    )
+}
+
 struct UpgradeManifestInput<'a> {
+    status: &'a str,
+    created_at_unix: u64,
     session: &'a Session,
     before: &'a UpgradeSnapshot,
     after: &'a UpgradeSnapshot,
@@ -252,6 +344,17 @@ struct UpgradeManifestInput<'a> {
     clean_rollback: Option<bool>,
     write_smoke: Option<&'a Value>,
     saved_metadata: &'a [String],
+}
+
+struct PreparedUpgradeManifestInput<'a> {
+    session: &'a Session,
+    before: &'a UpgradeSnapshot,
+    target_wasm: &'a PreparedUpgradeWasm,
+    rollback: Option<&'a RecoveredWasm>,
+    previous_wasm_path: Option<&'a Path>,
+    backup: &'a Value,
+    guard: &'a UpgradeSnapshot,
+    created_at_unix: u64,
 }
 
 struct UpgradeResultInput<'a> {
@@ -450,7 +553,7 @@ fn resolve_upgrade_database_arg(args: &mut UpgradeArgs) -> Result<String> {
     if args.yes || args.json || !io::stdin().is_terminal() {
         bail!("upgrade requires DATABASE for non-interactive use");
     }
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     print_title("Upgrade");
     print_section("Database");
     if let Some(default) = config.default_database.as_deref() {
@@ -518,6 +621,23 @@ fn ensure_upgrade_owner(session: &Session, snapshot: &UpgradeSnapshot) -> Result
     let wallet_pubkey = hex::encode(session.intent_public_key()?);
     if owner_pubkey != wallet_pubkey {
         bail!("active wallet does not match the database OSW1 owner public key");
+    }
+    Ok(())
+}
+
+fn ensure_target_storage_capacity(storage: &Value) -> Result<()> {
+    let page_count = storage
+        .get("page_count")
+        .and_then(json_u64_relaxed)
+        .ok_or_else(|| anyhow!("storage_info missing page_count; refusing upgrade"))?;
+    let file_bytes = storage
+        .get("file_bytes")
+        .and_then(json_u64_relaxed)
+        .ok_or_else(|| anyhow!("storage_info missing file_bytes; refusing upgrade"))?;
+    if page_count > MAX_DB_PAGES as u64 || file_bytes > MAX_DB_FILE_BYTES as u64 {
+        bail!(
+            "database exceeds the target engine's writable capacity of {MAX_DB_PAGES} pages ({MAX_DB_FILE_BYTES} bytes); back it up and reduce or migrate it before upgrading"
+        );
     }
     Ok(())
 }
@@ -730,7 +850,7 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
 }
 
 fn local_program_tx_candidates(session: &Session) -> Result<Vec<String>> {
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let uri = canonical_database_uri(session.target());
     let mut candidates = Vec::new();
     for metadata in config.database_metadata.values().filter(|metadata| {
@@ -903,33 +1023,24 @@ fn create_private_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_private_bytes(path: &Path, bytes: &[u8], create_new: bool) -> Result<()> {
+fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent() {
         create_private_dir(parent)?;
     }
-    let mut options = OpenOptions::new();
-    options.write(true);
-    if create_new {
-        options.create_new(true);
-    } else {
-        options.create(true).truncate(true);
-    }
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options
-        .open(path)
+    crate::private_file::write_new(path, bytes)
         .with_context(|| format!("writing {}", path.display()))?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    #[cfg(unix)]
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("restricting {}", path.display()))?;
     Ok(())
 }
 
-fn write_private_json(path: &Path, value: &Value, create_new: bool) -> Result<()> {
+fn create_private_json(path: &Path, value: &Value) -> Result<()> {
     let text = serde_json::to_string_pretty(value)? + "\n";
-    write_private_bytes(path, text.as_bytes(), create_new)
+    write_private_bytes(path, text.as_bytes())
+}
+
+fn replace_private_json(path: &Path, value: &Value) -> Result<()> {
+    let text = serde_json::to_string_pretty(value)? + "\n";
+    crate::private_file::atomic_replace(path, text.as_bytes())
+        .with_context(|| format!("replacing {} atomically", path.display()))
 }
 
 fn take_upgrade_backup(session: &Session, path: &Path, require_integrity: bool) -> Result<Value> {
@@ -1137,7 +1248,9 @@ fn upgrade_result_json(input: UpgradeResultInput<'_>) -> Value {
 fn upgrade_manifest_json(input: UpgradeManifestInput<'_>) -> Value {
     json!({
         "schema": UPGRADE_BUNDLE_SCHEMA,
-        "created_at_unix": unix_seconds(),
+        "status": input.status,
+        "created_at_unix": input.created_at_unix,
+        "status_updated_at_unix": unix_seconds(),
         "cli_version": env!("CARGO_PKG_VERSION"),
         "database": database_identity(input.session),
         "from": snapshot_program_json(input.before),
@@ -1158,6 +1271,37 @@ fn upgrade_manifest_json(input: UpgradeManifestInput<'_>) -> Value {
             "from_code_hash": input.before.code_hash,
             "to_code_hash": input.after.code_hash,
             "tx_hash": input.update.tx_hash,
+            "note": "Replay byte identity is per deployed engine epoch; keep this boundary with backups and traces."
+        }
+    })
+}
+
+fn prepared_upgrade_manifest_json(input: PreparedUpgradeManifestInput<'_>) -> Value {
+    json!({
+        "schema": UPGRADE_BUNDLE_SCHEMA,
+        "status": "prepared",
+        "created_at_unix": input.created_at_unix,
+        "status_updated_at_unix": input.created_at_unix,
+        "cli_version": env!("CARGO_PKG_VERSION"),
+        "database": database_identity(input.session),
+        "from": snapshot_program_json(input.before),
+        "to": target_program_json(input.target_wasm),
+        "target": target_program_json(input.target_wasm),
+        "backup": input.backup,
+        "rollback": rollback_json(
+            input.rollback,
+            input.previous_wasm_path,
+            input.guard,
+            None,
+        ),
+        "transaction": Value::Null,
+        "write_smoke": Value::Null,
+        "metadata_saved": [],
+        "epoch": {
+            "boundary": "circle_program_update",
+            "from_code_hash": input.before.code_hash,
+            "to_code_hash": input.target_wasm.hash,
+            "tx_hash": Value::Null,
             "note": "Replay byte identity is per deployed engine epoch; keep this boundary with backups and traces."
         }
     })
@@ -1504,5 +1648,70 @@ mod tests {
         assert_eq!(rollback["relevant"], false);
         assert_eq!(rollback["available"], false);
         assert_eq!(rollback["reason"], "already_current");
+    }
+
+    #[test]
+    fn upgrade_write_smoke_uses_a_new_table_and_cleans_it_up() {
+        let sql = upgrade_write_smoke_sql("octra_sqlite_upgrade_0123");
+        assert!(sql.contains("create table octra_sqlite_upgrade_0123"));
+        assert!(sql.contains("drop table octra_sqlite_upgrade_0123"));
+        assert!(!sql.contains("if not exists"));
+    }
+
+    #[test]
+    fn upgrade_rejects_a_database_larger_than_the_target_write_capacity() {
+        ensure_target_storage_capacity(&json!({
+            "page_count": MAX_DB_PAGES,
+            "file_bytes": MAX_DB_FILE_BYTES,
+        }))
+        .unwrap();
+        let error = ensure_target_storage_capacity(&json!({
+            "page_count": MAX_DB_PAGES + 1,
+            "file_bytes": MAX_DB_FILE_BYTES + SQLITE_PAGE_BYTES,
+        }))
+        .unwrap_err();
+        assert!(error.to_string().contains("reduce or migrate"));
+        assert!(ensure_target_storage_capacity(&json!({})).is_err());
+    }
+
+    #[test]
+    fn upgrade_manifest_is_durable_before_program_submission() {
+        let source = include_str!("upgrade.rs");
+        let prepared = source.find("let prepared_manifest =").unwrap();
+        let persisted = source
+            .find("create_private_json(&manifest_file, &prepared_manifest)")
+            .unwrap();
+        let submitted = source.find("let update = submit_program_update").unwrap();
+        let applied = source.find("let applied_manifest =").unwrap();
+        let smoke = source
+            .find("let write_smoke = if args.write_smoke")
+            .unwrap();
+        assert!(prepared < persisted && persisted < submitted);
+        assert!(submitted < applied && applied < smoke);
+    }
+
+    #[test]
+    fn private_json_replacement_is_atomic_and_private() {
+        let root = env::temp_dir().join(format!(
+            "octra-sqlite-manifest-write-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        create_private_dir(&root).unwrap();
+        let path = root.join("upgrade.json");
+        create_private_json(&path, &json!({"status": "prepared"})).unwrap();
+        replace_private_json(&path, &json!({"status": "applied"})).unwrap();
+        let value: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(value["status"], "applied");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }

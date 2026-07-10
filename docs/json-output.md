@@ -89,10 +89,16 @@ Produced by `new DATABASE --json`.
       "resource_mode": "sealed_read"
     }
   },
+  "confidentiality": {
+    "encrypted": false,
+    "read_access": "authenticated_wallet",
+    "read_owner_only": false,
+    "write_sql_visible_in_transaction_history": true
+  },
   "program": {
     "runtime": "wasm_v1",
     "wasm_hash": "hex...",
-    "wasm_bytes": 609354
+    "wasm_bytes": 611456
   },
   "initializer": {
     "present": true,
@@ -247,7 +253,7 @@ and `upgrade rollback BUNDLE --json`.
   "type": "upgrade",
   "schema": "octra-sqlite.cli.v1",
   "mode": "applied",
-  "status": "upgrade_needed",
+  "status": "applied",
   "upgrade_required": true,
   "dry_run": false,
   "database": {},
@@ -304,6 +310,13 @@ manifest uses schema `octra-sqlite.upgrade.bundle.v1` and records the engine
 epoch boundary: previous code hash, new code hash, update transaction, backup
 metadata, and rollback guard. The JSON output never includes private keys or
 raw wallet JSON.
+
+The on-disk bundle manifest is written before chain submission with
+`status: "prepared"`, atomically replaced with `status: "applied"` after the
+new program is verified, and finalized as `status: "complete"` after optional
+smoke and local metadata work. A `prepared` manifest already contains the
+target hash and rollback guard, so it remains usable if local finalization is
+interrupted after the chain changes.
 
 `verification.storage_generation_unchanged` and
 `verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`
@@ -364,8 +377,11 @@ and derived Octra address. They do not print private keys, signatures, or raw
 wallet JSON.
 
 `limits --json` is the compact capability surface for automation. It includes
-CLI/SQLite/schema versions, SQL byte limits, result row/response limits, restore
-behavior, read/write auth facts, and available trace modes.
+CLI/SQLite/schema versions, SQL byte and VDBE work limits, result row/response
+limits, exact VFS capacity, restore behavior, read/write auth facts,
+confidentiality facts, and available trace modes. In particular,
+`confidentiality.encrypted` and `confidentiality.sealed_owner_only` are `false`,
+and write SQL is marked visible in transaction history.
 
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery
@@ -381,6 +397,9 @@ octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary
 ```
 
 Trace mode defaults to `full`. Available modes:
+
+Trace files are created privately on Unix and the path must not already exist;
+the CLI refuses to truncate an existing file.
 
 | Mode | Contents |
 | --- | --- |

@@ -1,0 +1,138 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.6.1",
+  "circle_program_version": "5",
+  "network": "devnet",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 611456,
+    "sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef"
+  },
+  "personalization": {
+    "owner_pubkey_offset": 605192,
+    "owner_pubkey_bytes": 32,
+    "db_id_offset": 605224,
+    "db_id_bytes": 32
+  },
+  "historical_wasm_catalog": [
+    {
+      "releases": "0.1.0-0.2.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607640,
+      "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
+    },
+    {
+      "releases": "0.2.1",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.1/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607800,
+      "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
+    },
+    {
+      "releases": "0.3.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609475,
+      "sha256": "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea"
+    },
+    {
+      "releases": "0.3.1-0.3.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609404,
+      "sha256": "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b"
+    },
+    {
+      "releases": "0.3.3-0.5.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.5.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609354,
+      "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+    },
+    {
+      "releases": "0.6.0",
+      "sqlite_version": "3.53.3",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.6.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 610218,
+      "sha256": "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051"
+    }
+  ],
+  "sqlite": {
+    "version": "3.53.3",
+    "source_path": "vendor/sqlite/3.53.3/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530300",
+    "source_sha256": "d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86",
+    "upstream_sqlite3_c_sha3_256": "28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8069,
+    "max_file_bytes": 33050624,
+    "circle_stable_storage_limit_bytes": 33554432,
+    "accounting": "Circle stable storage counts key and value bytes",
+    "assumes_dedicated_circle_storage": true,
+    "legacy_vfs_page_slots": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "execution": {
+    "sqlite_progress_interval_vdbe_steps": 1000,
+    "max_query_vdbe_steps": 5000000,
+    "max_exec_vdbe_steps": 25000000,
+    "query_limit_error": "query_budget_exceeded",
+    "exec_limit_error": "exec_budget_exceeded",
+    "octra_host_fuel": "protocol_dependency"
+  },
+  "confidentiality": {
+    "encrypted": false,
+    "sealed_read_access": "authenticated_wallet",
+    "sealed_owner_only": false,
+    "write_sql_visible_in_transaction_history": true
+  },
+  "upgrade_workflow": {
+    "command": "octra-sqlite upgrade",
+    "bundle_schema": "octra-sqlite.upgrade.bundle.v1",
+    "manifest_states": ["prepared", "applied", "complete"],
+    "target_wasm_source": "embedded release artifact unless --wasm is explicitly supported by the selected command",
+    "historical_wasm_catalog_mode": "metadata_only",
+    "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
+    "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
+    "rollback_refuses_post_upgrade_writes_by_default": true
+  },
+  "verification": {
+    "local_wasm_behavior_tests": 16,
+    "unbounded_query_budget_proven": true,
+    "unbounded_exec_budget_proven": true,
+    "wasm_audit": "passed",
+    "devnet": "pending"
+  },
+  "client_release": {
+    "notes": "Hardening release candidate. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
+  },
+  "status": "Unreleased 0.6.1 candidate; local proof complete and devnet proof pending"
+}

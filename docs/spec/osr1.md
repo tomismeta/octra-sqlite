@@ -36,9 +36,18 @@ Clients must reject:
 
 - bad magic
 - truncated integers, lengths, names, or cells
+- column names or `TEXT` cells that are not valid UTF-8
+- non-finite `REAL` values, which cannot be represented by JSON clients
 - unknown cell tags
 - trailing bytes after the final cell
 - invalid base64 in the `OSR1:` envelope
+- envelopes over the Circle response limit, more than 128 columns, or more
+  than 512 rows
+
+Implementations should validate counts before reserving memory and use checked
+offset arithmetic. The Octra Circle response envelope is capped at 65526 bytes;
+the `OSR1:` prefix and base64 expansion make the maximum decoded payload
+smaller than that envelope.
 
 Golden vectors live in `tests/fixtures/osr1/`. Every supported client
 implementation should decode those vectors byte-for-byte before claiming OSR1

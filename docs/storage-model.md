@@ -13,13 +13,25 @@ small SQLite VFS whose durable file is Circle key-value storage.
   `octra.sqlite.vfs.v1.gen.<16-hex-generation>.manifest`
 - Page size: `4096`
 - Storage label: `circle_key_value_page_vfs`
-- Max database pages in `v0.1.0`: `8192`
-- Max dirty pages per `exec` in `v0.1.0`: `1024`
+- Current writable database limit: `8069` pages
+- Current SQLite file limit: `33050624` bytes (`33.05 MB`)
+- Octra stable-storage limit: `33554432` key-plus-value bytes (`33.55 MB`)
+- Legacy VFS read slots: `8192` pages
+- Max dirty pages per `exec`: `1024`
 
 The metadata record stores the durable main-file size, active generation, and
 last accepted owner write sequence. Pages are always stored as fixed 4096-byte
 values. SQLite temp and journal files are memory-backed inside a single
 invocation; only the main database file is durable.
+
+The current limit accounts for the generation-page key, 4096-byte page value,
+8-byte manifest entry, metadata record, and manifest key. Each live page costs
+4158 stable-storage bytes in the current layout; fixed metadata costs 109
+bytes. Therefore `floor((33554432 - 109) / 4158) = 8069` pages. The 8192-slot
+internal arrays remain so an unusually large legacy layout can still be read,
+but new writes cannot grow beyond the current 8069-page stable layout. This
+capacity assumes the Circle's stable storage is dedicated to this VFS; unrelated
+keys reduce the space available to SQLite.
 
 ## Write Path
 
@@ -27,6 +39,10 @@ invocation; only the main database file is durable.
 SQL under the SQLite authorizer, commits inside SQLite, then flushes dirty pages
 to Circle key-value storage. The response reports whether pages were persisted,
 the dirty-page count, the file size, and SQLite's change count.
+
+User SQL is capped at 25,000,000 deterministic SQLite VDBE steps through
+`sqlite3_progress_handler`. If exhausted, the transaction rolls back with
+`exec_budget_exceeded` before any dirty pages are promoted.
 
 The dirty-page buffer stays in the contract. It keeps writes staged inside the
 invocation until SQLite has accepted the transaction. After SQLite commits, the
@@ -56,8 +72,8 @@ surface area with `sqlite3_set_authorizer`, and returns bounded JSON rows.
 The legacy JSON codec intentionally supports only `NULL`, `INTEGER`, and
 `TEXT`. `REAL` and `BLOB` results fail closed there.
 
-The deployed `v0.1.0` program also provides `query_typed` and `schema_typed`.
-These methods return an `OSR1:<base64>` string. The decoded payload is:
+The typed `query_typed` and `schema_typed` methods return an `OSR1:<base64>`
+string. The decoded payload is:
 
 ```text
 OSR1
@@ -81,6 +97,10 @@ Cell tags are:
 
 This keeps JSON escaping and presentation out of the contract for clients that
 use the typed path. JSON methods remain as a compatibility layer.
+
+Queries are capped at 5,000,000 deterministic SQLite VDBE steps and fail with
+`query_budget_exceeded`. The row, response-byte, SQL-byte, and VDBE limits are
+independent: a query that returns one row can still exhaust its work budget.
 
 ## Persistence Semantics Pass
 
@@ -107,3 +127,7 @@ The contract should stay small around that seam:
 - Keep client rendering and convenience tooling outside the contract.
 - Keep policy separate from the VFS until the host exposes caller identity or
   method access control.
+
+SQLite progress handling bounds engine work inside this contract. General WASM
+fuel or time metering remains an Octra runtime responsibility because the
+contract cannot meter host or runtime work outside SQLite.

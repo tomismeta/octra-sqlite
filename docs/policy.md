@@ -21,6 +21,10 @@ Each new database deploys an owner-personalized copy of the bundled audited WASM
 Authenticated non-owner wallets can still use the signed view path for reads,
 but their writes are denied before SQLite execution.
 
+`sealed` therefore means authenticated, not confidential or owner-only. It
+does not encrypt SQLite data or results. Write SQL and values are included in
+the Octra transaction message and remain visible in transaction history.
+
 OSW1 currently verifies owner-signed intent, not native
 caller-bound role membership. Until Octra exposes native method access control
 or trusted caller identity inside `wasm_v1`, OSW1 should be treated as a
@@ -66,7 +70,8 @@ value: sqlite_exec_failed:<sqlite error>
 Set `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1` to use `exec_trace` and emit full
 SQL text as an additional `octra.sqlite.sql` on-chain event. This is permanent,
 and public-read databases make that event public. The default keeps SQL text
-out of events and emits only the SQL hash event.
+out of the additional event and emits only the SQL hash event; the containing
+write transaction still carries the full SQL text and values.
 
 ## Native Policy Roadmap
 

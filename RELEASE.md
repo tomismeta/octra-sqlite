@@ -1,5 +1,36 @@
 # Release Notes
 
+## 0.6.1
+
+This is a focused security and reliability hardening release over `0.6.0`.
+SQLite remains 3.53.3, but the Circle WASM is a new engine epoch because it now
+bounds SQLite work and enforces the exact current stable-storage capacity.
+
+### Added
+
+- Deterministic query and exec VDBE work budgets with stable error codes.
+- Exact VFS capacity facts in `storage_info`, `limits --json`, and the release
+  manifest.
+- Durable upgrade manifest states: `prepared`, `applied`, and `complete`.
+- Machine-readable confidentiality facts.
+
+### Changed
+
+- Config, nonce, receipt, OSR1, public program-info, and read-mode handling now
+  fail closed at their trust boundaries.
+- Normal upgrades always use the integrity-checked embedded release WASM.
+- Verify and upgrade smoke tables are unique. Upgrade cleanup is atomic;
+  verify attempts a confirmed cleanup and reports any cleanup failure.
+- Config, backups, upgrade metadata, and RPC traces use private, safer local
+  file creation.
+
+### Security Boundary
+
+- Sealed reads authenticate a wallet; they are not encrypted or owner-only.
+- Write SQL and values remain visible in Octra transaction history.
+- SQLite work is bounded inside the contract. Runtime-wide WASM fuel remains
+  an Octra protocol responsibility.
+
 ## 0.6.0
 
 This is the first post-debut engine upgrade release. It rebuilds the bundled

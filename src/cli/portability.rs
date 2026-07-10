@@ -1,3 +1,4 @@
+use crate::private_file::{create_temporary_near, sync_parent};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use serde_json::Value;
@@ -82,13 +83,15 @@ fn backup_database_once(session: &Session, path: &Path) -> Result<BackupSummary>
         bail!("database has no SQLite pages to back up");
     }
 
-    let tmp_path = backup_temp_path(path);
-    let _cleanup = TempPathCleanup(tmp_path.clone());
-    if let Some(parent) = tmp_path.parent() {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)?;
     }
-    let mut file =
-        fs::File::create(&tmp_path).with_context(|| format!("creating {}", tmp_path.display()))?;
+    let (tmp_path, mut file) = create_temporary_near(path, "octra-sqlite-backup.sqlite")
+        .with_context(|| format!("creating a private backup beside {}", path.display()))?;
+    let _cleanup = TempPathCleanup(tmp_path.clone());
     let mut hasher = Sha256::new();
     let mut hashed_bytes = 0u64;
     let mut page = 1u64;
@@ -138,10 +141,11 @@ fn backup_database_once(session: &Session, path: &Path) -> Result<BackupSummary>
         bail!("backup wrote {hashed_bytes} bytes into hash; expected {file_bytes}");
     }
     file.set_len(file_bytes)?;
-    file.flush()?;
+    file.sync_all()?;
     drop(file);
     fs::rename(&tmp_path, path)
         .with_context(|| format!("moving {} to {}", tmp_path.display(), path.display()))?;
+    sync_parent(path);
     let file_hash = hex::encode(hasher.finalize());
     Ok(BackupSummary {
         path: path.to_path_buf(),
@@ -156,14 +160,6 @@ fn backup_generation_changed(error: &anyhow::Error) -> bool {
     error
         .chain()
         .any(|cause| cause.to_string().contains("backup_generation_changed"))
-}
-
-fn backup_temp_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "octra-sqlite-backup.sqlite".to_string());
-    path.with_file_name(format!(".{file_name}.tmp.{}", std::process::id()))
 }
 
 fn ensure_backup_chunk_matches(
@@ -273,15 +269,15 @@ fn sqlite_snapshot_temp_path(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "octra-sqlite-{clean_label}-{}-{}.sqlite",
         std::process::id(),
-        now_millis()
+        now_nanos()
     ))
 }
 
-fn now_millis() -> u128 {
+fn now_nanos() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis()
+        .as_nanos()
 }
 
 struct TempPathCleanup(PathBuf);
@@ -1224,6 +1220,32 @@ insert into person(name) values ('Ada; Lovelace'),('Grace Hopper');";
         assert!(error.contains("backup_generation_changed"));
         assert!(error.contains("database changed during backup"));
         assert!(backup_generation_changed(&anyhow!(error)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_temporary_files_are_private_and_unique() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "octra-sqlite-backup-temp-{}-{}",
+            std::process::id(),
+            now_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let destination = root.join("database.sqlite");
+        let (first_path, first) = create_temporary_near(&destination, "database.sqlite").unwrap();
+        let (second_path, second) = create_temporary_near(&destination, "database.sqlite").unwrap();
+        assert_ne!(first_path, second_path);
+        assert_eq!(
+            first.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            second.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        drop((first, second));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
