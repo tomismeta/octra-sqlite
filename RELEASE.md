@@ -37,6 +37,18 @@ bounds SQLite work and enforces the exact current stable-storage capacity.
 - SQLite work is bounded inside the contract. Runtime-wide WASM fuel remains
   an Octra protocol responsibility.
 
+### Proof
+
+- Fresh public-read devnet proof:
+  `oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x`.
+- The proof Circle is on SQLite 3.53.3, is `engine_current: true`, answers
+  walletless public reads, passed owner write-smoke plus cleanup, and passed
+  local `sqlite3` integrity check from a page backup.
+- Capacity evidence remains 8,069 pages / 33,050,624 SQLite file bytes. The
+  higher 33,554,432-byte number is the Octra Circle stable-storage cap for
+  key-plus-value bytes; VFS page keys, the generation manifest, and metadata
+  consume the difference.
+
 ## 0.6.0
 
 This is the first post-debut engine upgrade release. It rebuilds the bundled

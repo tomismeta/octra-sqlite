@@ -1,6 +1,51 @@
 # Devnet Proof
 
-Current public devnet portability proof Circle:
+Current public devnet proof Circle for `0.6.1`:
+
+```text
+oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x
+```
+
+Published `v0.6.1` proof snapshot:
+
+```text
+database: oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x
+circle: oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x
+circle url: https://devnet.octrascan.io/address.html?addr=oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x
+read tuple: public / gateway_allowed / public_resources
+program: version 1, bytes 611456, personalized hash 86b98d9d74d49ad4ab1fe04862e41542752fb8b58476dd7f72d2bb68ee5037af
+bundled wasm hash: c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef
+sqlite version: 3.53.3
+storage after write-smoke cleanup: 3 pages, 12288 bytes
+backup integrity: sqlite3 pragma integrity_check = ok
+backup: 12288 bytes, generation 3, sha256 bfc7bc01f9b424f1e0eaf2b2444ab51342c8e52729d9202e3cbe0e7cc12709f7
+auth owner pubkey: 2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb
+auth database id: 8a67b84fa22b8fa8f42a82230abdd1a7f29c886436e8ce6cf1782964f49063c8
+circle create tx: 8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e
+circle create: https://devnet.octrascan.io/tx.html?hash=8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e
+initializer tx: 496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d
+initializer: https://devnet.octrascan.io/tx.html?hash=496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d
+write smoke tx: 8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab
+write smoke: https://devnet.octrascan.io/tx.html?hash=8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab
+write smoke cleanup tx: 5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a
+write smoke cleanup: https://devnet.octrascan.io/tx.html?hash=5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a
+unsigned read: walletless query returned sqlite_version() = 3.53.3 and 4 artist rows through octra_circleView
+```
+
+Capacity proof:
+
+```text
+capacity circle: oct2ZE59sSkPABWnozCk1VHeC7MGzVTBvc8sjktMmxGx4oz
+storage protocol: generation_manifest_v4
+max observed SQLite file size: 8069 pages, 33050624 bytes
+Octra stable-storage limit: 33554432 key-plus-value bytes
+last growth tx: 65fa83b15051b6058aa3b04e9ed08767974f5cfb0ceee22a90d07f04e853a7b1
+no-growth tx after full: 6c95192a66ee85b890bab7dd789eedd829728a9883724b61c9a5f6e565fcf9ad
+note: the SQLite file limit is lower than the Circle stable-storage limit
+because page keys, the generation manifest, and metadata also count.
+```
+
+Earlier public devnet portability proof Circle:
 
 ```text
 octE4pHEmLd47zRdC7LRDGjQWPJPJ5zbmNcL1ixfn7aCzSY

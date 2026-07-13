@@ -131,10 +131,70 @@
     "unbounded_exec_budget_proven": true,
     "upgrade_owner_sequence_fallback_proven": true,
     "wasm_audit": "passed",
-    "devnet": "pending"
+    "devnet": "passed"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "deployment_kind": "fresh_public_read_proof",
+    "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "circle": "oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "browser_mode": "gateway_allowed",
+    "resource_mode": "public_resources",
+    "sqlite_version": "3.53.3",
+    "unpersonalized_sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef",
+    "personalized_sha256": "86b98d9d74d49ad4ab1fe04862e41542752fb8b58476dd7f72d2bb68ee5037af",
+    "owner": "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "8a67b84fa22b8fa8f42a82230abdd1a7f29c886436e8ce6cf1782964f49063c8",
+    "owner_pubkey_offset": 605192,
+    "db_id_offset": 605224,
+    "circle_create_tx": "8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e",
+    "initializer_tx": "496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d",
+    "write_smoke_tx": "8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab",
+    "write_smoke_cleanup_tx": "5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a",
+    "unsigned_read": {
+      "wallet_required": false,
+      "query": "select sqlite_version(), count(*) from artist;",
+      "rows": [["3.53.3", 4]]
+    },
+    "final_status": {
+      "ready": true,
+      "engine_current": true,
+      "upgrade_needed": false,
+      "storage_pages": 3,
+      "storage_bytes": 12288
+    },
+    "integrity": {
+      "result": "ok",
+      "pages": 3,
+      "bytes": 12288,
+      "generation": 3,
+      "sha256": "bfc7bc01f9b424f1e0eaf2b2444ab51342c8e52729d9202e3cbe0e7cc12709f7"
+    },
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d",
+      "write_smoke": "https://devnet.octrascan.io/tx.html?hash=8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab",
+      "write_smoke_cleanup": "https://devnet.octrascan.io/tx.html?hash=5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a"
+    }
+  },
+  "capacity_evidence": {
+    "status": "measured_on_devnet",
+    "circle": "oct2ZE59sSkPABWnozCk1VHeC7MGzVTBvc8sjktMmxGx4oz",
+    "sqlite_version": "3.53.2",
+    "storage_protocol": "generation_manifest_v4",
+    "max_observed_pages": 8069,
+    "max_observed_file_bytes": 33050624,
+    "stable_storage_limit_bytes": 33554432,
+    "last_growth_tx": "65fa83b15051b6058aa3b04e9ed08767974f5cfb0ceee22a90d07f04e853a7b1",
+    "no_growth_tx": "6c95192a66ee85b890bab7dd789eedd829728a9883724b61c9a5f6e565fcf9ad",
+    "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
   },
   "client_release": {
     "notes": "Hardening release candidate. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, durable upgrade owner-sequence comparison, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
   },
-  "status": "Unreleased 0.6.1 candidate; local proof complete and devnet proof pending"
+  "status": "Unreleased 0.6.1 candidate; local and devnet proof complete"
 }

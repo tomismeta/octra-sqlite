@@ -33,6 +33,11 @@ but new writes cannot grow beyond the current 8069-page stable layout. This
 capacity assumes the Circle's stable storage is dedicated to this VFS; unrelated
 keys reduce the space available to SQLite.
 
+The live devnet capacity probe recorded in `docs/proofs/devnet.md` reached
+exactly this page/file limit. The larger 33.55 MB figure is the Octra
+stable-storage envelope, not the SQLite file payload available inside the
+current VFS layout.
+
 The file-size and dirty-page limits are independent. A single statement that
 changes more than 1024 distinct pages fails even when the database is well below
 its total file-size ceiling. Bulk updates should use deterministic primary-key
