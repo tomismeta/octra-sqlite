@@ -44,6 +44,8 @@ Stable error classifications:
 | `transactions_not_supported` | Restore saw unsupported transaction control SQL. |
 | `read_only` | `--read-only` refused a write. |
 | `result_limit_exceeded` | Query exceeded the Circle row limit. |
+| `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
+| `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
@@ -388,7 +390,8 @@ confidentiality facts, and available trace modes. In particular,
 `confidentiality.encrypted` and `confidentiality.sealed_owner_only` are `false`,
 write SQL is marked visible in transaction history, and
 `storage.max_dirty_pages_per_exec` distinguishes per-write capacity from total
-database capacity.
+database capacity. Contract `response_too_large` errors are reported to CLI
+automation as `result_too_large`.
 
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery

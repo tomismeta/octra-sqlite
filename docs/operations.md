@@ -268,7 +268,8 @@ Current operational limits:
 - One `exec` can dirty at most 1,024 distinct pages. Chunk broad updates by a
   stable primary-key range and verify each accepted transaction.
 - Large result payloads can fail with `response_too_large`; select fewer columns
-  or add a narrower `where` / `limit`.
+  or add a narrower `where` / `limit`. CLI JSON reports this class as
+  `result_too_large`.
 - Large scripts are split into multiple signed writes.
 - Each accepted write is atomic.
 - A multi-batch restore is not globally atomic.

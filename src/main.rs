@@ -68,6 +68,10 @@ fn classify_error(message: &str) -> &'static str {
         "read_only"
     } else if message.contains("result_limit_exceeded") {
         "result_limit_exceeded"
+    } else if message.contains("query_budget_exceeded") {
+        "query_budget_exceeded"
+    } else if message.contains("exec_budget_exceeded") {
+        "exec_budget_exceeded"
     } else if message.contains("response_too_large") {
         "result_too_large"
     } else if message.contains("Authorization")
@@ -124,6 +128,18 @@ mod tests {
         assert_eq!(
             classify_error("database error (result_limit_exceeded): query returned too many rows"),
             "result_limit_exceeded"
+        );
+        assert_eq!(
+            classify_error(
+                "database error (query_budget_exceeded): query exceeded deterministic SQLite work limit"
+            ),
+            "query_budget_exceeded"
+        );
+        assert_eq!(
+            classify_error(
+                "database error (exec_budget_exceeded): exec exceeded deterministic SQLite work limit"
+            ),
+            "exec_budget_exceeded"
         );
         assert_eq!(
             classify_error(
