@@ -38,6 +38,8 @@
 //! owner-signed through OSW1 owner write intent. Pass a saved database name or a
 //! full `oct://NETWORK/<circle>` URI to [`Client::database`]. The client
 //! detects the Circle's Octra read surface unless `read_mode` is explicitly set.
+//! Sealed authenticates reads; it does not encrypt data or make reads owner-only.
+//! Write SQL and values are visible in Octra transaction history.
 //!
 //! Feature flags:
 //!
@@ -50,6 +52,7 @@
 //! minor versions.
 
 pub mod client;
+mod private_file;
 pub mod protocol;
 
 pub use client::{

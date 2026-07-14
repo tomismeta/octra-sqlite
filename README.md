@@ -107,7 +107,9 @@ reference.
 ## Writes And Read Modes
 
 Databases are `sealed` by default. Sealed databases use signed Octra view auth
-for reads and owner-signed OSW1 calls for writes.
+for reads and owner-signed OSW1 calls for writes. Sealed authenticates the
+reader; it does not encrypt the database or make reads owner-only. SQL and
+values submitted in writes are visible in Octra transaction history.
 
 Public-read databases are explicit:
 
@@ -147,15 +149,14 @@ local WASM toolchain. Released binaries embed the bundled WASM and release
 manifest; source and operator overrides are explicit. `scripts/audit-wasm.sh`
 checks the Circle import/export surface,
 [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs, and
-release manifests publish the bundled WASM hash plus live devnet proof
-metadata.
+release manifests publish the bundled WASM hash and record live devnet proofs
+when completed.
 
-The `0.6.0` crate rebuilds the bundled Circle WASM with SQLite 3.53.3 and keeps
-the OSR1/OSW1 wire formats unchanged. The current release manifest is
-[release/octra-sqlite-0.6.0.json](./release/octra-sqlite-0.6.0.json).
+The `0.6.1` crate keeps SQLite 3.53.3 and adds deterministic SQL work budgets
+plus client and upgrade hardening. The current release manifest is
+[release/octra-sqlite-0.6.1.json](./release/octra-sqlite-0.6.1.json).
 Existing Circles keep the engine they were deployed with until their owner runs
-`upgrade`; the manifest records both the 3.53.3 upgrade proof Circle and the
-current 3.53.2 quick-start public Circle.
+`upgrade`; historical release manifests retain the prior deployment proofs.
 
 ```text
 Rust CLI/client -> Octra RPC -> Circle wasm_v1
@@ -332,6 +333,7 @@ and local snapshot rendering commands such as `.dump` and `.fullschema`. The
 - [Headless setup](./docs/headless.md)
 - [JSON output](./docs/json-output.md)
 - [Operations](./docs/operations.md)
+- [Roadmap](./docs/roadmap.md)
 - [Storage model](./docs/storage-model.md)
 - [Toolchain and builds](./docs/toolchain.md)
 - [OSR1 typed results](./docs/spec/osr1.md)

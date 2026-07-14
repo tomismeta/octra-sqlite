@@ -1,10 +1,11 @@
 use super::error::{Error, ErrorKind, Result};
+use crate::private_file::atomic_replace;
 use crate::protocol::target::{DatabaseTarget, ReadMode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_CONFIG_JSON: &str = include_str!("../../config/defaults.json");
 
@@ -137,12 +138,21 @@ pub fn config_path() -> Result<PathBuf> {
 }
 
 pub fn load_config() -> Result<Config> {
-    let defaults = bundled_default_config()?;
     let path = config_path()?;
-    if !path.exists() {
+    load_config_at(&path)
+}
+
+fn load_config_at(path: &Path) -> Result<Config> {
+    let defaults = bundled_default_config()?;
+    if !path.try_exists().map_err(|error| {
+        Error::with_kind(
+            ErrorKind::Io,
+            format!("checking {}: {error}", path.display()),
+        )
+    })? {
         return Ok(defaults);
     }
-    let text = fs::read_to_string(&path).map_err(|error| {
+    let text = fs::read_to_string(path).map_err(|error| {
         Error::with_kind(
             ErrorKind::Io,
             format!("reading {}: {error}", path.display()),
@@ -159,10 +169,15 @@ pub fn load_config() -> Result<Config> {
 
 pub fn write_config(config: &Config) -> Result<()> {
     let path = config_path()?;
+    write_config_at(&path, config)
+}
+
+fn write_config_at(path: &Path, config: &Config) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, serde_json::to_string_pretty(config)? + "\n")?;
+    let contents = serde_json::to_string_pretty(config)? + "\n";
+    atomic_replace(path, contents.as_bytes())?;
     Ok(())
 }
 
@@ -324,5 +339,54 @@ mod tests {
             merged.rpc_for_network("devnet").as_deref(),
             Some("http://devnet")
         );
+    }
+
+    #[test]
+    fn config_write_replaces_the_file_atomically() {
+        let root = std::env::temp_dir().join(format!(
+            "octra-sqlite-config-write-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = root.join("sqlite.json");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&path, "{\"network\":\"old\"}\n").unwrap();
+        let config = Config {
+            network: Some("devnet".to_string()),
+            ..Config::default()
+        };
+        write_config_at(&path, &config).unwrap();
+        let written: Config = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written.network.as_deref(), Some("devnet"));
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_config_fails_closed() {
+        let path = std::env::temp_dir().join(format!(
+            "octra-sqlite-malformed-config-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, "{").unwrap();
+        let error = load_config_at(&path).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Config);
+        assert!(error.to_string().contains("parsing"));
+        fs::remove_file(path).unwrap();
     }
 }

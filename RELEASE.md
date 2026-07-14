@@ -1,5 +1,54 @@
 # Release Notes
 
+## 0.6.1
+
+This is a focused security and reliability hardening release over `0.6.0`.
+SQLite remains 3.53.3, but the Circle WASM is a new engine epoch because it now
+bounds SQLite work and enforces the exact current stable-storage capacity.
+
+### Added
+
+- Deterministic query and exec VDBE work budgets with stable error codes.
+- Exact VFS capacity facts in `storage_info`, `limits --json`, and the release
+  manifest.
+- Durable owner-sequence comparison from `storage_info` when the
+  storage-independent `auth_info` response omits it.
+- The 1,024-dirty-page transaction ceiling in human and JSON limits.
+- Durable upgrade manifest states: `prepared`, `applied`, and `complete`.
+- Machine-readable confidentiality facts.
+
+### Changed
+
+- Config, nonce, receipt, OSR1, public program-info, and read-mode handling now
+  fail closed at their trust boundaries.
+- Normal upgrades always use the integrity-checked embedded release WASM.
+- Verify and upgrade smoke tables are unique. Upgrade cleanup is atomic;
+  verify attempts a confirmed cleanup and reports any cleanup failure.
+- Config, backups, upgrade metadata, and RPC traces use private, safer local
+  file creation.
+
+### Security Boundary
+
+- Sealed reads authenticate a wallet; they are not encrypted or owner-only.
+- Public reads permit complete SQLite-file export through `backup_chunk`.
+- Write SQL and values remain visible in Octra transaction history.
+- Foreign-key enforcement is currently off and cannot be enabled through user
+  SQL.
+- SQLite work is bounded inside the contract. Runtime-wide WASM fuel remains
+  an Octra protocol responsibility.
+
+### Proof
+
+- Fresh public-read devnet proof:
+  `oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x`.
+- The proof Circle is on SQLite 3.53.3, is `engine_current: true`, answers
+  walletless public reads, passed owner write-smoke plus cleanup, and passed
+  local `sqlite3` integrity check from a page backup.
+- Capacity evidence remains 8,069 pages / 33,050,624 SQLite file bytes. The
+  higher 33,554,432-byte number is the Octra Circle stable-storage cap for
+  key-plus-value bytes; VFS page keys, the generation manifest, and metadata
+  consume the difference.
+
 ## 0.6.0
 
 This is the first post-debut engine upgrade release. It rebuilds the bundled

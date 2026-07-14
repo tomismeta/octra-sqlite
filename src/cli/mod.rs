@@ -43,10 +43,10 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use shell::{run_dot_command, run_shell};
 use std::env;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,18 +54,25 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.0.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.1.json";
 const EMBEDDED_WASM_BYTES: &[u8] = include_bytes!("../../circle/wasm/octra_sqlite_circle.wasm");
-const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.0.json");
+const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.1.json");
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051";
-const EXPECTED_WASM_BYTES: usize = 610_218;
+    "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef";
+const EXPECTED_WASM_BYTES: usize = 611_456;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
 const SQLITE_VERSION: &str = "3.53.3";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
+const MAX_DB_PAGES: usize = 8_069;
+const SQLITE_PAGE_BYTES: usize = 4_096;
+const MAX_DB_FILE_BYTES: usize = 33_050_624;
+const STABLE_STORAGE_LIMIT_BYTES: usize = 33_554_432;
+const MAX_DIRTY_PAGES_PER_EXEC: usize = 1_024;
+const MAX_QUERY_VDBE_STEPS: usize = 5_000_000;
+const MAX_EXEC_VDBE_STEPS: usize = 25_000_000;
 const OFFICIAL_WALLET_GENERATOR_URL: &str = "https://wallet.octra.org";
 const UPGRADE_BUNDLE_SCHEMA: &str = "octra-sqlite.upgrade.bundle.v1";
 
@@ -86,6 +93,17 @@ struct MatchedWasmArtifact {
     bytes: u64,
     source_url: String,
     exact_hash: bool,
+}
+
+struct VerifyWriteSmoke {
+    create: Value,
+    rows: Value,
+    cleanup: Value,
+}
+
+struct VerifyIntegrity {
+    summary: BackupSummary,
+    result: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -688,7 +706,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
 }
 
 fn cmd_setup(args: SetupArgs) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     let interactive = !args.yes && io::stdin().is_terminal();
     if !interactive && !args.yes {
         bail!("setup is interactive; run it in a terminal or pass --yes with flags");
@@ -784,7 +802,7 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow!("database name is required"))?;
 
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     ensure_new_database_name_available(&args, &config, name)?;
     ensure_wallet_for_database_creation(&args, &mut config)?;
     let init_sql = collect_initializer_sql(&args)?;
@@ -819,6 +837,18 @@ fn cmd_new(args: NewArgs) -> Result<()> {
         print_field("funding", funding_detail);
     }
     let read_mode = ReadMode::from(args.read_mode);
+    if !args.json {
+        if read_mode == ReadMode::Sealed {
+            print_field(
+                "sealed reads",
+                "authenticated wallet access; not encrypted or owner-only",
+            );
+        }
+        print_field(
+            "write privacy",
+            "SQL and values are visible in Octra transaction history",
+        );
+    }
     let created = create_circle(&control_session, &args, &network, read_mode)?;
     let target_uri = format!("oct://{}/{}", network, created.circle);
     let mut default_database = false;
@@ -971,7 +1001,7 @@ fn resolve_new_args(mut args: NewArgs) -> Result<NewArgs> {
         bail!("database name is required; pass DATABASE or run octra-sqlite new in a terminal");
     }
 
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     print_title("Create an Octra SQLite database");
     let name = prompt_required("database name")?;
     if name.trim().is_empty() {
@@ -1295,6 +1325,12 @@ fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
             "owner_pubkey": input.created.auth_patch.owner_pubkey_hex.clone(),
             "db_id": input.created.auth_patch.db_id_hex.clone(),
         },
+        "confidentiality": {
+            "encrypted": false,
+            "read_access": if read_mode == ReadMode::Sealed { "authenticated_wallet" } else { "public" },
+            "read_owner_only": false,
+            "write_sql_visible_in_transaction_history": true,
+        },
         "program": {
             "runtime": "wasm_v1",
             "wasm_hash": input.created.code_hash.clone(),
@@ -1594,7 +1630,7 @@ fn cmd_status(args: StatusArgs, label: &str) -> Result<i32> {
 }
 
 fn cmd_config(args: ConfigArgs) -> Result<()> {
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let path = config_path()?;
     if args.json {
         return print_json(&json!({
@@ -1810,7 +1846,7 @@ fn cmd_wallet_attach(args: WalletAttachArgs) -> Result<()> {
     reject_encrypted_oct_wallet(&args.path)?;
     let path = canonical_existing_wallet_path(&args.path)?;
     let material = wallet_file_material(&path)?;
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     config.wallet = Some(path.to_string_lossy().to_string());
     write_config(&config)?;
     let config_path = config_path()?;
@@ -1838,7 +1874,7 @@ fn cmd_wallet_attach(args: WalletAttachArgs) -> Result<()> {
 }
 
 fn cmd_wallet_import(args: WalletImportArgs) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     let output = args
         .output
         .clone()
@@ -1897,7 +1933,7 @@ fn cmd_wallet_import(args: WalletImportArgs) -> Result<()> {
 
 fn cmd_wallet_status(args: WalletStatusArgs) -> Result<()> {
     let mut report = StatusReport::new("wallet_status", args.json);
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let wallet_path = resolve_wallet_path(&args.target, &config);
     match wallet_path.as_deref() {
         Some(path) => {
@@ -2023,58 +2059,51 @@ fn read_tty_secret(prompt: &str) -> Result<String> {
 }
 
 fn write_wallet_json(path: &Path, material: &WalletMaterial, force: bool) -> Result<()> {
-    if let Some(parent) = path.parent() {
+    #[derive(serde::Serialize)]
+    struct WalletJson<'a> {
+        address: &'a str,
+        private_key_b64: &'a str,
+        public_key_b64: &'a str,
+    }
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)?;
     }
-    let payload = json!({
-        "address": &material.address,
-        "private_key_b64": &material.private_key_b64,
-        "public_key_b64": &material.public_key_b64,
-    });
+    let payload = WalletJson {
+        address: &material.address,
+        private_key_b64: &material.private_key_b64,
+        public_key_b64: &material.public_key_b64,
+    };
     let mut text = serde_json::to_string_pretty(&payload)? + "\n";
-    let mut options = OpenOptions::new();
-    options.write(true);
-    if force {
-        options.create(true).truncate(true);
+    let result = if force {
+        crate::private_file::atomic_replace(path, text.as_bytes())
     } else {
-        options.create_new(true);
-    }
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options
-        .open(path)
-        .with_context(|| format!("writing wallet {}", path.display()))?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
+        crate::private_file::write_new(path, text.as_bytes())
+    };
     text.zeroize();
-    #[cfg(unix)]
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    result.with_context(|| format!("writing wallet {}", path.display()))?;
     Ok(())
 }
 
 fn copy_wallet_json(source: &Path, output: &Path, force: bool) -> Result<()> {
-    if let Some(parent) = output.parent() {
+    if let Some(parent) = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)?;
     }
     let mut bytes =
         fs::read(source).with_context(|| format!("reading wallet {}", source.display()))?;
-    let mut options = OpenOptions::new();
-    options.write(true);
-    if force {
-        options.create(true).truncate(true);
+    let result = if force {
+        crate::private_file::atomic_replace(output, &bytes)
     } else {
-        options.create_new(true);
-    }
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options
-        .open(output)
-        .with_context(|| format!("writing wallet {}", output.display()))?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
+        crate::private_file::write_new(output, &bytes)
+    };
     bytes.zeroize();
-    #[cfg(unix)]
-    fs::set_permissions(output, fs::Permissions::from_mode(0o600))?;
+    result.with_context(|| format!("writing wallet {}", output.display()))?;
     Ok(())
 }
 
@@ -2272,7 +2301,7 @@ const READ_READINESS_KEYS: &[&str] = &[
 const WRITE_READINESS_KEYS: &[&str] = &["circle_reachable", "auth_readable", "owner_write_valid"];
 
 fn check_bundled_wasm(report: &mut StatusReport) {
-    match resolve_wasm_artifact(false, None) {
+    match resolve_bundled_wasm_artifact() {
         Ok(artifact) => {
             let hash = sha256_hex(&artifact.bytes);
             if artifact.bytes.len() == EXPECTED_WASM_BYTES {
@@ -2629,7 +2658,7 @@ fn personalized_wasm_hash(session: &Session) -> Result<Option<String>> {
             .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?,
     )?;
     let db_id = hex_to_32("db_id", &auth.db_id)?;
-    let artifact = resolve_wasm_artifact(false, None)?;
+    let artifact = resolve_bundled_wasm_artifact()?;
     let mut wasm = artifact.bytes;
     patch_wasm_auth_bytes(&mut wasm, &owner_pubkey, &db_id)?;
     Ok(Some(sha256_hex(&wasm)))
@@ -2858,7 +2887,7 @@ fn linked_tx(network: &str, hash: &str) -> String {
 
 fn explorer_base_url(network: &str) -> Option<String> {
     load_config()
-        .unwrap_or_default()
+        .ok()?
         .explorer_for_network(network)
         .map(|url| url.trim_end_matches('/').to_string())
 }
@@ -2968,17 +2997,24 @@ fn resolve_wasm_artifact(build: bool, wasm: Option<&Path>) -> Result<WasmArtifac
     if let Some(path) = wasm {
         return read_wasm_artifact(require_file(path.to_path_buf(), "custom WASM")?);
     }
-    if let Ok(path) = env::var("OCTRA_SQLITE_WASM") {
-        return read_wasm_artifact(require_file(PathBuf::from(path), "OCTRA_SQLITE_WASM")?);
-    }
-    Ok(WasmArtifact {
-        source: format!("embedded:{DEFAULT_WASM_REL}"),
-        bytes: EMBEDDED_WASM_BYTES.to_vec(),
-    })
+    resolve_bundled_wasm_artifact()
 }
 
 fn resolve_bundled_wasm_artifact() -> Result<WasmArtifact> {
-    resolve_wasm_artifact(false, None)
+    let bytes = EMBEDDED_WASM_BYTES.to_vec();
+    let hash = sha256_hex(&bytes);
+    if bytes.len() != EXPECTED_WASM_BYTES || hash != EXPECTED_WASM_SHA256 {
+        bail!(
+            "embedded release WASM failed integrity check: {hash}, {} bytes; expected {}, {} bytes",
+            bytes.len(),
+            EXPECTED_WASM_SHA256,
+            EXPECTED_WASM_BYTES
+        );
+    }
+    Ok(WasmArtifact {
+        source: format!("embedded:{DEFAULT_WASM_REL}"),
+        bytes,
+    })
 }
 
 fn read_wasm_artifact(path: PathBuf) -> Result<WasmArtifact> {
@@ -3126,7 +3162,7 @@ fn h256_hex_frame(tag: &str, parts: &[&[u8]]) -> String {
 }
 
 fn cmd_database(command: DatabaseCommand) -> Result<()> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     match command {
         DatabaseCommand::List { json } => print_database_list(&config, json)?,
         DatabaseCommand::Info { database, json } => {
@@ -3582,7 +3618,7 @@ fn resolve_bootstrap_owner_mode(
 }
 
 fn find_bootstrap_owner_metadata(session: &Session) -> Result<BootstrapOwnerMetadata> {
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let uri = canonical_database_uri(session.target());
     let metadata = config
         .database_metadata
@@ -3685,14 +3721,36 @@ fn cmd_limits(args: LimitsArgs) -> Result<()> {
     print_field("max SQL bytes", MAX_SQL_TEXT_BYTES.to_string());
     print_field("batch target bytes", SQL_BATCH_TARGET_BYTES.to_string());
     print_field("max result rows", MAX_RESULT_ROWS.to_string());
+    print_field("max database pages", MAX_DB_PAGES.to_string());
+    print_field("max database bytes", MAX_DB_FILE_BYTES.to_string());
+    print_field(
+        "max dirty pages per exec",
+        MAX_DIRTY_PAGES_PER_EXEC.to_string(),
+    );
+    print_field(
+        "query work limit",
+        format!("{MAX_QUERY_VDBE_STEPS} VDBE steps"),
+    );
+    print_field(
+        "exec work limit",
+        format!("{MAX_EXEC_VDBE_STEPS} VDBE steps"),
+    );
     print_field("transactions", "one accepted exec is atomic");
     print_field("user BEGIN/COMMIT", "unsupported across Octra writes");
     print_field(
         "restore",
         "chunked; multi-batch restore can partially apply",
     );
-    print_field("reads", "signed Octra view auth");
+    print_field(
+        "sealed reads",
+        "authenticated, not confidential or owner-only",
+    );
+    print_field("public reads", "walletless Octra circle view");
     print_field("writes", "OSW1 owner write intent");
+    print_field(
+        "write privacy",
+        "SQL and values are visible in transaction history",
+    );
     print_field("read-only", "client guard via --read-only");
     print_field("trace modes", "full, summary, request_only, response_meta");
     if let Some(target) = target {
@@ -4146,6 +4204,24 @@ fn limits_json(target: Option<Value>) -> Value {
             "size_error": "result_too_large",
             "suggestion": "add a SQL LIMIT clause or narrow selected columns",
         },
+        "storage": {
+            "page_bytes": SQLITE_PAGE_BYTES,
+            "max_pages": MAX_DB_PAGES,
+            "max_file_bytes": MAX_DB_FILE_BYTES,
+            "stable_storage_limit_bytes": STABLE_STORAGE_LIMIT_BYTES,
+            "max_dirty_pages_per_exec": MAX_DIRTY_PAGES_PER_EXEC,
+            "assumes_dedicated_circle_storage": true,
+            "accounting": "Circle stable storage counts key and value bytes; the database limit reserves current VFS metadata and manifest overhead",
+        },
+        "execution": {
+            "deterministic_sql_budget": true,
+            "progress_interval_vdbe_steps": 1_000,
+            "max_query_vdbe_steps": MAX_QUERY_VDBE_STEPS,
+            "max_exec_vdbe_steps": MAX_EXEC_VDBE_STEPS,
+            "query_error": "query_budget_exceeded",
+            "exec_error": "exec_budget_exceeded",
+            "runtime_wasm_fuel": "octra_protocol_dependency",
+        },
         "restore": {
             "chunked": true,
             "json_summary": true,
@@ -4167,6 +4243,12 @@ fn limits_json(target: Option<Value>) -> Value {
             "write_model": "OSW1 owner write intent",
             "read_only_guard": "client-side --read-only",
             "native_roles": false,
+        },
+        "confidentiality": {
+            "encrypted": false,
+            "sealed_read_access": "authenticated_wallet",
+            "sealed_owner_only": false,
+            "write_sql_visible_in_transaction_history": true,
         },
         "trace": {
             "default": "off",
@@ -4591,7 +4673,9 @@ fn parse_target_uri(value: &str, config: &Config) -> Result<Target> {
 }
 
 fn apply_target_metadata(requested: &str, config: &Config, target: &mut Target) {
-    if let Some(metadata) = config.metadata_for_target(requested, target) {
+    if target.read_mode == ReadMode::Auto
+        && let Some(metadata) = config.metadata_for_target(requested, target)
+    {
         target.read_mode = metadata.read_mode;
     }
 }
@@ -4822,34 +4906,20 @@ pub(super) fn verify(
     )?;
     print_result(&tables, OutputMode::Table, true)?;
     if write_smoke {
-        let result = with_explorer(exec_sql(
-            session,
-            "create table if not exists octra_sqlite_verify(first_name text not null, last_name text not null);
-delete from octra_sqlite_verify;
-insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');",
-            false,
-        )?, session);
-        print_exec_result(&result)?;
-        let rows = query_typed(
-            session,
-            "select first_name,last_name from octra_sqlite_verify order by first_name;",
-        )?;
-        print_result(&rows, OutputMode::Table, true)?;
+        let smoke = run_verify_write_smoke(session)?;
+        print_exec_result(&smoke.create)?;
+        print_result(&smoke.rows, OutputMode::Table, true)?;
+        print_exec_result(&smoke.cleanup)?;
     }
     if integrity {
-        let path = env::temp_dir().join(format!(
-            "octra-sqlite-integrity-{}-{}.sqlite",
-            session.target().circle,
-            std::process::id()
-        ));
-        let summary = backup_database(session, &path)?;
-        let result = run_local_sqlite_integrity(&path)?;
-        let _ = fs::remove_file(&path);
+        let integrity = run_verify_integrity(session)?;
         print_field(
             "integrity",
             format!(
                 "{result}; checked {} bytes from generation {}",
-                summary.bytes, summary.generation
+                integrity.summary.bytes,
+                integrity.summary.generation,
+                result = integrity.result,
             ),
         );
     }
@@ -4894,32 +4964,27 @@ fn verify_json(
         "select name from sqlite_master where type='table' order by name;",
     )?;
     let write_smoke_result = if write_smoke {
-        let result = with_explorer(exec_sql(
-            session,
-            "create table if not exists octra_sqlite_verify(first_name text not null, last_name text not null);
-delete from octra_sqlite_verify;
-insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');",
-            false,
-        )?, session);
-        Some(write_envelope(session, result, Some(3)))
+        let smoke = run_verify_write_smoke(session)?;
+        let mut envelope = write_envelope(session, smoke.create, Some(2));
+        if let Some(object) = envelope.as_object_mut() {
+            object.insert("rows".to_string(), smoke.rows);
+            object.insert(
+                "cleanup".to_string(),
+                write_envelope(session, smoke.cleanup, Some(1)),
+            );
+        }
+        Some(envelope)
     } else {
         None
     };
     let integrity_result = if integrity {
-        let path = env::temp_dir().join(format!(
-            "octra-sqlite-integrity-{}-{}.sqlite",
-            session.target().circle,
-            std::process::id()
-        ));
-        let summary = backup_database(session, &path)?;
-        let result = run_local_sqlite_integrity(&path)?;
-        let _ = fs::remove_file(&path);
+        let integrity = run_verify_integrity(session)?;
         Some(json!({
-            "result": result,
-            "bytes": summary.bytes,
-            "pages": summary.pages,
-            "generation": summary.generation,
-            "sha256": summary.sha256,
+            "result": integrity.result,
+            "bytes": integrity.summary.bytes,
+            "pages": integrity.summary.pages,
+            "generation": integrity.summary.generation,
+            "sha256": integrity.summary.sha256,
         }))
     } else {
         None
@@ -4942,6 +5007,75 @@ insert into octra_sqlite_verify(first_name,last_name) values ('Ava','North'),('C
         "write_smoke": write_smoke_result,
         "integrity": integrity_result,
     }))
+}
+
+fn run_verify_write_smoke(session: &Session) -> Result<VerifyWriteSmoke> {
+    let table = smoke_table_name("verify", session);
+    let create = with_explorer(
+        exec_sql(
+            session,
+            &format!(
+                "create table {table}(first_name text not null, last_name text not null);\n\
+                 insert into {table}(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
+            ),
+            false,
+        )?,
+        session,
+    );
+    let rows = query_typed(
+        session,
+        &format!("select first_name,last_name from {table} order by first_name;"),
+    );
+    let cleanup = exec_sql(session, &format!("drop table {table};"), false)
+        .map(|result| with_explorer(result, session));
+    match (rows, cleanup) {
+        (Ok(rows), Ok(cleanup)) => Ok(VerifyWriteSmoke {
+            create,
+            rows,
+            cleanup,
+        }),
+        (Err(query), Ok(_)) => Err(query.into()),
+        (Ok(_), Err(cleanup)) => Err(cleanup.into()),
+        (Err(query), Err(cleanup)) => Err(anyhow!(
+            "write smoke query failed: {query}; cleanup also failed: {cleanup}"
+        )),
+    }
+}
+
+fn run_verify_integrity(session: &Session) -> Result<VerifyIntegrity> {
+    let path = env::temp_dir().join(format!("{}.sqlite", smoke_table_name("integrity", session)));
+    let summary = match backup_database(session, &path) {
+        Ok(summary) => summary,
+        Err(error) => {
+            let _ = fs::remove_file(&path);
+            return Err(error);
+        }
+    };
+    let result = run_local_sqlite_integrity(&path);
+    let _ = fs::remove_file(&path);
+    Ok(VerifyIntegrity {
+        summary,
+        result: result?,
+    })
+}
+
+fn smoke_table_name(scope: &str, session: &Session) -> String {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .to_be_bytes();
+    let digest = h256_raw_frame(
+        "octra-sqlite.smoke-table.v1",
+        &[
+            scope.as_bytes(),
+            session.target().circle.as_bytes(),
+            session.caller().as_bytes(),
+            &std::process::id().to_be_bytes(),
+            &nonce,
+        ],
+    );
+    format!("octra_sqlite_{scope}_{}", hex::encode(&digest[..12]))
 }
 
 fn cmd_deploy(args: DeployArgs) -> Result<()> {
@@ -5133,7 +5267,7 @@ fn save_database_metadata(
     code_bytes: usize,
     tx_hash: Option<String>,
 ) -> Result<Vec<String>> {
-    let mut config = load_config().unwrap_or_default();
+    let mut config = load_config()?;
     let uri = canonical_database_uri(session.target());
     let mut keys = config
         .databases
@@ -5653,15 +5787,50 @@ COMMIT;",
 
     #[test]
     fn default_release_artifacts_are_embedded() {
-        if env::var_os("OCTRA_SQLITE_WASM").is_none() {
-            let artifact = resolve_bundled_wasm_artifact().unwrap();
-            assert_eq!(artifact.source, format!("embedded:{DEFAULT_WASM_REL}"));
-            assert_eq!(sha256_hex(&artifact.bytes), EXPECTED_WASM_SHA256);
-        }
+        let artifact = resolve_bundled_wasm_artifact().unwrap();
+        assert_eq!(artifact.source, format!("embedded:{DEFAULT_WASM_REL}"));
+        assert_eq!(sha256_hex(&artifact.bytes), EXPECTED_WASM_SHA256);
         if env::var_os("OCTRA_SQLITE_MANIFEST").is_none() {
             let artifact = resolve_release_manifest().unwrap();
             assert_eq!(artifact.source, format!("embedded:{RELEASE_MANIFEST_REL}"));
-            assert!(artifact.text.contains("\"release\": \"0.6.0\""));
+            assert!(artifact.text.contains("\"release\": \"0.6.1\""));
+            let manifest: Value = serde_json::from_str(&artifact.text).unwrap();
+            assert_eq!(
+                EMBEDDED_WASM_BYTES
+                    .windows(OWNER_PUBKEY_PLACEHOLDER.len())
+                    .position(|window| window == OWNER_PUBKEY_PLACEHOLDER),
+                manifest["personalization"]["owner_pubkey_offset"]
+                    .as_u64()
+                    .map(|offset| offset as usize)
+            );
+            assert_eq!(
+                EMBEDDED_WASM_BYTES
+                    .windows(DB_ID_PLACEHOLDER.len())
+                    .position(|window| window == DB_ID_PLACEHOLDER),
+                manifest["personalization"]["db_id_offset"]
+                    .as_u64()
+                    .map(|offset| offset as usize)
+            );
+            assert_eq!(
+                manifest["storage"]["max_pages"].as_u64(),
+                Some(MAX_DB_PAGES as u64)
+            );
+            assert_eq!(
+                manifest["storage"]["max_file_bytes"].as_u64(),
+                Some(MAX_DB_FILE_BYTES as u64)
+            );
+            assert_eq!(
+                manifest["storage"]["max_dirty_pages_per_exec"].as_u64(),
+                Some(MAX_DIRTY_PAGES_PER_EXEC as u64)
+            );
+            assert_eq!(
+                manifest["execution"]["max_query_vdbe_steps"].as_u64(),
+                Some(MAX_QUERY_VDBE_STEPS as u64)
+            );
+            assert_eq!(
+                manifest["execution"]["max_exec_vdbe_steps"].as_u64(),
+                Some(MAX_EXEC_VDBE_STEPS as u64)
+            );
         }
     }
 
@@ -5705,12 +5874,6 @@ COMMIT;",
         let recovered = upgrade::wasm_from_json(&tx, &hash).unwrap().unwrap();
         assert_eq!(recovered, bytes);
         assert_eq!(upgrade::find_tx_hash_with_code(&tx).as_deref(), Some("tx1"));
-    }
-
-    #[test]
-    fn upgrade_write_smoke_cleans_up_after_itself() {
-        assert!(upgrade::UPGRADE_WRITE_SMOKE_SQL.contains("insert into"));
-        assert!(upgrade::UPGRADE_WRITE_SMOKE_SQL.contains("drop table"));
     }
 
     #[test]
@@ -5912,6 +6075,22 @@ COMMIT;",
         assert_eq!(limits["versions"]["sqlite"], SQLITE_VERSION);
         assert_eq!(limits["sql"]["max_sql_bytes"], MAX_SQL_TEXT_BYTES);
         assert_eq!(limits["result"]["max_rows"], MAX_RESULT_ROWS);
+        assert_eq!(limits["storage"]["max_pages"], MAX_DB_PAGES);
+        assert_eq!(limits["storage"]["max_file_bytes"], MAX_DB_FILE_BYTES);
+        assert_eq!(
+            limits["storage"]["max_dirty_pages_per_exec"],
+            MAX_DIRTY_PAGES_PER_EXEC
+        );
+        assert_eq!(MAX_DB_PAGES * SQLITE_PAGE_BYTES, MAX_DB_FILE_BYTES);
+        assert_eq!((STABLE_STORAGE_LIMIT_BYTES - 109) / 4_158, MAX_DB_PAGES);
+        assert_eq!(
+            limits["execution"]["max_query_vdbe_steps"],
+            MAX_QUERY_VDBE_STEPS
+        );
+        assert_eq!(
+            limits["execution"]["runtime_wasm_fuel"],
+            "octra_protocol_dependency"
+        );
         assert_eq!(limits["result"]["limit_error"], "result_limit_exceeded");
         assert_eq!(
             limits["auth"]["read_model"],
@@ -5923,6 +6102,11 @@ COMMIT;",
             json!(["auto", "sealed", "public"])
         );
         assert_eq!(limits["auth"]["write_model"], "OSW1 owner write intent");
+        assert_eq!(limits["confidentiality"]["encrypted"], false);
+        assert_eq!(
+            limits["confidentiality"]["write_sql_visible_in_transaction_history"],
+            true
+        );
         assert!(
             limits["trace"]["modes"]
                 .as_array()
@@ -6080,6 +6264,11 @@ COMMIT;",
         assert_eq!(manifest["database"]["uri"], "oct://devnet/octABC");
         assert_eq!(manifest["database"]["read_uri"], "oct://devnet/octABC");
         assert_eq!(manifest["owner"]["write_auth"], "OSW1 owner write intent");
+        assert_eq!(
+            manifest["confidentiality"]["read_access"],
+            "authenticated_wallet"
+        );
+        assert_eq!(manifest["confidentiality"]["read_owner_only"], false);
         assert_eq!(manifest["program"]["runtime"], "wasm_v1");
         assert_eq!(manifest["initializer"]["schema_file"], "schema.sql");
         assert!(manifest.get("app").is_none());
@@ -6286,7 +6475,10 @@ COMMIT;",
             Some("metadata_only")
         );
         for (entry, artifact) in entries.iter().zip(&catalog) {
-            assert_eq!(artifact.sqlite_version, "3.53.2");
+            assert!(matches!(
+                artifact.sqlite_version.as_str(),
+                "3.53.2" | "3.53.3"
+            ));
             assert!(artifact.bytes > 0);
             assert_eq!(artifact.sha256.len(), 64);
             assert!(
@@ -6306,6 +6498,9 @@ COMMIT;",
             assert_eq!(entry["bytes"].as_u64(), Some(artifact.bytes));
             assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256.as_str()));
         }
+        assert!(catalog.iter().any(|artifact| {
+            artifact.releases == "0.6.0" && artifact.sqlite_version == "3.53.3"
+        }));
 
         let exact = match_historical_wasm_in_catalog(&catalog, &catalog[2].sha256, None).unwrap();
         assert_eq!(exact.releases, "0.3.0");

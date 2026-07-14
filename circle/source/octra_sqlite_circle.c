@@ -39,10 +39,20 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define MAX_DIRTY_PAGES 1024
 #define MAX_JSON_BYTES 65526
 #define MAX_SQL_BYTES 8192
-#define MAX_DB_PAGES 8192
+#define MAX_VFS_PAGES 8192
+#define MAX_DB_PAGES 8069
 #define MAX_DB_PAGES_JSON STRINGIFY_VALUE(MAX_DB_PAGES)
+#define MAX_DB_FILE_BYTES 33050624
+#define MAX_DB_FILE_BYTES_JSON STRINGIFY_VALUE(MAX_DB_FILE_BYTES)
+#define STABLE_STORAGE_LIMIT_BYTES 33554432
+#define STABLE_STORAGE_LIMIT_BYTES_JSON STRINGIFY_VALUE(STABLE_STORAGE_LIMIT_BYTES)
 #define MAX_RESULT_ROWS 512
 #define MAX_BACKUP_CHUNK_PAGES 8
+#define SQL_PROGRESS_INTERVAL 1000
+#define MAX_QUERY_VDBE_STEPS 5000000
+#define MAX_EXEC_VDBE_STEPS 25000000
+#define MAX_QUERY_VDBE_STEPS_JSON STRINGIFY_VALUE(MAX_QUERY_VDBE_STEPS)
+#define MAX_EXEC_VDBE_STEPS_JSON STRINGIFY_VALUE(MAX_EXEC_VDBE_STEPS)
 #define TYPED_TEXT_PREFIX "OSR1:"
 #define FIXED_JULIAN_DAY 2460486.5
 #define FIXED_JULIAN_MS 212586033600000ll
@@ -58,6 +68,9 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define OCTRA_SQLITE_APP_ERROR 2
 
 typedef char owner_write_intent_domain_len_must_include_nul[(sizeof(OWNER_WRITE_INTENT_DOMAIN) == OWNER_WRITE_INTENT_DOMAIN_LEN) ? 1 : -1];
+typedef char max_db_file_bytes_must_match_pages[(MAX_DB_FILE_BYTES == MAX_DB_PAGES * PAGE_SIZE) ? 1 : -1];
+typedef char max_db_pages_must_fit_stable_storage[((MAX_DB_PAGES * 4158u + 109u) <= STABLE_STORAGE_LIMIT_BYTES) ? 1 : -1];
+typedef char next_db_page_must_exceed_stable_storage[(((MAX_DB_PAGES + 1u) * 4158u + 109u) > STABLE_STORAGE_LIMIT_BYTES) ? 1 : -1];
 
 enum OctraCode {
   OCTRA_ERR_FRAME_TOO_SHORT = 10,
@@ -622,7 +635,12 @@ static int respond_manifest(void) {
       "{\"name\":\"reset\",\"view\":false}"
       "],\"engine\":\"" ENGINE_ID "\","
       "\"storage\":\"" STORAGE_ID "\","
-      "\"page_size\":" PAGE_SIZE_JSON "}";
+      "\"page_size\":" PAGE_SIZE_JSON ","
+      "\"limits\":{"
+      "\"max_db_pages\":" MAX_DB_PAGES_JSON ","
+      "\"max_db_file_bytes\":" MAX_DB_FILE_BYTES_JSON ","
+      "\"query_vdbe_steps\":" MAX_QUERY_VDBE_STEPS_JSON ","
+      "\"exec_vdbe_steps\":" MAX_EXEC_VDBE_STEPS_JSON "}}";
   return respond_raw((const u8 *)json, sizeof(json) - 1, 0);
 }
 
@@ -672,9 +690,9 @@ static int write_failed;
 static u64 current_owner_sequence;
 static u64 pending_owner_sequence;
 static int pending_owner_sequence_active;
-static u64 page_generations[MAX_DB_PAGES];
-static u64 next_page_generations[MAX_DB_PAGES];
-static u8 manifest_bytes[MAX_DB_PAGES * 8u];
+static u64 page_generations[MAX_VFS_PAGES];
+static u64 next_page_generations[MAX_VFS_PAGES];
+static u8 manifest_bytes[MAX_VFS_PAGES * 8u];
 
 static int append_hex8(char *out_key, int pos, u32 n) {
   const char *hex = "0123456789abcdef";
@@ -876,8 +894,8 @@ static int read_page_version_from_kv(u32 page_no, u64 generation, u8 *page) {
 static int load_manifest(void) {
   if (manifest_loaded) return SQLITE_OK;
   manifest_page_count = page_count_for_size(committed_file_size);
-  if (manifest_page_count > MAX_DB_PAGES) return SQLITE_FULL;
-  for (int i = 0; i < MAX_DB_PAGES; ++i) page_generations[i] = 0;
+  if (manifest_page_count > MAX_VFS_PAGES) return SQLITE_FULL;
+  for (int i = 0; i < MAX_VFS_PAGES; ++i) page_generations[i] = 0;
   if (!meta_exists || current_generation == 0) {
     manifest_loaded = 1;
     return SQLITE_OK;
@@ -1010,7 +1028,7 @@ static DirtyPage *get_dirty_page(u32 page_no) {
 static int flush_dirty_pages(void) {
   sqlite3_int64 old_page_count = page_count_for_size(committed_file_size);
   sqlite3_int64 new_page_count = page_count_for_size(main_file_size);
-  if (old_page_count > MAX_DB_PAGES || new_page_count > MAX_DB_PAGES) return SQLITE_FULL;
+  if (old_page_count > MAX_VFS_PAGES || new_page_count > MAX_DB_PAGES) return SQLITE_FULL;
   if (dirty_count == 0 && main_file_size == committed_file_size && !pending_owner_sequence_active) {
     return SQLITE_OK;
   }
@@ -1406,6 +1424,23 @@ static void apply_sqlite_limits(sqlite3 *db) {
   sqlite3_limit(db, SQLITE_LIMIT_PARSER_DEPTH, 100);
 }
 
+typedef struct SqlWorkBudget SqlWorkBudget;
+struct SqlWorkBudget {
+  u32 callbacks_remaining;
+};
+
+static int consume_sql_work_budget(void *context) {
+  SqlWorkBudget *budget = (SqlWorkBudget *)context;
+  if (!budget || budget->callbacks_remaining == 0) return 1;
+  --budget->callbacks_remaining;
+  return budget->callbacks_remaining == 0;
+}
+
+static void install_sql_work_budget(sqlite3 *db, SqlWorkBudget *budget, u32 max_steps) {
+  budget->callbacks_remaining = max_steps / SQL_PROGRESS_INTERVAL;
+  sqlite3_progress_handler(db, SQL_PROGRESS_INTERVAL, consume_sql_work_budget, budget);
+}
+
 static int open_db(int readonly, sqlite3 **out_db) {
   sqlite3 *db = 0;
   int rc = load_meta();
@@ -1535,6 +1570,8 @@ static int run_sqlite_query(const char *sql) {
   const char *tail = 0;
   int rc = open_db(1, &db);
   if (rc != SQLITE_OK) return 1;
+  SqlWorkBudget budget;
+  install_sql_work_budget(db, &budget, MAX_QUERY_VDBE_STEPS);
   sqlite3_set_authorizer(db, deny_unsafe_sql, 0);
   rc = sqlite3_prepare_v2(db, sql, -1, &stmt, &tail);
   if (rc != SQLITE_OK) {
@@ -1596,8 +1633,12 @@ static int run_sqlite_query(const char *sql) {
     }
   }
   if (rc != SQLITE_DONE) {
+    int budget_exceeded = rc == SQLITE_INTERRUPT;
     sqlite3_finalize(stmt);
     sqlite3_close(db);
+    if (budget_exceeded) {
+      return set_json_error("query_budget_exceeded", "query exceeded deterministic SQLite work limit");
+    }
     return set_json_error("sqlite_step_failed", "SQLite query did not finish cleanly");
   }
   append_cstr("],\"row_count\":");
@@ -1614,6 +1655,8 @@ static int run_sqlite_query_typed(const char *sql) {
   const char *tail = 0;
   int rc = open_db(1, &db);
   if (rc != SQLITE_OK) return 1;
+  SqlWorkBudget budget;
+  install_sql_work_budget(db, &budget, MAX_QUERY_VDBE_STEPS);
   sqlite3_set_authorizer(db, deny_unsafe_sql, 0);
   rc = sqlite3_prepare_v2(db, sql, -1, &stmt, &tail);
   if (rc != SQLITE_OK) {
@@ -1672,8 +1715,12 @@ static int run_sqlite_query_typed(const char *sql) {
     }
   }
   if (rc != SQLITE_DONE) {
+    int budget_exceeded = rc == SQLITE_INTERRUPT;
     sqlite3_finalize(stmt);
     sqlite3_close(db);
+    if (budget_exceeded) {
+      return set_json_error("query_budget_exceeded", "query exceeded deterministic SQLite work limit");
+    }
     return set_json_error("sqlite_step_failed", "SQLite query did not finish cleanly");
   }
   patch_be32(row_count_offset, (u32)row_count);
@@ -1705,17 +1752,24 @@ static int run_sqlite_exec(const char *sql, int trace_sql) {
   }
 
   int before = sqlite3_total_changes(db);
+  SqlWorkBudget budget;
+  install_sql_work_budget(db, &budget, MAX_EXEC_VDBE_STEPS);
   sqlite3_set_authorizer(db, deny_unsafe_sql, 0);
   rc = sqlite3_exec(db, sql, 0, 0, &err);
   sqlite3_set_authorizer(db, 0, 0);
+  sqlite3_progress_handler(db, 0, 0, 0);
+  int budget_exceeded = rc == SQLITE_INTERRUPT;
   if (rc == SQLITE_OK) {
     rc = sqlite3_exec(db, "commit;", 0, 0, &err);
   }
   if (rc != SQLITE_OK) {
     sqlite3_exec(db, "rollback;", 0, 0, 0);
-    const char *detail = err ? err : sqlite3_errmsg(db);
-    emit_sql_error_event("sqlite_exec_failed", detail);
-    append_json_error("sqlite_exec_failed", detail);
+    const char *error = budget_exceeded ? "exec_budget_exceeded" : "sqlite_exec_failed";
+    const char *detail = budget_exceeded
+        ? "exec exceeded deterministic SQLite work limit"
+        : (err ? err : sqlite3_errmsg(db));
+    emit_sql_error_event(error, detail);
+    append_json_error(error, detail);
     sqlite3_free(err);
     sqlite3_close(db);
     return OCTRA_SQLITE_APP_ERROR;
@@ -1774,6 +1828,14 @@ static int run_storage_info(void) {
   append_i64(MAX_DIRTY_PAGES);
   append_cstr(",\"max_db_pages\":");
   append_i64(MAX_DB_PAGES);
+  append_cstr(",\"max_db_file_bytes\":");
+  append_i64(MAX_DB_FILE_BYTES);
+  append_cstr(",\"stable_storage_limit_bytes\":");
+  append_i64(STABLE_STORAGE_LIMIT_BYTES);
+  append_cstr(",\"query_vdbe_steps\":");
+  append_i64(MAX_QUERY_VDBE_STEPS);
+  append_cstr(",\"exec_vdbe_steps\":");
+  append_i64(MAX_EXEC_VDBE_STEPS);
   append_byte('}');
   return 0;
 }

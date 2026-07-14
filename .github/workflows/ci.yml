@@ -10,8 +10,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      EXPECTED_WASM_SHA256: 3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051
-      EXPECTED_WASM_BYTES: "610218"
+      EXPECTED_WASM_SHA256: c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef
+      EXPECTED_WASM_BYTES: "611456"
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust

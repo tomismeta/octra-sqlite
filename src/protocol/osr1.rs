@@ -3,23 +3,56 @@ use base64::{Engine as _, engine::general_purpose};
 use serde_json::{Value, json};
 
 pub const TYPED_PREFIX: &str = "OSR1:";
+const MAX_ENVELOPE_BYTES: usize = 65_526;
+const MAX_ENCODED_PAYLOAD_BYTES: usize = MAX_ENVELOPE_BYTES - TYPED_PREFIX.len();
+const MAX_DECODED_PAYLOAD_BYTES: usize = (MAX_ENCODED_PAYLOAD_BYTES / 4) * 3;
+const MAX_COLUMNS: usize = 128;
+const MAX_ROWS: usize = 512;
 
 pub fn decode_typed_result(encoded: &str) -> Result<Value> {
+    if encoded.len() > MAX_ENCODED_PAYLOAD_BYTES {
+        return Err(Error::new("typed result exceeds maximum payload size"));
+    }
     let raw = general_purpose::STANDARD.decode(encoded)?;
+    if raw.len() > MAX_DECODED_PAYLOAD_BYTES {
+        return Err(Error::new("typed result exceeds maximum payload size"));
+    }
     if raw.len() < 12 || &raw[..4] != b"OSR1" {
         return Err(Error::new("bad typed result magic"));
     }
     let mut offset = 4usize;
     let col_count = read_u32(&raw, &mut offset)? as usize;
     let row_count = read_u32(&raw, &mut offset)? as usize;
-    let mut columns = Vec::with_capacity(col_count);
+    if col_count > MAX_COLUMNS {
+        return Err(Error::new("typed result exceeds maximum column count"));
+    }
+    if row_count > MAX_ROWS {
+        return Err(Error::new("typed result exceeds maximum row count"));
+    }
+    let cell_count = row_count
+        .checked_mul(col_count)
+        .ok_or_else(|| Error::new("typed result cell count overflow"))?;
+    if cell_count > raw.len().saturating_sub(offset) {
+        return Err(Error::new("typed result cell count exceeds payload"));
+    }
+    let mut columns = Vec::new();
+    columns
+        .try_reserve_exact(col_count)
+        .map_err(|_| Error::new("typed result column allocation failed"))?;
     for _ in 0..col_count {
         let bytes = read_bytes(&raw, &mut offset)?;
-        columns.push(String::from_utf8_lossy(bytes).to_string());
+        columns.push(
+            String::from_utf8(bytes.to_vec())
+                .map_err(|_| Error::new("typed result column name is not valid UTF-8"))?,
+        );
     }
-    let mut rows = Vec::with_capacity(row_count);
+    let mut rows = Vec::new();
+    rows.try_reserve_exact(row_count)
+        .map_err(|_| Error::new("typed result row allocation failed"))?;
     for _ in 0..row_count {
-        let mut row = Vec::with_capacity(col_count);
+        let mut row = Vec::new();
+        row.try_reserve_exact(col_count)
+            .map_err(|_| Error::new("typed result cell allocation failed"))?;
         for _ in 0..col_count {
             row.push(read_cell(&raw, &mut offset)?);
         }
@@ -38,30 +71,39 @@ pub fn decode_typed_result(encoded: &str) -> Result<Value> {
 }
 
 fn read_u32(raw: &[u8], offset: &mut usize) -> Result<u32> {
-    if *offset + 4 > raw.len() {
+    let end = offset
+        .checked_add(4)
+        .ok_or_else(|| Error::new("typed result offset overflow"))?;
+    if end > raw.len() {
         return Err(Error::new("truncated u32"));
     }
-    let value = u32::from_be_bytes(raw[*offset..*offset + 4].try_into().unwrap());
-    *offset += 4;
+    let value = u32::from_be_bytes(raw[*offset..end].try_into().unwrap());
+    *offset = end;
     Ok(value)
 }
 
 fn read_u64(raw: &[u8], offset: &mut usize) -> Result<u64> {
-    if *offset + 8 > raw.len() {
+    let end = offset
+        .checked_add(8)
+        .ok_or_else(|| Error::new("typed result offset overflow"))?;
+    if end > raw.len() {
         return Err(Error::new("truncated u64"));
     }
-    let value = u64::from_be_bytes(raw[*offset..*offset + 8].try_into().unwrap());
-    *offset += 8;
+    let value = u64::from_be_bytes(raw[*offset..end].try_into().unwrap());
+    *offset = end;
     Ok(value)
 }
 
 fn read_bytes<'a>(raw: &'a [u8], offset: &mut usize) -> Result<&'a [u8]> {
     let len = read_u32(raw, offset)? as usize;
-    if *offset + len > raw.len() {
+    let end = offset
+        .checked_add(len)
+        .ok_or_else(|| Error::new("typed result offset overflow"))?;
+    if end > raw.len() {
         return Err(Error::new("truncated bytes"));
     }
-    let bytes = &raw[*offset..*offset + len];
-    *offset += len;
+    let bytes = &raw[*offset..end];
+    *offset = end;
     Ok(bytes)
 }
 
@@ -77,12 +119,13 @@ fn read_cell(raw: &[u8], offset: &mut usize) -> Result<Value> {
         2 => {
             let bits = read_u64(raw, offset)?;
             let value = f64::from_bits(bits);
-            Ok(serde_json::Number::from_f64(value)
+            serde_json::Number::from_f64(value)
                 .map(Value::Number)
-                .unwrap_or(Value::Null))
+                .ok_or_else(|| Error::new("typed result REAL must be finite"))
         }
         3 => Ok(Value::String(
-            String::from_utf8_lossy(read_bytes(raw, offset)?).to_string(),
+            String::from_utf8(read_bytes(raw, offset)?.to_vec())
+                .map_err(|_| Error::new("typed result TEXT is not valid UTF-8"))?,
         )),
         4 => Ok(json!({
             "type": "blob",
@@ -109,5 +152,45 @@ mod tests {
         assert_eq!(decoded["rows"][0][2], 1000.0);
         assert_eq!(decoded["rows"][0][3], "Ada");
         assert_eq!(decoded["rows"][0][4]["base64"], "QUI=");
+    }
+
+    fn encode(raw: &[u8]) -> String {
+        general_purpose::STANDARD.encode(raw)
+    }
+
+    #[test]
+    fn rejects_counts_before_allocating() {
+        let mut raw = b"OSR1".to_vec();
+        raw.extend_from_slice(&u32::MAX.to_be_bytes());
+        raw.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert!(decode_typed_result(&encode(&raw)).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_utf8() {
+        let mut raw = b"OSR1".to_vec();
+        raw.extend_from_slice(&1u32.to_be_bytes());
+        raw.extend_from_slice(&0u32.to_be_bytes());
+        raw.extend_from_slice(&1u32.to_be_bytes());
+        raw.push(0xff);
+        assert!(decode_typed_result(&encode(&raw)).is_err());
+    }
+
+    #[test]
+    fn rejects_non_finite_reals() {
+        let mut raw = b"OSR1".to_vec();
+        raw.extend_from_slice(&1u32.to_be_bytes());
+        raw.extend_from_slice(&1u32.to_be_bytes());
+        raw.extend_from_slice(&1u32.to_be_bytes());
+        raw.push(b'x');
+        raw.push(2);
+        raw.extend_from_slice(&f64::NAN.to_bits().to_be_bytes());
+        assert!(decode_typed_result(&encode(&raw)).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_payloads_before_decoding() {
+        let encoded = "A".repeat(MAX_ENCODED_PAYLOAD_BYTES + 1);
+        assert!(decode_typed_result(&encoded).is_err());
     }
 }

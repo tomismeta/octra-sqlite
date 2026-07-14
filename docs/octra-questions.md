@@ -29,6 +29,20 @@ This repository no longer depends on that answer for correctness. The contract
 uses generation-scoped page keys and promotes a single metadata key last. A
 documented all-or-nothing guarantee would let us simplify that design later.
 
+## WASM Execution Metering
+
+The current Octra node checkout constructs the Circle WASM engine with its
+default configuration and does not expose a fuel budget to the program. The
+`0.6.1` Circle program therefore adds deterministic SQLite progress-handler
+budgets for query and exec work. That closes unbounded SQL execution inside
+SQLite, but it cannot meter host imports or arbitrary non-SQL WASM work.
+
+The protocol-level requirement is a deterministic per-invocation fuel or
+equivalent execution budget enforced by every validator, with a stable
+exhaustion result and no committed update state. Once Octra provides that,
+octra-sqlite should keep its narrower SQLite budgets as product limits while
+relying on protocol fuel as the outer consensus boundary.
+
 ## Wallet Roles And Write Policy
 
 Implemented go-live baseline: a Circle created by `octra-sqlite new NAME`

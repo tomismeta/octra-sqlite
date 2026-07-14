@@ -44,6 +44,8 @@ Stable error classifications:
 | `transactions_not_supported` | Restore saw unsupported transaction control SQL. |
 | `read_only` | `--read-only` refused a write. |
 | `result_limit_exceeded` | Query exceeded the Circle row limit. |
+| `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
+| `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
@@ -89,10 +91,16 @@ Produced by `new DATABASE --json`.
       "resource_mode": "sealed_read"
     }
   },
+  "confidentiality": {
+    "encrypted": false,
+    "read_access": "authenticated_wallet",
+    "read_owner_only": false,
+    "write_sql_visible_in_transaction_history": true
+  },
   "program": {
     "runtime": "wasm_v1",
     "wasm_hash": "hex...",
-    "wasm_bytes": 609354
+    "wasm_bytes": 611456
   },
   "initializer": {
     "present": true,
@@ -247,7 +255,7 @@ and `upgrade rollback BUNDLE --json`.
   "type": "upgrade",
   "schema": "octra-sqlite.cli.v1",
   "mode": "applied",
-  "status": "upgrade_needed",
+  "status": "applied",
   "upgrade_required": true,
   "dry_run": false,
   "database": {},
@@ -271,12 +279,12 @@ and `upgrade rollback BUNDLE --json`.
   },
   "rollback": {
     "available": true,
-    "clean": null,
-    "clean_reason": "counter_unknown",
+    "clean": true,
+    "clean_reason": null,
     "wasm": "previous.wasm",
     "guard": {
       "storage_generation": 2,
-      "owner_sequence": null
+      "owner_sequence": 41
     }
   },
   "transaction": {
@@ -305,10 +313,22 @@ epoch boundary: previous code hash, new code hash, update transaction, backup
 metadata, and rollback guard. The JSON output never includes private keys or
 raw wallet JSON.
 
+The on-disk bundle manifest is written before chain submission with
+`status: "prepared"`, atomically replaced with `status: "applied"` after the
+new program is verified, and finalized as `status: "complete"` after optional
+smoke and local metadata work. A `prepared` manifest already contains the
+target hash and rollback guard, so it remains usable if local finalization is
+interrupted after the chain changes.
+
 `verification.storage_generation_unchanged` and
 `verification.owner_sequence_unchanged` are `true`, `false`, or `null`. `null`
 means the live status surface did not return one side of the comparison, so the
 CLI does not turn an unknown counter into a false claim.
+
+Upgrade preflight reads `storage_info.owner_sequence` when the
+storage-independent `auth_info` response omits it, so supported historical and
+current engines can prove the comparison without rewriting the old Circle
+first.
 
 `rollback.clean` is also `true`, `false`, or `null`. `null` means rollback bytes
 are available but clean rollback could not be proven from live counters;
@@ -364,8 +384,14 @@ and derived Octra address. They do not print private keys, signatures, or raw
 wallet JSON.
 
 `limits --json` is the compact capability surface for automation. It includes
-CLI/SQLite/schema versions, SQL byte limits, result row/response limits, restore
-behavior, read/write auth facts, and available trace modes.
+CLI/SQLite/schema versions, SQL byte and VDBE work limits, result row/response
+limits, exact VFS capacity, restore behavior, read/write auth facts,
+confidentiality facts, and available trace modes. In particular,
+`confidentiality.encrypted` and `confidentiality.sealed_owner_only` are `false`,
+write SQL is marked visible in transaction history, and
+`storage.max_dirty_pages_per_exec` distinguishes per-write capacity from total
+database capacity. Contract `response_too_large` errors are reported to CLI
+automation as `result_too_large`.
 
 `commands --json` lists the supported CLI command surface and the stable JSON
 envelopes each command can emit. Use it when a caller needs command discovery
@@ -381,6 +407,9 @@ octra-sqlite DATABASE --trace-rpc-json trace.jsonl --trace-rpc-json-mode summary
 ```
 
 Trace mode defaults to `full`. Available modes:
+
+Trace files are created privately on Unix and the path must not already exist;
+the CLI refuses to truncate an existing file.
 
 | Mode | Contents |
 | --- | --- |

@@ -79,6 +79,10 @@ database metadata preserves that read mode. Raw `oct://` targets detect the
 Octra read surface from Circle metadata unless the URI explicitly includes
 `?read_mode=sealed` or `?read_mode=public`. Writes stay owner-signed through
 OSW1 in both modes.
+Sealed reads are authenticated, not encrypted or owner-only. Write SQL and
+values remain visible in Octra transaction history.
+Public reads include `backup_chunk`, so public access permits reconstruction of
+the complete SQLite file rather than only selected queries.
 
 Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
 then local `wallet.json` candidates. Wallet JSON may use the official Octra
@@ -120,7 +124,7 @@ SQLite runs.
 Set `OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT=1` to use `exec_trace` and emit full
 SQL text as a permanent `octra.sqlite.sql` on-chain event. On public-read
 databases, that event is public. The default `exec` path emits only the SQL
-hash event.
+hash event, but the write transaction itself still contains full SQL.
 
 `status`, `config`, and `database info` are the primary inspection commands.
 They should stay expressive enough that users do not need to inspect
@@ -162,6 +166,8 @@ requiring callers to parse human help text.
 - `src/protocol/`: transport-independent wire formats and database URI parsing.
 - `src/protocol/osr1.rs`: OSR1 typed-result decoding.
 - `src/protocol/osw1.rs`: OSW1 owner write intent framing.
+- `src/private_file.rs`: crate-private owner-only and atomic file primitives
+  shared by config, wallets, backups, upgrade bundles, and RPC traces.
 - `config/defaults.json`: active devnet config and devnet/mainnet URL profiles.
 - `circle/source/octra_sqlite_circle.c`: Octra Circle program source.
 - `circle/wasm/octra_sqlite_circle.wasm`: bundled audited Circle WASM.
@@ -170,7 +176,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.6.0.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.6.1.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

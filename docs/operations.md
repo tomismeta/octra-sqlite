@@ -22,7 +22,9 @@ octra-sqlite status oct://devnet/oct... --json
 ## Read Modes
 
 Databases are sealed by default. Sealed reads use `octra_circleViewAuth`, so a
-wallet signs view requests. Writes use owner-signed OSW1 calls.
+wallet signs view requests. This authenticates reads; it does not encrypt data
+or limit reads to the database owner. Writes use owner-signed OSW1 calls, and
+their SQL and values remain visible in Octra transaction history.
 
 Public-read databases are explicit:
 
@@ -34,6 +36,10 @@ Public-read SQL queries use unauthenticated `octra_circleView`, so anyone can
 read data intended to be public. Writes still use owner-signed OSW1 calls. For
 public apps, prefer application-level rate limits or query allowlists at the app
 edge; the database Circle is a public SQL read surface.
+
+Public mode also includes the read-only `backup_chunk` method. A walletless
+reader can reconstruct the complete SQLite file, so public mode must be treated
+as a full database export surface.
 
 Saved database metadata carries the read mode. Raw `oct://` targets detect the
 Octra read surface from Circle metadata:
@@ -130,8 +136,13 @@ target-engine state without writing. A real upgrade:
   `--previous-wasm` for rollback;
 - writes a private local upgrade bundle with a named `.sqlite` backup,
   `previous.wasm`, and `upgrade.json`;
+- persists `upgrade.json` as `prepared` before submitting the program update,
+  changes it atomically to `applied` after on-chain verification, then to
+  `complete` after smoke and local metadata work;
 - aborts if storage generation or owner sequence changes before the program
   update is submitted;
+- refuses a legacy database already larger than the target engine's writable
+  page or file limit;
 - submits one `circle_program_update`, then verifies `sqlite_version()` against
   the bundled engine.
 
@@ -169,10 +180,11 @@ Upgrade manifests define an engine epoch boundary. Replay byte identity is
 per-engine-version, so keep the `from`/`to` code hashes and update transaction
 with backups and traces.
 
-Released binaries use the embedded bundled WASM and release manifest by
-default. Use `--wasm PATH` or `OCTRA_SQLITE_WASM=PATH` only for deliberate
-custom deployments, and `OCTRA_SQLITE_MANIFEST=PATH` only when checking a
-specific external release manifest. Builders using `--build` can point
+Released binaries use the integrity-checked embedded WASM for normal creation,
+bootstrap, verification, and upgrades. Use an explicit `--wasm PATH` only on
+commands that support deliberate custom deployment; ambient environment cannot
+replace the release upgrade target. `OCTRA_SQLITE_MANIFEST=PATH` is only for
+checking a specific external release manifest. Builders using `--build` can point
 `OCTRA_SQLITE_ROOT` at a source checkout when the current directory is not the
 repo.
 
@@ -185,6 +197,14 @@ and date only:
   previous.wasm
   upgrade.json
 ```
+
+## Foreign Keys
+
+SQLite foreign-key enforcement is currently off. The Circle authorizer rejects
+user `PRAGMA` statements, and restore skips dump wrappers such as
+`PRAGMA foreign_keys=OFF`; applications must not assume declared foreign-key
+constraints are enforced. Changing this requires a deliberate engine policy,
+not a restore-time toggle.
 
 ## Large Restore
 
@@ -240,8 +260,16 @@ Current operational limits:
 
 - One SQL statement or payload must fit within the Circle SQL byte limit.
 - One read query returns at most 512 rows.
-- Large result payloads can fail with `result_too_large`; select fewer columns
-  or add a narrower `where` / `limit`.
+- Query execution is capped at 5,000,000 SQLite VDBE steps.
+- Write execution is capped at 25,000,000 SQLite VDBE steps.
+- The current generation-manifest VFS supports 8,069 pages of 4,096 bytes, or
+  33.05 MB of SQLite file data, within Octra's 33.55 MB stable-storage cap when
+  the Circle storage is dedicated to the SQLite VFS.
+- One `exec` can dirty at most 1,024 distinct pages. Chunk broad updates by a
+  stable primary-key range and verify each accepted transaction.
+- Large result payloads can fail with `response_too_large`; select fewer columns
+  or add a narrower `where` / `limit`. CLI JSON reports this class as
+  `result_too_large`.
 - Large scripts are split into multiple signed writes.
 - Each accepted write is atomic.
 - A multi-batch restore is not globally atomic.

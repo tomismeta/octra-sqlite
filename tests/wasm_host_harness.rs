@@ -969,6 +969,35 @@ insert into people(first_name,last_name) values ('Ada','Byron'),('Katherine','Jo
         assert_eq!(denied["ok"], false);
         Ok(())
     }
+
+    #[test]
+    fn sqlite_work_budgets_stop_unbounded_query_and_exec() -> Result<()> {
+        let mut contract = Contract::load()?;
+        let unbounded = "with recursive n(x) as (values(1) union all select x + 1 from n) select sum(x) from n;";
+
+        let query = json_response(&contract.call_query("query_typed", &[unbounded])?);
+        assert_eq!(query["ok"], false);
+        assert_eq!(query["error"], "query_budget_exceeded");
+
+        let before = contract.host.borrow().kv.clone();
+        let exec = json_response(&contract.call_update("exec", &[unbounded])?);
+        assert_eq!(exec["ok"], false);
+        assert_eq!(exec["error"], "exec_budget_exceeded");
+        assert_eq!(contract.host.borrow().kv, before);
+        Ok(())
+    }
+
+    #[test]
+    fn storage_info_reports_effective_circle_capacity() -> Result<()> {
+        let mut contract = Contract::load()?;
+        let storage = json_response(&contract.call_query("storage_info", &[])?);
+        assert_eq!(storage["max_db_pages"], 8069);
+        assert_eq!(storage["max_db_file_bytes"], 33_050_624);
+        assert_eq!(storage["stable_storage_limit_bytes"], 33_554_432);
+        assert_eq!(storage["query_vdbe_steps"], 5_000_000);
+        assert_eq!(storage["exec_vdbe_steps"], 25_000_000);
+        Ok(())
+    }
 }
 
 #[cfg(not(feature = "wasm-behavior"))]

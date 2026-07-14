@@ -128,7 +128,7 @@ impl Session {
     }
 
     pub fn open_database(&self, target: impl Into<String>) -> Result<Session> {
-        let config = load_config().unwrap_or_default();
+        let config = load_config()?;
         let mut target = resolve_database_target(&target.into(), &config)?;
         if target.rpc.is_empty() {
             target.rpc = self.rpc.clone();
@@ -183,7 +183,7 @@ impl Session {
 }
 
 pub fn build_session(options: &ClientOptions) -> Result<Session> {
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let target_value = options
         .target
         .clone()
@@ -202,7 +202,7 @@ pub fn build_session(options: &ClientOptions) -> Result<Session> {
 }
 
 pub fn build_control_session(options: &ClientOptions, network: &str) -> Result<Session> {
-    let config = load_config().unwrap_or_default();
+    let config = load_config()?;
     let target = DatabaseTarget {
         raw: format!("oct://{network}"),
         network: network.to_string(),
@@ -258,7 +258,9 @@ fn resolve_database_target_inner(
 }
 
 fn apply_target_metadata(requested: &str, config: &Config, target: &mut DatabaseTarget) {
-    if let Some(metadata) = config.metadata_for_target(requested, target) {
+    if target.read_mode == ReadMode::Auto
+        && let Some(metadata) = config.metadata_for_target(requested, target)
+    {
         target.read_mode = metadata.read_mode;
     }
 }
@@ -460,6 +462,24 @@ mod tests {
             .insert("b".to_string(), "oct://devnet/octABC".to_string());
         let target = resolve_database_target("a", &config).unwrap();
         assert_eq!(target.circle, "octABC");
+    }
+
+    #[test]
+    fn explicit_uri_read_mode_wins_over_saved_metadata() {
+        let mut config = Config::default();
+        config.database_metadata.insert(
+            "database".to_string(),
+            super::super::config::DatabaseMetadata {
+                uri: "oct://devnet/octABC".to_string(),
+                network: "devnet".to_string(),
+                circle: "octABC".to_string(),
+                read_mode: ReadMode::Sealed,
+                ..super::super::config::DatabaseMetadata::default()
+            },
+        );
+        let target =
+            resolve_database_target("oct://devnet/octABC?read_mode=public", &config).unwrap();
+        assert_eq!(target.read_mode, ReadMode::Public);
     }
 
     #[test]

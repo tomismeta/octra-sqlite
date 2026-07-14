@@ -134,6 +134,13 @@ pub(super) fn auth_info_with<T: Transport>(transport: &T, session: &Session) -> 
 }
 
 pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) -> Result<Value> {
+    match session.target().read_mode {
+        ReadMode::Public => return public_program_info_with(transport, session),
+        ReadMode::Auto if circle_is_public_read(&circle_info_with(transport, session)?) => {
+            return public_program_info_with(transport, session);
+        }
+        _ => {}
+    }
     let message = format!(
         "octra_circle_program_info|{}|{}",
         session.target().circle,
@@ -153,6 +160,15 @@ pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) 
     )
 }
 
+fn public_program_info_with<T: Transport>(transport: &T, session: &Session) -> Result<Value> {
+    rpc_call(
+        transport,
+        session,
+        "octra_circleProgramInfo",
+        json!([session.target().circle]),
+    )
+}
+
 pub(super) fn next_nonce_with<T: Transport>(transport: &T, session: &Session) -> Result<i64> {
     let balance = rpc_call(
         transport,
@@ -160,12 +176,27 @@ pub(super) fn next_nonce_with<T: Transport>(transport: &T, session: &Session) ->
         "octra_balance",
         json!([session.caller()]),
     )?;
-    Ok(balance
+    next_nonce_from_balance(&balance)
+}
+
+fn next_nonce_from_balance(balance: &Value) -> Result<i64> {
+    let value = balance
         .get("pending_nonce")
         .or_else(|| balance.get("nonce"))
-        .and_then(Value::as_i64)
-        .unwrap_or(0)
-        + 1)
+        .ok_or_else(|| Error::with_kind(ErrorKind::Decode, "balance response missing nonce"))?;
+    let nonce = value
+        .as_i64()
+        .or_else(|| value.as_str()?.parse::<i64>().ok())
+        .filter(|nonce| *nonce >= 0)
+        .ok_or_else(|| {
+            Error::with_kind(
+                ErrorKind::Decode,
+                "balance response nonce must be a non-negative integer",
+            )
+        })?;
+    nonce
+        .checked_add(1)
+        .ok_or_else(|| Error::with_kind(ErrorKind::Decode, "balance response nonce exceeds i64"))
 }
 
 pub(super) fn rpc_call<T: Transport>(
@@ -270,4 +301,31 @@ fn contract_error_text(value: &Value) -> Option<String> {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nonce_parsing_accepts_numbers_and_decimal_strings() {
+        assert_eq!(
+            next_nonce_from_balance(&json!({"pending_nonce": 41})).unwrap(),
+            42
+        );
+        assert_eq!(next_nonce_from_balance(&json!({"nonce": "9"})).unwrap(), 10);
+    }
+
+    #[test]
+    fn nonce_parsing_fails_closed() {
+        for value in [
+            json!({}),
+            json!({"nonce": null}),
+            json!({"nonce": "nope"}),
+            json!({"nonce": -1}),
+            json!({"nonce": i64::MAX}),
+        ] {
+            assert!(next_nonce_from_balance(&value).is_err(), "{value}");
+        }
+    }
 }
