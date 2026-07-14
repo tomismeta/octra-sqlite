@@ -7,6 +7,11 @@ of `Client -> Database -> query/execute`.
 Roadmap items deepen that spine. Framework integrations, ORMs, alternate agent
 commands, and application servers belong in examples or downstream projects.
 
+Developer experience should be modeled after disciplined Rust crates such as
+`rusqlite` in craft, not breadth. Keep the README product-first, make docs.rs
+the curated Rust API front door when a utility-bearing release justifies the
+work, and do not cut releases for documentation polish alone.
+
 ## Themes
 
 - **Security**: authorization, secret handling, deterministic limits, and
@@ -32,6 +37,8 @@ Themes: **Security**, **Architecture**, **Developer Experience**, **Operations**
   lifecycle, onboarding, inspection, SQL dispatch, catalogs, and tests.
 - Keep public-export, foreign-key, dirty-page, restore, and event-disclosure
   limits explicit in docs and `limits --json`.
+- Keep `0.6.1` soaking until field feedback or material utility earns the next
+  tag.
 
 Exit: current claims have local and devnet proof, and no CLI responsibility is
 forced into a single catch-all module.
@@ -47,6 +54,10 @@ Themes: **Architecture**, **Security**, **Developer Experience**, **Operations**
   codes at construction sites.
 - Strengthen secret ownership so inline key material is not freely cloned and
   is zeroized on drop.
+- Fold curated docs.rs examples and API documentation into the next
+  utility-bearing release instead of shipping a docs-only patch.
+- Establish trusted publishing and keep release hygiene on branches with
+  squash or rebase merges.
 
 Exit: the CLI exercises the same happy-path API that downstream Rust programs
 use, with one source of truth for read modes, receipts, and errors.
