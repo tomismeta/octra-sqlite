@@ -194,7 +194,7 @@
     "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
   },
   "client_release": {
-    "notes": "Hardening release candidate. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, durable upgrade owner-sequence comparison, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
+    "notes": "Hardening release. Adds deterministic SQLite work budgets, exact current VFS capacity accounting, durable upgrade owner-sequence comparison, fail-closed client decoding and receipts, durable upgrade manifest transitions, collision-safe smoke tables, private atomic local artifacts, and explicit confidentiality boundaries. SQLite remains 3.53.3."
   },
-  "status": "Unreleased 0.6.1 candidate; local and devnet proof complete"
+  "status": "0.6.1 release; local and devnet proof complete"
 }

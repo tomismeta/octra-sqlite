@@ -22,5 +22,4 @@ upgrade, rollback, final re-upgrade proof, the current quick-start public-read
 Circle status, and the metadata-only catalog of blessed historical WASM epochs.
 The `0.6.1` manifest records the deterministic SQLite work budgets, corrected
 generation-manifest capacity, hardening scope, and the previous `0.6.0` WASM in
-that metadata-only catalog. Its devnet proof is recorded; the manifest remains
-a candidate until `v0.6.1` is tagged and published.
+that metadata-only catalog, with recorded local and devnet proof.
