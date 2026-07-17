@@ -212,7 +212,12 @@ impl Transport for HttpTransport {
                         sleep_before_retry(attempt, retry_after);
                         continue;
                     }
-                    return Err(Error::with_kind(ErrorKind::Decode, message));
+                    let code = if status_code == 429 {
+                        "rpc_rate_limited"
+                    } else {
+                        "rpc_non_json"
+                    };
+                    return Err(Error::with_code(ErrorKind::Decode, code, message));
                 }
             };
             if !status.is_success() {
@@ -232,6 +237,13 @@ impl Transport for HttpTransport {
                     sleep_before_retry(attempt, retry_after);
                     continue;
                 }
+                if status_code == 429 {
+                    return Err(Error::with_code(
+                        ErrorKind::Transport,
+                        "rpc_rate_limited",
+                        message,
+                    ));
+                }
                 return Err(Error::with_kind(ErrorKind::Transport, message));
             }
             if let Some(error) = payload.get("error") {
@@ -247,6 +259,13 @@ impl Transport for HttpTransport {
                 if should_retry_rpc_error(attempt, retryable, error) {
                     sleep_before_retry(attempt, retry_after);
                     continue;
+                }
+                if rpc_error_is_rate_limited(error) {
+                    return Err(Error::with_code(
+                        ErrorKind::Rpc,
+                        "rpc_rate_limited",
+                        message,
+                    ));
                 }
                 return Err(Error::with_kind(ErrorKind::Rpc, message));
             }
@@ -279,9 +298,11 @@ fn should_retry_non_json(attempt: usize, retryable: bool, text: &str) -> bool {
 
 #[cfg(feature = "http")]
 fn should_retry_rpc_error(attempt: usize, retryable: bool, error: &Value) -> bool {
-    if !should_retry_transport(attempt, retryable) {
-        return false;
-    }
+    should_retry_transport(attempt, retryable) && rpc_error_is_rate_limited(error)
+}
+
+#[cfg(feature = "http")]
+fn rpc_error_is_rate_limited(error: &Value) -> bool {
     let code = error.get("code").and_then(Value::as_i64);
     let message = error
         .get("message")

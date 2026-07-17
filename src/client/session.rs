@@ -249,7 +249,8 @@ fn resolve_database_target_inner(
         apply_target_metadata(value, config, &mut target);
         return Ok(target);
     }
-    let mut target = parse_database_target(value, config.network.as_deref(), None)?;
+    let mut target = parse_database_target(value, config.network.as_deref(), None)
+        .map_err(|error| Error::with_code(ErrorKind::Config, "target_error", error.to_string()))?;
     if target.rpc.is_empty() {
         target.rpc = config.rpc_for_network(&target.network).unwrap_or_default();
     }

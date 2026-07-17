@@ -107,6 +107,13 @@ impl Database<HttpTransport> {
     pub fn open(options: ClientOptions) -> Result<Self> {
         Self::open_with_transport(options, HttpTransport::default())
     }
+
+    pub(crate) fn from_session(session: Session) -> Self {
+        Self {
+            session,
+            transport: Arc::new(HttpTransport::default()),
+        }
+    }
 }
 
 impl<T: Transport> Database<T> {
@@ -124,25 +131,31 @@ impl<T: Transport> Database<T> {
 
     /// Run read-only SQL and return typed rows.
     pub fn query(&self, sql: &str) -> Result<QueryResult> {
-        QueryResult::from_value(query_typed_with(
-            self.transport.as_ref(),
-            &self.session,
-            sql,
-        )?)
+        QueryResult::from_value(self.query_value(sql)?)
+    }
+
+    pub(crate) fn query_value(&self, sql: &str) -> Result<serde_json::Value> {
+        query_typed_with(self.transport.as_ref(), &self.session, sql)
     }
 
     /// Submit a write and wait for its receipt.
     pub fn execute(&self, sql: &str) -> Result<ExecuteResult> {
-        let prepared = self.prepare_write(sql)?;
-        let signed = self.sign_write(&prepared)?;
-        self.submit_signed_write_and_wait(signed)
+        ExecuteResult::from_value(self.execute_value(sql, false)?)
     }
 
     /// Submit a write without waiting for confirmation.
     pub fn execute_no_wait(&self, sql: &str) -> Result<SubmittedTransaction> {
-        let prepared = self.prepare_write_no_wait(sql)?;
+        SubmittedTransaction::from_value(self.execute_value(sql, true)?)
+    }
+
+    pub(crate) fn execute_value(&self, sql: &str, no_wait: bool) -> Result<serde_json::Value> {
+        let prepared = if no_wait {
+            self.prepare_write_no_wait(sql)?
+        } else {
+            self.prepare_write(sql)?
+        };
         let signed = self.sign_write(&prepared)?;
-        self.submit_signed_write(signed)
+        submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
     }
 
     /// Prepare a write for later signing and no-wait submission.

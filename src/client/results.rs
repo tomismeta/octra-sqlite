@@ -165,15 +165,15 @@ pub(super) fn ensure_receipt_success(receipt: &Value) -> Result<()> {
         || receipt.get("error").is_some_and(|error| !error.is_null())
         || sql_error.is_some();
     if failed {
-        return Err(Error::with_kind(
-            ErrorKind::Receipt,
-            format!(
-                "SQL execution failed: {}",
-                sql_error
-                    .map(|error| format_sql_error_event(&error))
-                    .unwrap_or_else(|| receipt_error_text(receipt))
-            ),
-        ));
+        let detail = sql_error
+            .as_deref()
+            .map(format_sql_error_event)
+            .unwrap_or_else(|| receipt_error_text(receipt));
+        let message = format!("SQL execution failed: {detail}");
+        return match sql_error.as_deref().and_then(sql_error_code) {
+            Some(code) => Err(Error::with_code(ErrorKind::Receipt, code, message)),
+            None => Err(Error::with_kind(ErrorKind::Receipt, message)),
+        };
     }
     Ok(())
 }
@@ -221,6 +221,11 @@ fn format_sql_error_event(error: &str) -> String {
         }
         _ => error.to_string(),
     }
+}
+
+fn sql_error_code(error: &str) -> Option<&str> {
+    let code = error.split_once(':').map(|(code, _)| code).unwrap_or(error);
+    (!code.is_empty()).then_some(code)
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

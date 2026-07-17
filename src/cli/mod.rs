@@ -1,14 +1,15 @@
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+mod error;
 mod output;
 mod portability;
 mod shell;
 mod upgrade;
 use crate::{
     client::{
-        AuthInfo, ClientOptions, Config, DatabaseMetadata, Error, ErrorKind, RpcTraceMode,
-        config_path, load_config,
+        AuthInfo, ClientOptions, Config, Database, DatabaseMetadata, Error, ErrorKind,
+        RpcTraceMode, config_path, load_config,
         raw::{
             Session, WalletMaterial, auth_info,
             build_control_session as client_build_control_session,
@@ -27,6 +28,7 @@ use crate::{
         tx::Tx,
     },
 };
+use error::coded_error;
 use output::{
     OutputMode, dim, format_exec_result, format_field, format_json, format_result,
     format_status_line, hyperlink, print_exec_result, print_json, print_result, strong,
@@ -676,6 +678,8 @@ pub fn run_with_exit_code() -> Result<i32> {
         Commands::Deploy(args) => cmd_deploy(args).map(|_| 0),
     }
 }
+
+pub use error::error_code;
 
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     const KNOWN: &[&str] = &[
@@ -3534,11 +3538,14 @@ fn report_bootstrap_post_auth_failure(report: BootstrapPostAuthReport<'_>) -> Re
         print_field("post auth_info", "failed");
         print_field("auth_info error", report.post_auth_error);
     }
-    bail!(
-        "bootstrap first write was submitted but post-write auth_info still failed; first_write={}; post_auth_info_error={post_auth_error}",
-        serde_json::to_string(&first_write)?,
-        post_auth_error = report.post_auth_error
-    )
+    Err(coded_error(
+        "bootstrap_unverified",
+        format!(
+            "bootstrap first write was submitted but post-write auth_info still failed; first_write={}; post_auth_info_error={post_auth_error}",
+            serde_json::to_string(&first_write)?,
+            post_auth_error = report.post_auth_error
+        ),
+    ))
 }
 
 #[derive(Clone, Debug)]
@@ -3836,7 +3843,10 @@ pub(super) fn run_one_sql_to(
             bail!("--trace-rpc-json supports one read-only SQL statement, not dot commands");
         }
         if read_only && write_dot_command(trimmed) {
-            bail!("read_only: dot command may write to the database");
+            return Err(coded_error(
+                "read_only",
+                "read_only: dot command may write to the database",
+            ));
         }
         run_dot_command(session.clone(), mode, headers, output, trimmed)?;
         return Ok(());
@@ -3846,14 +3856,17 @@ pub(super) fn run_one_sql_to(
             bail!("--trace-rpc-json supports one read-only SQL statement, not SQL scripts");
         }
         if read_only {
-            bail!("read_only: multi-statement SQL scripts are not submitted in read-only mode");
+            return Err(coded_error(
+                "read_only",
+                "read_only: multi-statement SQL scripts are not submitted in read-only mode",
+            ));
         }
         return run_exec_script_to(session, sql, mode, output);
     }
     ensure_sql_text_fits(sql)?;
     let query_result = match trace_rpc_json {
         Some((path, mode)) => query_typed_traced(session, sql, path, mode),
-        None => query_typed(session, sql),
+        None => Database::from_session(session.clone()).query_value(sql),
     };
     match query_result {
         Ok(result) => {
@@ -3868,7 +3881,10 @@ pub(super) fn run_one_sql_to(
                 bail!("--trace-rpc-json is read-only; SQL would write");
             }
             if read_only {
-                bail!("read_only: SQL would write; remove --read-only to sign and submit it");
+                return Err(coded_error(
+                    "read_only",
+                    "read_only: SQL would write; remove --read-only to sign and submit it",
+                ));
             }
             run_exec_sql_to(session, sql, mode, output)
         }
@@ -3882,7 +3898,10 @@ fn run_exec_sql_to(
     mode: OutputMode,
     output: Option<&Path>,
 ) -> Result<()> {
-    let result = with_explorer(exec_sql(session, sql, false)?, session);
+    let result = with_explorer(
+        Database::from_session(session.clone()).execute_value(sql, false)?,
+        session,
+    );
     if mode == OutputMode::Json {
         write_text(
             output,
@@ -4692,10 +4711,7 @@ fn now_timestamp() -> f64 {
 }
 
 fn sqlite_requires_exec(error: &Error) -> bool {
-    error.kind() == ErrorKind::Rpc
-        && error
-            .to_string()
-            .starts_with("database error (sqlite_readonly_required)")
+    error.kind() == ErrorKind::Rpc && error.code() == Some("sqlite_readonly_required")
 }
 
 fn looks_like_sql_script(sql: &str) -> bool {
@@ -5486,8 +5502,9 @@ mod tests {
 
     #[test]
     fn sqlite_readonly_required_routes_to_signed_exec() {
-        let error = Error::with_kind(
+        let error = Error::with_code(
             ErrorKind::Rpc,
+            "sqlite_readonly_required",
             "database error (sqlite_readonly_required): use exec for state-changing SQL",
         );
         assert!(sqlite_requires_exec(&error));

@@ -7,6 +7,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     kind: ErrorKind,
+    code: Option<String>,
     message: String,
 }
 
@@ -35,12 +36,30 @@ impl Error {
     pub fn with_kind(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
+            code: None,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn with_code(
+        kind: ErrorKind,
+        code: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            code: Some(code.into()),
             message: message.into(),
         }
     }
 
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    /// Precise source error code when the RPC, Circle, or receipt supplied one.
+    pub fn code(&self) -> Option<&str> {
+        self.code.as_deref()
     }
 }
 

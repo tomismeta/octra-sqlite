@@ -279,13 +279,13 @@ fn decode_method_result(text: &str) -> Result<Value> {
         return Ok(decode_typed_result(encoded)?);
     }
     let value = serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()));
-    if let Some(error) = contract_error_text(&value) {
-        return Err(Error::with_kind(ErrorKind::Rpc, error));
+    if let Some((code, error)) = contract_error(&value) {
+        return Err(Error::with_code(ErrorKind::Rpc, code, error));
     }
     Ok(value)
 }
 
-fn contract_error_text(value: &Value) -> Option<String> {
+fn contract_error(value: &Value) -> Option<(&str, String)> {
     let object = value.as_object()?;
     let failed = object.get("ok").and_then(Value::as_bool) == Some(false);
     let code = object.get("error").and_then(Value::as_str);
@@ -293,10 +293,11 @@ fn contract_error_text(value: &Value) -> Option<String> {
         return None;
     }
     let code = code.unwrap_or("contract_error");
-    match object.get("detail").and_then(Value::as_str) {
-        Some(detail) if !detail.is_empty() => Some(format!("database error ({code}): {detail}")),
-        _ => Some(format!("database error ({code})")),
-    }
+    let message = match object.get("detail").and_then(Value::as_str) {
+        Some(detail) if !detail.is_empty() => format!("database error ({code}): {detail}"),
+        _ => format!("database error ({code})"),
+    };
+    Some((code, message))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
