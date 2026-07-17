@@ -36,8 +36,8 @@ operator concerns.
 `Database::wait(&submitted)` to complete the lifecycle.
 
 `Error::kind()` supplies a stable broad category. `Error::code()` preserves a
-precise source code when the RPC, Circle, or receipt supplies one. Callers
-should not classify human error text.
+precise machine-readable code supplied by a remote source or assigned at a
+local protocol boundary. Callers should not classify human error text.
 
 ## Client
 
