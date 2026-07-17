@@ -11,9 +11,7 @@ use std::env;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
-#[cfg(feature = "cli")]
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Deserialize, Default)]
 pub(super) struct WalletFile {
@@ -176,7 +174,7 @@ pub(crate) fn wallet_material_from_private_key(
 
 pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned)
+    let mut raw = decode_key_text(cleaned.as_str())
         .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "private key must be base64 or hex"))?;
     if raw.len() != 32 && raw.len() != 64 {
         raw.zeroize();
@@ -203,7 +201,7 @@ pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
 
 pub(super) fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned)
+    let mut raw = decode_key_text(cleaned.as_str())
         .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "public key must be base64 or hex"))?;
     if raw.len() != 32 {
         raw.zeroize();
@@ -260,8 +258,8 @@ fn first_secret_string(values: impl IntoIterator<Item = Option<String>>) -> Opti
     selected
 }
 
-fn clean_key_text(text: &str) -> String {
-    text.chars().filter(|ch| !ch.is_whitespace()).collect()
+fn clean_key_text(text: &str) -> Zeroizing<String> {
+    Zeroizing::new(text.chars().filter(|ch| !ch.is_whitespace()).collect())
 }
 
 fn decode_key_text(cleaned: &str) -> Option<Vec<u8>> {
@@ -286,6 +284,12 @@ fn address_from_public_key(public_key: &[u8; 32]) -> String {
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalized_key_text_is_zeroizing() {
+        let cleaned: Zeroizing<String> = clean_key_text("AA AA\n");
+        assert_eq!(cleaned.as_str(), "AAAA");
+    }
 
     #[test]
     fn wallet_material_derives_octra_address() {

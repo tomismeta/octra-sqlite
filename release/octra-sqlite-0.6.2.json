@@ -135,7 +135,8 @@
   },
   "public_deployment": {
     "status": "deployed",
-    "deployment_kind": "fresh_public_read_proof",
+    "deployment_kind": "inherited_public_read_proof",
+    "inherited_from_release": "0.6.1",
     "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
     "circle": "oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
     "read_mode": "public",
