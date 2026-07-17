@@ -18,6 +18,8 @@ applications without adding commands or crate-root types.
   error contract, advanced boundaries, and build configuration.
 - GitHub releases can publish to crates.io through a dedicated release
   environment and OIDC workflow with no long-lived registry token.
+- Pasted and stdin-imported private-key text is zeroized on parse failures, and
+  the standalone `wasm-behavior` test feature now compiles independently.
 
 Keep the GitHub `release` environment approval-gated, non-bypassable, and
 restricted to `v*` refs. Before the first OIDC publish, register its exact

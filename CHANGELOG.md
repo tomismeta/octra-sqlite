@@ -16,6 +16,9 @@
   keeping the README focused on product use.
 - Added crates.io trusted publishing from exact GitHub release tags through a
   dedicated release environment using short-lived OIDC credentials.
+- Zeroized pasted/imported private-key text on every exit path and made the
+  standalone `wasm-behavior` test feature self-contained without changing the
+  resolved dependency set.
 - Kept SQLite 3.53.3, the bundled Circle WASM, OSR1/OSW1, owner-write
   authorization, top-level CLI commands, JSON envelopes, and root Rust types
   unchanged from `0.6.1`.
