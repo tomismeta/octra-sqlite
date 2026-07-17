@@ -88,8 +88,8 @@ release.
 The `publish.yml` workflow exchanges GitHub OIDC for a short-lived crates.io
 token and publishes that exact release tag. crates.io must trust
 `tomismeta/octra-sqlite`, `publish.yml`, and the `release` environment. Keep
-that environment approval-gated; no long-lived registry token belongs in
-GitHub secrets.
+that environment approval-gated, non-bypassable, and restricted to `v*` refs;
+no long-lived registry token belongs in GitHub secrets.
 
 ## Security
 

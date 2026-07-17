@@ -6,7 +6,7 @@
   `Database` data plane used by Rust applications, while keeping tracing,
   scripts, restore, deploy, verify, and upgrade on explicit control-plane
   plumbing.
-- Split the CLI catch-all module into responsibility-owned onboarding,
+- Split the CLI catch-all module into focused onboarding,
   database, SQL, inspection, deployment, catalog, and test modules without
   changing commands or output envelopes.
 - Preserved precise RPC, Circle, receipt, and local policy error codes at their
@@ -16,9 +16,6 @@
   keeping the README focused on product use.
 - Added crates.io trusted publishing from exact GitHub release tags through a
   dedicated release environment using short-lived OIDC credentials.
-- Clarified the roadmap boundary: patch-compatible convergence ships in
-  `0.6.2`; secret ownership changes to `ClientOptions` remain reserved for a
-  justified `0.7.0` API break.
 - Kept SQLite 3.53.3, the bundled Circle WASM, OSR1/OSW1, owner-write
   authorization, top-level CLI commands, JSON envelopes, and root Rust types
   unchanged from `0.6.1`.

@@ -4,19 +4,24 @@
 
 This is a focused client architecture, automation, and documentation release
 over `0.6.1`. It makes the CLI exercise the same routine SQL data plane as Rust
-applications without expanding the public product surface.
+applications without adding commands or crate-root types.
 
 ### Changed
 
 - Ordinary one-statement CLI reads and writes now flow through `Database`.
-- CLI responsibilities are owned by named modules instead of one catch-all
+- CLI responsibilities are separated into named modules instead of one catch-all
   orchestrator.
 - Precise source error codes survive into CLI automation; the public client
-  exposes them through the additive `Error::code()` method.
+  exposes them through the additive `Error::code()` method, and
+  `cli::error_code()` owns the binary's stable JSON classification.
 - docs.rs now presents a deliberate start path, read/write model, API map,
   error contract, advanced boundaries, and build configuration.
 - GitHub releases can publish to crates.io through a dedicated release
   environment and OIDC workflow with no long-lived registry token.
+
+Keep the GitHub `release` environment approval-gated, non-bypassable, and
+restricted to `v*` refs. Before the first OIDC publish, register its exact
+repository, workflow, and environment as the crates.io trusted publisher.
 
 ### Unchanged
 
