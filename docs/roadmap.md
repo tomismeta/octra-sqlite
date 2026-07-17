@@ -18,7 +18,7 @@ work, and do not cut releases for documentation polish alone.
   fail-closed trust boundaries.
 - **Scalability**: measured storage and execution limits, bulk-operation
   guidance, and protocol constraints.
-- **Architecture**: one product path, clear module ownership, and a small public
+- **Architecture**: one product path, clear module responsibilities, and a small public
   surface.
 - **Developer Experience**: fast setup, SQLite-shaped workflows, useful errors,
   and concise documentation.
@@ -33,13 +33,13 @@ Themes: **Security**, **Architecture**, **Developer Experience**, **Operations**
 
 - Keep the top-level command set, JSON envelopes, root Rust types, OSR1/OSW1,
   SQLite 3.53.3, and Circle WASM unchanged.
-- Carve CLI ownership into onboarding, saved databases, SQL, inspection,
+- Organize CLI responsibilities into onboarding, saved databases, SQL, inspection,
   deployment, catalogs, upgrade, shell, output, and portability modules.
 - Route ordinary one-statement CLI query and execute through the same
   `Database` data plane used by Rust applications. Keep tracing, scripts,
   restore, deployment, and upgrades on explicit control-plane plumbing.
 - Preserve precise RPC, Circle, and receipt error codes at their construction
-  sites; never classify automation errors from English text.
+  sites; never classify automation errors from rendered CLI text.
 - Make docs.rs the curated Rust entry point while keeping README product-first.
 - Establish approval-gated crates.io trusted publishing from exact GitHub
   release tags.

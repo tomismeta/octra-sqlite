@@ -64,7 +64,8 @@ It exposes the advanced write/signer lifecycle:
 
 Use `Operation::Execute.safety()` when an adapter needs to surface whether an
 operation reads SQL, mutates state, submits a transaction, waits for a receipt,
-or requires OSW1 owner write intent.
+or requires OSW1 owner write intent. The metadata is target-independent and
+conservative; public reads can use unsigned Circle views.
 
 ## Raw
 
