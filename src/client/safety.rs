@@ -26,14 +26,17 @@ pub struct OperationSafety {
     pub submits_transaction: bool,
     /// Whether the operation waits for a confirmed receipt.
     pub waits_for_receipt: bool,
-    /// Whether the operation requires signed Octra RPC authentication.
+    /// Whether signed Octra RPC may be required by the target read mode.
+    ///
+    /// This metadata is target-independent and conservative: public reads may
+    /// use unsigned Circle views even when this field is `true`.
     pub requires_signed_rpc: bool,
     /// Whether the operation requires OSW1 owner-write intent.
     pub requires_owner_write_intent: bool,
 }
 
 impl Operation {
-    /// Return declarative safety properties for this operation.
+    /// Return target-independent, conservative safety properties.
     pub fn safety(self) -> OperationSafety {
         match self {
             Operation::Query => OperationSafety {

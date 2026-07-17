@@ -258,10 +258,16 @@ pub(super) fn resolve_bootstrap_owner_mode(
     session: &Session,
 ) -> Result<BootstrapOwnerMode> {
     let requested = target_args.target.as_deref().ok_or_else(|| {
-        anyhow!("--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI")
+        coded_error(
+            "target_error",
+            "--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI",
+        )
     })?;
     if !requested.starts_with("oct://") {
-        bail!("--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI");
+        return Err(coded_error(
+            "target_error",
+            "--bootstrap-owner requires an explicit oct://NETWORK/CIRCLE database URI",
+        ));
     }
 
     match auth_info(session) {
@@ -274,15 +280,17 @@ pub(super) fn resolve_bootstrap_owner_mode(
 
     let metadata = find_bootstrap_owner_metadata(session)?;
     if metadata.owner != session.caller() {
-        bail!(
+        return Err(auth_error(format!(
             "bootstrap metadata owner {} does not match current wallet {}",
             metadata.owner,
             session.caller()
-        );
+        )));
     }
     let wallet_owner_pubkey = hex::encode(session.intent_public_key()?);
     if metadata.owner_pubkey != wallet_owner_pubkey {
-        bail!("bootstrap metadata owner public key does not match the active wallet");
+        return Err(auth_error(
+            "bootstrap metadata owner public key does not match the active wallet",
+        ));
     }
     let expected_code_hash = bootstrap_owner_personalized_hash(&metadata)?;
     if metadata.code_hash != expected_code_hash {
@@ -295,11 +303,17 @@ pub(super) fn resolve_bootstrap_owner_mode(
     let info = program_info(session).context("reading Circle program info for bootstrap-owner")?;
     match program_owner(&info) {
         Some(owner) if owner == session.caller() => {}
-        Some(owner) => bail!(
-            "Circle owner is {owner}; current wallet {} cannot bootstrap owner writes",
-            session.caller()
-        ),
-        None => bail!("Circle program info did not expose an owner; refusing bootstrap-owner"),
+        Some(owner) => {
+            return Err(auth_error(format!(
+                "Circle owner is {owner}; current wallet {} cannot bootstrap owner writes",
+                session.caller()
+            )));
+        }
+        None => {
+            return Err(auth_error(
+                "Circle program info did not expose an owner; refusing bootstrap-owner",
+            ));
+        }
     }
     let live_code_hash = info
         .get("code_hash")

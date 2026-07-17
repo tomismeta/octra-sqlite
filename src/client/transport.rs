@@ -278,6 +278,9 @@ impl Transport for HttpTransport {
                         message,
                     ));
                 }
+                if let Some(code) = rpc_error_source_code(error) {
+                    return Err(Error::with_code(ErrorKind::Rpc, code, message));
+                }
                 return Err(Error::with_kind(ErrorKind::Rpc, message));
             }
             self.trace_rpc(rpc, method, &body, Some(&payload), Some(status_code), None);
@@ -324,6 +327,26 @@ fn rpc_error_is_rate_limited(error: &Value) -> bool {
         || message.contains("too many requests")
         || message.contains("rate limit")
         || message.contains("temporarily unavailable")
+}
+
+#[cfg(feature = "http")]
+fn rpc_error_source_code(error: &Value) -> Option<&'static str> {
+    match error.get("code").and_then(Value::as_str) {
+        Some("storage_uninitialized") => return Some("storage_uninitialized"),
+        Some("auth_uninitialized") => return Some("auth_uninitialized"),
+        _ => {}
+    }
+    let message = error
+        .as_str()
+        .or_else(|| error.get("message").and_then(Value::as_str))?
+        .to_ascii_lowercase();
+    if message.contains("missing storage cache") || message.contains("storage_uninitialized") {
+        Some("storage_uninitialized")
+    } else if message.contains("auth_uninitialized") {
+        Some("auth_uninitialized")
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "http")]
@@ -419,6 +442,23 @@ fn trace_value_meta(value: &Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn rpc_error_source_codes_are_parsed_at_the_transport_boundary() {
+        assert_eq!(
+            rpc_error_source_code(&json!({"message": "missing storage cache: octABC:0000"})),
+            Some("storage_uninitialized")
+        );
+        assert_eq!(
+            rpc_error_source_code(&json!("auth_uninitialized: auth_info is unavailable")),
+            Some("auth_uninitialized")
+        );
+        assert_eq!(
+            rpc_error_source_code(&json!({"code": "storage_uninitialized"})),
+            Some("storage_uninitialized")
+        );
+        assert_eq!(rpc_error_source_code(&json!({"message": "other"})), None);
+    }
 
     #[test]
     fn trace_writer_records_json_rpc_request_and_response() {

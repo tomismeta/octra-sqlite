@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::fs;
 use std::process::{Command, Stdio};
 
 fn octra_sqlite() -> Command {
@@ -92,4 +93,34 @@ fn json_errors_keep_source_owned_limit_codes() {
     assert!(!output.status.success());
     let value: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(value["error"]["code"], "transactions_not_supported");
+}
+
+#[test]
+fn wallet_and_target_errors_keep_their_stable_codes() {
+    let home =
+        std::env::temp_dir().join(format!("octra-sqlite-json-errors-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(&home).unwrap();
+
+    let output = octra_sqlite()
+        .args(["wallet", "import", "--json"])
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .output()
+        .expect("run wallet import without a source");
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["error"]["code"], "wallet_error");
+
+    let output = octra_sqlite()
+        .args(["database", "info", "not-a-database-target", "--json"])
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .output()
+        .expect("run database info with an invalid target");
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["error"]["code"], "target_error");
+
+    fs::remove_dir_all(home).unwrap();
 }

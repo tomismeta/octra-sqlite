@@ -49,7 +49,7 @@ fn client_layer_does_not_depend_on_cli_rendering() {
 }
 
 #[test]
-fn cli_orchestrator_delegates_owned_workflows() {
+fn cli_orchestrator_is_organized_by_responsibility() {
     let orchestrator = fs::read_to_string("src/cli/mod.rs").unwrap();
     for module in [
         "catalog",
@@ -62,7 +62,7 @@ fn cli_orchestrator_delegates_owned_workflows() {
     ] {
         assert!(
             orchestrator.contains(&format!("mod {module};")),
-            "CLI orchestrator must retain the {module} ownership boundary"
+            "CLI orchestrator must retain the {module} responsibility boundary"
         );
     }
     for workflow in [
@@ -76,7 +76,7 @@ fn cli_orchestrator_delegates_owned_workflows() {
     ] {
         assert!(
             !orchestrator.contains(workflow),
-            "{workflow} belongs in its owned CLI module"
+            "{workflow} belongs in its focused CLI module"
         );
     }
 }
@@ -84,8 +84,9 @@ fn cli_orchestrator_delegates_owned_workflows() {
 #[test]
 fn ordinary_cli_sql_uses_the_database_data_plane() {
     let sql = fs::read_to_string("src/cli/sql.rs").unwrap();
-    assert!(sql.contains("Database::from_session(session.clone()).query_value(sql)"));
-    assert!(sql.contains("Database::from_session(session.clone()).execute_value(sql, false)"));
+    assert!(sql.contains("Database::from_session"));
+    assert!(sql.contains(".query_value(sql)"));
+    assert!(sql.contains(".execute_value(sql, false)"));
 }
 
 fn source_files(dir: impl AsRef<Path>) -> Vec<std::path::PathBuf> {

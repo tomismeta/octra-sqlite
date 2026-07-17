@@ -12,6 +12,8 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
+#[cfg(feature = "cli")]
+use zeroize::Zeroizing;
 
 #[derive(Deserialize, Default)]
 pub(super) struct WalletFile {
@@ -116,22 +118,24 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
             format!("wallet {} is missing address/addr", path.display()),
         )
     })?;
-    let mut private_key = first_secret_string([
-        wallet.priv_field,
-        wallet.priv_,
-        wallet.private_key,
-        wallet.private_key_b64,
-        key_pair.secret_key,
-    ])
-    .ok_or_else(|| {
-        Error::with_kind(
-            ErrorKind::Wallet,
-            format!(
-                "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
-                path.display()
-            ),
-        )
-    })?;
+    let private_key = Zeroizing::new(
+        first_secret_string([
+            wallet.priv_field,
+            wallet.priv_,
+            wallet.private_key,
+            wallet.private_key_b64,
+            key_pair.secret_key,
+        ])
+        .ok_or_else(|| {
+            Error::with_kind(
+                ErrorKind::Wallet,
+                format!(
+                    "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
+                    path.display()
+                ),
+            )
+        })?,
+    );
     let supplied_public_key = first_string(&[
         wallet.pub_field,
         wallet.pub_,
@@ -139,8 +143,7 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
         wallet.public_key_b64,
         key_pair.public_key,
     ]);
-    let material = wallet_material_from_private_key(&private_key, supplied_public_key)?;
-    private_key.zeroize();
+    let material = wallet_material_from_private_key(private_key.as_str(), supplied_public_key)?;
     if material.address != supplied_address {
         return Err(Error::with_kind(
             ErrorKind::Wallet,

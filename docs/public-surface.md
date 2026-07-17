@@ -146,6 +146,7 @@ requiring callers to parse human help text.
 
 - `src/main.rs`: tiny binary entrypoint.
 - `src/cli/mod.rs`: command vocabulary, argument types, and top-level dispatch.
+- `src/cli/error.rs`: stable JSON error-code classification for CLI entrypoints.
 - `src/cli/onboarding.rs`: setup, database creation, and wallet onboarding.
 - `src/cli/databases.rs`: saved database names and defaults.
 - `src/cli/sql.rs`: ordinary SQL, script, restore, and check dispatch.

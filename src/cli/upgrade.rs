@@ -610,23 +610,33 @@ fn upgrade_owner_sequence(auth: &AuthInfo, storage: &Value) -> Option<u64> {
 fn ensure_upgrade_owner(session: &Session, snapshot: &UpgradeSnapshot) -> Result<()> {
     match program_owner(&snapshot.program_info) {
         Some(owner) if owner == session.caller() => {}
-        Some(owner) => bail!(
-            "Circle owner is {owner}; current wallet {} cannot upgrade this database",
-            session.caller()
-        ),
-        None => bail!("Circle program info did not expose an owner; refusing upgrade"),
+        Some(owner) => {
+            return Err(auth_error(format!(
+                "Circle owner is {owner}; current wallet {} cannot upgrade this database",
+                session.caller()
+            )));
+        }
+        None => {
+            return Err(auth_error(
+                "Circle program info did not expose an owner; refusing upgrade",
+            ));
+        }
     }
     if !snapshot.auth.configured {
-        bail!("database is not OSW1 owner-write configured; refusing upgrade");
+        return Err(auth_error(
+            "database is not OSW1 owner-write configured; refusing upgrade",
+        ));
     }
     let owner_pubkey = snapshot
         .auth
         .owner_pubkey
         .as_deref()
-        .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?;
+        .ok_or_else(|| auth_error("auth_info missing owner_pubkey"))?;
     let wallet_pubkey = hex::encode(session.intent_public_key()?);
     if owner_pubkey != wallet_pubkey {
-        bail!("active wallet does not match the database OSW1 owner public key");
+        return Err(auth_error(
+            "active wallet does not match the database OSW1 owner public key",
+        ));
     }
     Ok(())
 }
@@ -1535,6 +1545,35 @@ fn civil_from_unix_days(days: i64) -> (i32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upgrade_owner_mismatch_keeps_auth_failed_code() {
+        let session = client_build_session(&ClientOptions {
+            target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCurrent".to_string()),
+            ..ClientOptions::default()
+        })
+        .unwrap();
+        let snapshot = UpgradeSnapshot {
+            program_info: json!({"owner": "octDifferent"}),
+            storage: json!({}),
+            auth: AuthInfo {
+                configured: true,
+                db_id: "00".repeat(32),
+                owner_pubkey: Some("00".repeat(32)),
+                owner_sequence: Some(1),
+            },
+            sqlite_version: "3.53.2".to_string(),
+            code_hash: "hash".to_string(),
+            code_bytes: Some(1),
+            storage_generation: Some(1),
+            owner_sequence: Some(1),
+        };
+
+        let error = ensure_upgrade_owner(&session, &snapshot).unwrap_err();
+        assert_eq!(crate::cli::error_code(&error), "auth_failed");
+    }
 
     #[test]
     fn previous_base_wasm_is_personalized_for_rollback_recovery() {

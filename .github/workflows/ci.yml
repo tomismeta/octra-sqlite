@@ -33,8 +33,10 @@ jobs:
         run: cargo build --locked --no-default-features --lib
       - name: HTTP client without CLI
         run: cargo check --locked --no-default-features --features http
+      - name: WASM behavior harness feature
+        run: cargo check --locked --no-default-features --features wasm-behavior --all-targets
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: cargo install cargo-audit --version 0.22.2 --locked
       - name: Supply-chain audit
         run: cargo audit
       - name: Script syntax

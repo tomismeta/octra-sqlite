@@ -452,11 +452,17 @@ pub(super) fn cmd_deploy(args: DeployArgs) -> Result<()> {
             .context("reading Circle program info before owner bootstrap deploy")?;
         match program_owner(&info) {
             Some(owner) if owner == session.caller() => {}
-            Some(owner) => bail!(
-                "Circle owner is {owner}; current wallet {} cannot bootstrap owner-personalized WASM",
-                session.caller()
-            ),
-            None => bail!("Circle program info did not expose an owner; refusing bootstrap deploy"),
+            Some(owner) => {
+                return Err(auth_error(format!(
+                    "Circle owner is {owner}; current wallet {} cannot bootstrap owner-personalized WASM",
+                    session.caller()
+                )));
+            }
+            None => {
+                return Err(auth_error(
+                    "Circle program info did not expose an owner; refusing bootstrap deploy",
+                ));
+            }
         }
         Some(
             patch_wasm_auth_for_owner(&mut wasm, &session)

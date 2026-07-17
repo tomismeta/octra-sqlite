@@ -27,6 +27,9 @@ use octra_sqlite::client::raw::{
 
 use octra_sqlite::protocol::{error, osr1, osw1, target, tx};
 
+#[cfg(feature = "cli")]
+use octra_sqlite::cli::{error_code as cli_error_code, run, run_with_exit_code};
+
 #[test]
 fn public_surface_imports_compile() {
     assert_eq!(ReadMode::Public.as_str(), "public");

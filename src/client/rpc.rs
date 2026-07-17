@@ -280,7 +280,12 @@ fn decode_method_result(text: &str) -> Result<Value> {
     }
     let value = serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()));
     if let Some((code, error)) = contract_error(&value) {
-        return Err(Error::with_code(ErrorKind::Rpc, code, error));
+        let kind = if code.starts_with("auth_") {
+            ErrorKind::Authorization
+        } else {
+            ErrorKind::Rpc
+        };
+        return Err(Error::with_code(kind, code, error));
     }
     Ok(value)
 }
@@ -328,5 +333,15 @@ mod tests {
         ] {
             assert!(next_nonce_from_balance(&value).is_err(), "{value}");
         }
+    }
+
+    #[test]
+    fn contract_auth_errors_keep_authorization_kind_and_source_code() {
+        let error = decode_method_result(
+            r#"{"ok":false,"error":"auth_denied","detail":"signer is not the owner"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Authorization);
+        assert_eq!(error.code(), Some("auth_denied"));
     }
 }

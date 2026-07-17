@@ -803,11 +803,12 @@ pub(super) fn new_followup_target<'a>(
 }
 
 pub(super) fn cmd_wallet(command: WalletCommand) -> Result<()> {
-    match command {
+    let result = match command {
         WalletCommand::Status(args) => cmd_wallet_status(args),
         WalletCommand::Attach(args) => cmd_wallet_attach(args),
         WalletCommand::Import(args) => cmd_wallet_import(args),
-    }
+    };
+    result.map_err(|error| with_fallback_code(error, "wallet_error"))
 }
 
 pub(super) enum WalletOnboarding {
@@ -945,9 +946,8 @@ pub(super) fn paste_wallet_interactive(config: &mut Config) -> Result<PathBuf> {
         "secret",
         "input is masked with * characters and not stored in shell history",
     );
-    let mut private_key = read_tty_secret("private key")?;
-    let material = wallet_material_from_private_key(&private_key, None)?;
-    private_key.zeroize();
+    let private_key = Zeroizing::new(read_tty_secret("private key")?);
+    let material = wallet_material_from_private_key(private_key.as_str(), None)?;
     let output = absolute_wallet_output_path(&default_wallet_output_path()?)?;
     write_wallet_json(&output, &material, false)?;
     config.wallet = Some(output.to_string_lossy().to_string());
@@ -1001,11 +1001,10 @@ pub(super) fn cmd_wallet_import(args: WalletImportArgs) -> Result<()> {
         if args.source.is_some() {
             bail!("wallet import accepts either PATH or --stdin, not both");
         }
-        let mut private_key =
-            read_stdin_secret("wallet import --stdin requires a private key on stdin")?;
-        let material = wallet_material_from_private_key(&private_key, None)?;
-        private_key.zeroize();
-        material
+        let private_key = Zeroizing::new(read_stdin_secret(
+            "wallet import --stdin requires a private key on stdin",
+        )?);
+        wallet_material_from_private_key(private_key.as_str(), None)?
     } else if let Some(source) = args.source.as_deref() {
         reject_encrypted_oct_wallet(source)?;
         let source = canonical_existing_wallet_path(source)?;

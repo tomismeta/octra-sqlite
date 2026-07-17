@@ -1,4 +1,7 @@
 //! SQLite-shaped CLI orchestration for humans and automation.
+//!
+//! [`run`] and [`run_with_exit_code`] execute the command-line interface.
+//! [`error_code`] returns the stable automation code for a returned error.
 
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
@@ -39,7 +42,7 @@ use crate::{
 use catalog::*;
 use databases::*;
 use deployment::*;
-use error::coded_error;
+use error::{auth_error, coded_error, with_fallback_code};
 use inspection::*;
 use onboarding::*;
 use output::{
@@ -66,7 +69,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";

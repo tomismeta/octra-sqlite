@@ -196,11 +196,8 @@ pub(super) fn prepare_write_with<T: Transport>(
         "exec"
     };
     let auth = auth_info_with(transport, session).map_err(|error| {
-        Error::with_kind(
-            ErrorKind::Authorization,
-            format!(
-                "could not read Circle auth_info; refusing to choose unsigned exec implicitly: {error}"
-            ),
+        error.with_context(
+            "could not read Circle auth_info; refusing to choose unsigned exec implicitly",
         )
     })?;
     if !auth.configured {
@@ -465,6 +462,25 @@ mod tests {
         submits: Arc<Mutex<Vec<Value>>>,
     }
 
+    struct AuthFailureTransport;
+
+    impl Transport for AuthFailureTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "octra_balance" => Ok(json!({"pending_nonce": 41})),
+                "octra_circleViewAuth" => Err(Error::with_code(
+                    ErrorKind::Rpc,
+                    "rpc_rate_limited",
+                    "auth_info RPC was rate limited",
+                )),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
     impl Transport for CaptureTransport {
         fn call(&self, _rpc: &str, method: &str, params: Value) -> Result<Value> {
             match method {
@@ -482,7 +498,7 @@ mod tests {
 
     fn test_session() -> Session {
         build_session(&ClientOptions {
-            target: Some("oct://devnet/octABC".to_string()),
+            target: Some("oct://devnet/octABC?read_mode=sealed".to_string()),
             rpc: Some("mock://rpc".to_string()),
             caller: Some("octCaller".to_string()),
             private_key: Some(
@@ -542,5 +558,25 @@ mod tests {
         let signature = submitted_signature(&transport);
         assert!(!signature.is_empty());
         assert_ne!(signature, "stale-signature");
+    }
+
+    #[test]
+    fn auth_preflight_preserves_source_error_code_with_context() {
+        let error = prepare_write_with(
+            &AuthFailureTransport,
+            &test_session(),
+            "create table demo(id integer);",
+            Operation::Execute,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::Rpc);
+        assert_eq!(error.code(), Some("rpc_rate_limited"));
+        assert!(error.to_string().contains("auth_info RPC was rate limited"));
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to choose unsigned exec")
+        );
     }
 }
