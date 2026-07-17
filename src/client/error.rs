@@ -66,6 +66,11 @@ impl Error {
         }
     }
 
+    pub(crate) fn with_context(mut self, context: impl AsRef<str>) -> Self {
+        self.message = format!("{}; {}", self.message, context.as_ref());
+        self
+    }
+
     /// Return the stable broad category for this error.
     pub fn kind(&self) -> ErrorKind {
         self.kind

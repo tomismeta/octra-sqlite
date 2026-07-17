@@ -502,6 +502,24 @@ mod tests {
     }
 
     #[test]
+    fn database_execute_preserves_receipt_error_code_with_tx_context() {
+        let transport = MockTransport::with_receipt(json!({
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["exec_budget_exceeded:statement exceeded execution budget"]
+            }]
+        }));
+        let db = Database::open_with_transport(test_options(), transport).unwrap();
+        let error = db.execute("select expensive_work();").unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Receipt);
+        assert_eq!(error.code(), Some("exec_budget_exceeded"));
+        assert!(error.to_string().contains("execution budget"));
+        assert!(error.to_string().contains("tx_hash: abc123"));
+    }
+
+    #[test]
     fn signed_write_submit_mode_must_match_prepare_mode() {
         let transport = MockTransport::default();
         let db = Database::open_with_transport(test_options(), transport).unwrap();

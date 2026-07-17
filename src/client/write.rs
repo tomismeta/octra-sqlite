@@ -373,10 +373,7 @@ fn submit_tx_with<T: Transport>(
         if !no_wait {
             let receipt = wait_for_receipt_with(transport, session, &hash)?;
             if let Err(error) = ensure_receipt_success(&receipt) {
-                return Err(Error::with_kind(
-                    error.kind(),
-                    format!("{error}; tx_hash: {hash}"),
-                ));
+                return Err(error.with_context(format!("tx_hash: {hash}")));
             }
             out.insert("receipt".to_string(), receipt);
         }
