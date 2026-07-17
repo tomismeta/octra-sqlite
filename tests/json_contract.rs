@@ -73,3 +73,23 @@ fn json_errors_have_stable_shape_and_exit_code() {
             .contains("check requires")
     );
 }
+
+#[test]
+fn json_errors_keep_source_owned_limit_codes() {
+    let oversized = "x".repeat(8_192);
+    let output = octra_sqlite()
+        .args(["check", "--json", "--sql", &oversized])
+        .output()
+        .expect("run oversized octra-sqlite check --json");
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["error"]["code"], "sql_too_large");
+
+    let output = octra_sqlite()
+        .args(["check", "--json", "--sql", "savepoint before_write;"])
+        .output()
+        .expect("run unsupported transaction check --json");
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(value["error"]["code"], "transactions_not_supported");
+}

@@ -31,6 +31,7 @@ use octra_sqlite::protocol::{error, osr1, osw1, target, tx};
 fn public_surface_imports_compile() {
     assert_eq!(ReadMode::Public.as_str(), "public");
     assert!(Operation::Execute.safety().submits_transaction);
+    assert_eq!(Error::new("surface").code(), None);
     #[cfg(feature = "http")]
     let _: Client = Client::default();
 }

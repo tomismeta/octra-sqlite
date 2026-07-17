@@ -48,6 +48,46 @@ fn client_layer_does_not_depend_on_cli_rendering() {
     }
 }
 
+#[test]
+fn cli_orchestrator_delegates_owned_workflows() {
+    let orchestrator = fs::read_to_string("src/cli/mod.rs").unwrap();
+    for module in [
+        "catalog",
+        "databases",
+        "deployment",
+        "inspection",
+        "onboarding",
+        "sql",
+        "tests",
+    ] {
+        assert!(
+            orchestrator.contains(&format!("mod {module};")),
+            "CLI orchestrator must retain the {module} ownership boundary"
+        );
+    }
+    for workflow in [
+        "fn cmd_setup(",
+        "fn cmd_new(",
+        "fn cmd_database(",
+        "fn cmd_open(",
+        "fn cmd_limits(",
+        "fn cmd_status(",
+        "fn cmd_deploy(",
+    ] {
+        assert!(
+            !orchestrator.contains(workflow),
+            "{workflow} belongs in its owned CLI module"
+        );
+    }
+}
+
+#[test]
+fn ordinary_cli_sql_uses_the_database_data_plane() {
+    let sql = fs::read_to_string("src/cli/sql.rs").unwrap();
+    assert!(sql.contains("Database::from_session(session.clone()).query_value(sql)"));
+    assert!(sql.contains("Database::from_session(session.clone()).execute_value(sql, false)"));
+}
+
 fn source_files(dir: impl AsRef<Path>) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     collect_source_files(dir.as_ref(), &mut out);
