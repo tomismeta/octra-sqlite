@@ -60,7 +60,7 @@ code_hash c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.6.1.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.6.2.json` and checked by
 `octra-sqlite status`.
 
 The release manifest JSON is also the source of truth for the small historical

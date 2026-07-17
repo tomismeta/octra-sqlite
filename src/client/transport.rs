@@ -16,7 +16,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+/// Synchronous Octra JSON-RPC transport used by [`crate::Client`].
 pub trait Transport {
+    /// Call one JSON-RPC method and return its decoded result.
     fn call(&self, rpc: &str, method: &str, params: Value) -> Result<Value>;
 }
 
@@ -24,6 +26,7 @@ pub trait Transport {
 const MAX_RPC_ATTEMPTS: usize = 4;
 
 #[cfg(feature = "http")]
+/// Default blocking HTTP transport with bounded read retries.
 #[derive(Clone)]
 pub struct HttpTransport {
     agent: ureq::Agent,
@@ -31,12 +34,17 @@ pub struct HttpTransport {
 }
 
 #[cfg(feature = "http")]
+/// Disclosure level for JSONL RPC traces.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RpcTraceMode {
+    /// Record complete request and response bodies.
     #[default]
     Full,
+    /// Record method, hashes, sizes, status, and timing without bodies.
     Summary,
+    /// Record the complete request but only response metadata.
     RequestOnly,
+    /// Record request and response metadata without either body.
     ResponseMeta,
 }
 
@@ -56,6 +64,7 @@ impl Default for HttpTransport {
 
 #[cfg(feature = "http")]
 impl HttpTransport {
+    /// Construct the default blocking HTTP transport.
     pub fn new() -> Self {
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
@@ -67,10 +76,12 @@ impl HttpTransport {
         }
     }
 
+    /// Construct a transport that writes full JSONL RPC traces to a new file.
     pub fn with_trace_jsonl(path: &Path) -> Result<Self> {
         Self::with_trace_jsonl_mode(path, RpcTraceMode::Full)
     }
 
+    /// Construct a transport that writes the selected JSONL trace mode.
     pub fn with_trace_jsonl_mode(path: &Path, mode: RpcTraceMode) -> Result<Self> {
         let mut transport = Self::new();
         if let Some(parent) = path

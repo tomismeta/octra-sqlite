@@ -27,40 +27,48 @@ work, and do not cut releases for documentation polish alone.
 - **Octra**: adopting native host capabilities without recreating them in the
   Circle program.
 
-## Now: Stabilize And Carve
+## Now: 0.6.2 One Truth Path
 
 Themes: **Security**, **Architecture**, **Developer Experience**, **Operations**
 
-- Soak deterministic SQL budgets and the SQLite 3.53.3 upgrade path on devnet.
-- Keep the top-level command set frozen.
-- Split `src/cli/mod.rs` by responsibility in a behavior-only change: database
-  lifecycle, onboarding, inspection, SQL dispatch, catalogs, and tests.
-- Keep public-export, foreign-key, dirty-page, restore, and event-disclosure
-  limits explicit in docs and `limits --json`.
-- Keep `0.6.1` soaking until field feedback or material utility earns the next
-  tag.
+- Keep the top-level command set, JSON envelopes, root Rust types, OSR1/OSW1,
+  SQLite 3.53.3, and Circle WASM unchanged.
+- Carve CLI ownership into onboarding, saved databases, SQL, inspection,
+  deployment, catalogs, upgrade, shell, output, and portability modules.
+- Route ordinary one-statement CLI query and execute through the same
+  `Database` data plane used by Rust applications. Keep tracing, scripts,
+  restore, deployment, and upgrades on explicit control-plane plumbing.
+- Preserve precise RPC, Circle, and receipt error codes at their construction
+  sites; never classify automation errors from English text.
+- Make docs.rs the curated Rust entry point while keeping README product-first.
+- Establish approval-gated crates.io trusted publishing from exact GitHub
+  release tags.
 
-Exit: current claims have local and devnet proof, and no CLI responsibility is
-forced into a single catch-all module.
+Exit: full local gates, package inspection, and the review panel confirm a
+patch-compatible client-only release; then `0.6.2` soaks without forcing an
+engine upgrade on existing Circles.
 
-## Next: One Truth Path
+## Next: 0.7.0 Secret Ownership
 
-Themes: **Architecture**, **Security**, **Developer Experience**, **Operations**
+Themes: **Security**, **Architecture**, **Developer Experience**, **Octra**
 
-- Route ordinary CLI query and execute flows through `Client` and `Database`.
-- Promote only the lifecycle capabilities applications genuinely need; keep
-  `client::raw` as adapter and control-plane plumbing.
-- Replace English-substring automation classification with structured error
-  codes at construction sites.
-- Strengthen secret ownership so inline key material is not freely cloned and
-  is zeroized on drop.
-- Fold curated docs.rs examples and API documentation into the next
-  utility-bearing release instead of shipping a docs-only patch.
-- Establish trusted publishing and keep release hygiene on branches with
-  squash or rebase merges.
+- Redesign inline key material around explicit zeroizing ownership instead of
+  freely cloned `String` fields.
+- Remove `Clone` from secret-owning public types where the safer ownership model
+  requires it.
+- Define an external signer boundary only against a documented Octra-native
+  signing protocol; do not invent a blind localhost signer.
+- Promote lifecycle capabilities from `client::raw` only when real application
+  integrations prove they belong in the stable data plane.
+- Publish a concise migration note for every intentional Rust API break and
+  carry no aliases during `0.x`.
 
-Exit: the CLI exercises the same happy-path API that downstream Rust programs
-use, with one source of truth for read modes, receipts, and errors.
+`0.7.0` is reserved for this work because changing `ClientOptions` secret
+fields or clone semantics is a real Rust API break. Do not cut the minor merely
+because it is next numerically.
+
+Exit: secret material has one legible owner, signer behavior is explicit, and
+the root API remains smaller than the raw/control-plane layer.
 
 ## Later: Operator And Host Maturity
 

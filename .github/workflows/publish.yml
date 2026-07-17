@@ -1,0 +1,60 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  crates-io:
+    name: crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout tagged release
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Verify release identity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          package_version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "octra-sqlite") | .version')"
+          test "$RELEASE_TAG" = "v$package_version"
+          test "$(git describe --tags --exact-match)" = "$RELEASE_TAG"
+          git merge-base --is-ancestor HEAD origin/main
+          test -z "$(git status --porcelain)"
+          release_manifest="release/octra-sqlite-$package_version.json"
+          wasm_path="circle/wasm/octra_sqlite_circle.wasm"
+          test -f "$release_manifest"
+          test "$(jq -r '.release' "$release_manifest")" = "$package_version"
+          expected_bytes="$(jq -r '.wasm.bytes' "$release_manifest")"
+          expected_sha256="$(jq -r '.wasm.sha256' "$release_manifest")"
+          actual_bytes="$(wc -c < "$wasm_path" | tr -d ' ')"
+          actual_sha256="$(sha256sum "$wasm_path" | awk '{print $1}')"
+          test "$expected_bytes" = "$actual_bytes"
+          test "$expected_sha256" = "$actual_sha256"
+      - name: Verify package
+        run: cargo publish --locked --dry-run
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: Publish crate
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

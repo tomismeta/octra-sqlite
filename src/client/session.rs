@@ -91,30 +91,37 @@ impl LocalSigner {
 }
 
 impl Session {
+    /// Return the resolved database target.
     pub fn target(&self) -> &DatabaseTarget {
         &self.target
     }
 
+    /// Return the resolved wallet path when one is configured.
     pub fn wallet_path(&self) -> Option<&Path> {
         self.wallet_path.as_deref()
     }
 
+    /// Return a deferred wallet-load error retained for signed operations.
     pub fn wallet_load_error(&self) -> Option<&str> {
         self.wallet_load_error.as_deref()
     }
 
+    /// Return the resolved Octra RPC URL.
     pub fn rpc(&self) -> &str {
         &self.rpc
     }
 
+    /// Return the caller address used for view authentication.
     pub fn caller(&self) -> &str {
         &self.caller
     }
 
+    /// Return the signing public key as standard base64.
     pub fn public_key_b64(&self) -> Result<&str> {
         Ok(self.signer()?.public_key_b64())
     }
 
+    /// Clone this session around a different already-resolved database target.
     pub fn with_database_target(&self, target: DatabaseTarget) -> Session {
         Session {
             target,
@@ -127,6 +134,7 @@ impl Session {
         }
     }
 
+    /// Resolve and open another database using this session's local context.
     pub fn open_database(&self, target: impl Into<String>) -> Result<Session> {
         let config = load_config()?;
         let mut target = resolve_database_target(&target.into(), &config)?;
@@ -144,6 +152,7 @@ impl Session {
         })
     }
 
+    /// Return the 32-byte signing public key used by OSW1 intent.
     pub fn intent_public_key(&self) -> Result<[u8; 32]> {
         Ok(self.signer()?.intent_public_key())
     }
@@ -182,6 +191,7 @@ impl Session {
     }
 }
 
+/// Resolve a database session from explicit options and local config.
 pub fn build_session(options: &ClientOptions) -> Result<Session> {
     let config = load_config()?;
     let target_value = options
@@ -201,6 +211,7 @@ pub fn build_session(options: &ClientOptions) -> Result<Session> {
     build_session_for_target(options, &config, target)
 }
 
+/// Resolve a network control-plane session that is not bound to a database.
 pub fn build_control_session(options: &ClientOptions, network: &str) -> Result<Session> {
     let config = load_config()?;
     let target = DatabaseTarget {
@@ -213,6 +224,7 @@ pub fn build_control_session(options: &ClientOptions, network: &str) -> Result<S
     build_session_for_target(options, &config, target)
 }
 
+/// Resolve the wallet path according to explicit, environment, and config precedence.
 pub fn resolve_wallet_path(options: &ClientOptions, config: &Config) -> Option<PathBuf> {
     options
         .wallet
@@ -222,6 +234,7 @@ pub fn resolve_wallet_path(options: &ClientOptions, config: &Config) -> Option<P
         .or_else(discover_wallet_path)
 }
 
+/// Resolve a saved name, Circle ID, or `oct://` URI into a database target.
 pub fn resolve_database_target(value: &str, config: &Config) -> Result<DatabaseTarget> {
     let mut seen = BTreeSet::new();
     let mut chain = Vec::new();

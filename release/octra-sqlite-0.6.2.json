@@ -1,0 +1,201 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.6.2",
+  "circle_program_version": "5",
+  "network": "devnet",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 611456,
+    "sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef"
+  },
+  "personalization": {
+    "owner_pubkey_offset": 605192,
+    "owner_pubkey_bytes": 32,
+    "db_id_offset": 605224,
+    "db_id_bytes": 32
+  },
+  "historical_wasm_catalog": [
+    {
+      "releases": "0.1.0-0.2.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607640,
+      "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
+    },
+    {
+      "releases": "0.2.1",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.1/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607800,
+      "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
+    },
+    {
+      "releases": "0.3.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609475,
+      "sha256": "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea"
+    },
+    {
+      "releases": "0.3.1-0.3.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609404,
+      "sha256": "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b"
+    },
+    {
+      "releases": "0.3.3-0.5.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.5.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609354,
+      "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+    },
+    {
+      "releases": "0.6.0",
+      "sqlite_version": "3.53.3",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.6.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 610218,
+      "sha256": "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051"
+    }
+  ],
+  "sqlite": {
+    "version": "3.53.3",
+    "source_path": "vendor/sqlite/3.53.3/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3530300",
+    "source_sha256": "d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86",
+    "upstream_sqlite3_c_sha3_256": "28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8069,
+    "max_file_bytes": 33050624,
+    "circle_stable_storage_limit_bytes": 33554432,
+    "accounting": "Circle stable storage counts key and value bytes",
+    "assumes_dedicated_circle_storage": true,
+    "legacy_vfs_page_slots": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "execution": {
+    "sqlite_progress_interval_vdbe_steps": 1000,
+    "max_query_vdbe_steps": 5000000,
+    "max_exec_vdbe_steps": 25000000,
+    "query_limit_error": "query_budget_exceeded",
+    "exec_limit_error": "exec_budget_exceeded",
+    "octra_host_fuel": "protocol_dependency"
+  },
+  "confidentiality": {
+    "encrypted": false,
+    "sealed_read_access": "authenticated_wallet",
+    "sealed_owner_only": false,
+    "write_sql_visible_in_transaction_history": true
+  },
+  "upgrade_workflow": {
+    "command": "octra-sqlite upgrade",
+    "bundle_schema": "octra-sqlite.upgrade.bundle.v1",
+    "manifest_states": ["prepared", "applied", "complete"],
+    "target_wasm_source": "embedded release artifact unless --wasm is explicitly supported by the selected command",
+    "historical_wasm_catalog_mode": "metadata_only",
+    "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
+    "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
+    "rollback_refuses_post_upgrade_writes_by_default": true,
+    "owner_sequence_source": "auth_info when available with storage_info fallback"
+  },
+  "verification": {
+    "local_wasm_behavior_tests": 16,
+    "unbounded_query_budget_proven": true,
+    "unbounded_exec_budget_proven": true,
+    "upgrade_owner_sequence_fallback_proven": true,
+    "wasm_audit": "passed",
+    "devnet": "inherited_from_0.6.1_same_wasm"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "deployment_kind": "fresh_public_read_proof",
+    "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "circle": "oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "browser_mode": "gateway_allowed",
+    "resource_mode": "public_resources",
+    "sqlite_version": "3.53.3",
+    "unpersonalized_sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef",
+    "personalized_sha256": "86b98d9d74d49ad4ab1fe04862e41542752fb8b58476dd7f72d2bb68ee5037af",
+    "owner": "octCpJ1SJNi7NBNEjo9DnMfhy4fH3HGDrXN7JL1UhoGYgCB",
+    "owner_pubkey": "2e2bd06cb8f5584aa0524074bc8b5c99122dc9b43f4e6467f84f406507e49feb",
+    "db_id": "8a67b84fa22b8fa8f42a82230abdd1a7f29c886436e8ce6cf1782964f49063c8",
+    "owner_pubkey_offset": 605192,
+    "db_id_offset": 605224,
+    "circle_create_tx": "8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e",
+    "initializer_tx": "496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d",
+    "write_smoke_tx": "8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab",
+    "write_smoke_cleanup_tx": "5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a",
+    "unsigned_read": {
+      "wallet_required": false,
+      "query": "select sqlite_version(), count(*) from artist;",
+      "rows": [["3.53.3", 4]]
+    },
+    "final_status": {
+      "ready": true,
+      "engine_current": true,
+      "upgrade_needed": false,
+      "storage_pages": 3,
+      "storage_bytes": 12288
+    },
+    "integrity": {
+      "result": "ok",
+      "pages": 3,
+      "bytes": 12288,
+      "generation": 3,
+      "sha256": "bfc7bc01f9b424f1e0eaf2b2444ab51342c8e52729d9202e3cbe0e7cc12709f7"
+    },
+    "explorer_urls": {
+      "circle": "https://devnet.octrascan.io/address.html?addr=oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+      "circle_create": "https://devnet.octrascan.io/tx.html?hash=8f3f6369c3f873f1846057f30fe9d4e1feab9db254a96293c077ed7cde73331e",
+      "initializer": "https://devnet.octrascan.io/tx.html?hash=496b58b2618c522cbdb346aba8c15dc93bfd2f2a1b5bbe99afe2a88d6549570d",
+      "write_smoke": "https://devnet.octrascan.io/tx.html?hash=8955e25060d6a10832ae3579d699b75ce6e21f0eec3daa4f9e6c67c747b563ab",
+      "write_smoke_cleanup": "https://devnet.octrascan.io/tx.html?hash=5efd75521d22d9535c650bcd00e656f1acdb7baf7bbf46227026c7f702a82b1a"
+    }
+  },
+  "capacity_evidence": {
+    "status": "measured_on_devnet",
+    "circle": "oct2ZE59sSkPABWnozCk1VHeC7MGzVTBvc8sjktMmxGx4oz",
+    "sqlite_version": "3.53.2",
+    "storage_protocol": "generation_manifest_v4",
+    "max_observed_pages": 8069,
+    "max_observed_file_bytes": 33050624,
+    "stable_storage_limit_bytes": 33554432,
+    "last_growth_tx": "65fa83b15051b6058aa3b04e9ed08767974f5cfb0ceee22a90d07f04e853a7b1",
+    "no_growth_tx": "6c95192a66ee85b890bab7dd789eedd829728a9883724b61c9a5f6e565fcf9ad",
+    "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
+  },
+  "client_release": {
+    "notes": "Client-only release. Routes ordinary CLI SQL through the Database data plane, preserves source-owned error codes, carves CLI ownership by responsibility, curates docs.rs, and adds trusted publishing. SQLite 3.53.3, Circle WASM, OSR1/OSW1, owner-write authorization, command names, and CLI JSON envelopes remain unchanged from 0.6.1."
+  },
+  "status": "0.6.2 client-only release; inherits the identical 0.6.1 Circle artifact and devnet proof"
+}
+

@@ -108,6 +108,7 @@ impl Database<HttpTransport> {
         Self::open_with_transport(options, HttpTransport::default())
     }
 
+    #[cfg(feature = "cli")]
     pub(crate) fn from_session(session: Session) -> Self {
         Self {
             session,

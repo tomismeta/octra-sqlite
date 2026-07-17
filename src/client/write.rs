@@ -15,6 +15,7 @@ use std::env;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Unsigned owner-write transaction plus the SQL and OSW1 intent it commits to.
 #[derive(Clone, PartialEq)]
 pub struct PreparedWrite {
     sql: String,
@@ -29,38 +30,47 @@ pub struct PreparedWrite {
 }
 
 impl PreparedWrite {
+    /// Return the SQL committed to by this write.
     pub fn sql(&self) -> &str {
         &self.sql
     }
 
+    /// Return the Circle method selected for execution.
     pub fn method(&self) -> &str {
         &self.method
     }
 
+    /// Return the Octra account nonce captured during preparation.
     pub fn nonce(&self) -> i64 {
         self.nonce
     }
 
+    /// Return the Octra transaction timestamp captured during preparation.
     pub fn timestamp(&self) -> f64 {
         self.timestamp
     }
 
+    /// Return the target Circle ID.
     pub fn circle(&self) -> &str {
         &self.circle
     }
 
+    /// Return the submitting wallet address.
     pub fn wallet(&self) -> &str {
         &self.wallet
     }
 
+    /// Return the signing public key encoded for Octra RPC.
     pub fn public_key(&self) -> &str {
         &self.public_key
     }
 
+    /// Return the prepared OSW1 owner-write metadata.
     pub fn owner_write(&self) -> &PreparedOwnerWrite {
         &self.owner_write
     }
 
+    /// Return the operation's declarative safety metadata.
     pub fn safety(&self) -> OperationSafety {
         self.safety
     }
@@ -79,6 +89,7 @@ impl fmt::Debug for PreparedWrite {
     }
 }
 
+/// Database identity and sequence bound into a prepared OSW1 intent.
 #[derive(Clone, PartialEq, Eq)]
 pub struct PreparedOwnerWrite {
     db_id: String,
@@ -88,18 +99,22 @@ pub struct PreparedOwnerWrite {
 }
 
 impl PreparedOwnerWrite {
+    /// Return the OSW1 database identity as hex.
     pub fn db_id(&self) -> &str {
         &self.db_id
     }
 
+    /// Return the expected owner public key as hex.
     pub fn owner_pubkey(&self) -> &str {
         &self.owner_pubkey
     }
 
+    /// Return the owner-write sequence committed to by the intent.
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
 
+    /// Return the complete OSW1 frame as hex.
     pub fn frame_hex(&self) -> &str {
         &self.frame_hex
     }
@@ -116,6 +131,7 @@ impl fmt::Debug for PreparedOwnerWrite {
     }
 }
 
+/// Signed Octra transaction ready for submission.
 #[derive(Clone, PartialEq)]
 pub struct SignedWrite {
     tx: Tx,
@@ -123,14 +139,17 @@ pub struct SignedWrite {
 }
 
 impl SignedWrite {
+    /// Borrow the signed Octra transaction.
     pub fn tx(&self) -> &Tx {
         &self.tx
     }
 
+    /// Return the operation's declarative safety metadata.
     pub fn safety(&self) -> OperationSafety {
         self.safety
     }
 
+    /// Consume the wrapper and return the signed transaction.
     pub fn into_tx(self) -> Tx {
         self.tx
     }

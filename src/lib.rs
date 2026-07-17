@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! Real SQLite inside an Octra Circle.
 //!
 //! `octra-sqlite` provides a small Rust client for querying and writing to a
@@ -5,19 +7,9 @@
 //! crate keeps the first story deliberately small: create a [`Client`], open a
 //! [`Database`], then run SQL.
 //!
-//! ```no_run
-//! use octra_sqlite::{Client, Result};
+//! # Start here
 //!
-//! fn main() -> Result<()> {
-//!     let client = Client::from_default_config()?;
-//!     let db = client.database("art")?;
-//!     let rows = db.query("select * from artist order by name;")?;
-//!     println!("{} rows", rows.row_count);
-//!     Ok(())
-//! }
-//! ```
-//!
-//! A public-read database can be queried without local wallet setup:
+//! Public-read databases need no local wallet or config:
 //!
 //! ```no_run
 //! use octra_sqlite::{Client, Result};
@@ -33,6 +25,29 @@
 //! }
 //! ```
 //!
+//! # Configured databases and writes
+//!
+//! [`Client::from_default_config`] loads the same saved database and wallet
+//! configuration used by the CLI. Writes are owner-signed and confirmed by
+//! default:
+//!
+//! ```no_run
+//! use octra_sqlite::{Client, Result};
+//!
+//! fn main() -> Result<()> {
+//!     let client = Client::from_default_config()?;
+//!     let db = client.database("art")?;
+//!     let result = db.execute("insert into artist(name) values ('Hokusai');")?;
+//!     println!("confirmed: {}", result.submitted.tx_hash.is_some());
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Use [`Database::execute_no_wait`] when submission and confirmation must be
+//! separate, then complete the lifecycle with [`Database::wait`].
+//!
+//! # Read and write model
+//!
 //! Sealed databases use signed Octra view auth for reads. Public-read
 //! databases use unsigned Octra Circle views for SQL reads while keeping writes
 //! owner-signed through OSW1 owner write intent. Pass a saved database name or a
@@ -41,11 +56,36 @@
 //! Sealed authenticates reads; it does not encrypt data or make reads owner-only.
 //! Write SQL and values are visible in Octra transaction history.
 //!
-//! Feature flags:
+//! # API map
+//!
+//! - [`Client`] owns configuration and transport; [`Database`] owns one opened
+//!   SQL data plane.
+//! - [`QueryResult`], [`ExecuteResult`], and [`SubmittedTransaction`] model the
+//!   query, confirmed-write, and submitted-write lifecycles.
+//! - [`AuthInfo`], [`ProgramInfo`], and [`ReadMode`] expose database and Circle
+//!   state without leaking raw RPC details into the first story.
+//! - [`client`] contains advanced transport, config, and signing types.
+//! - [`client::raw`] contains lower-level Octra RPC plumbing for adapters and
+//!   operational tooling.
+//! - [`protocol`] contains the transport-independent OSR1, OSW1, target, and
+//!   transaction wire formats.
+//!
+//! # Errors
+//!
+//! [`Error::kind`] is the stable broad category for application handling.
+//! [`Error::code`] preserves a more precise code when the RPC, Circle, or
+//! receipt supplied one. Human error text is not an automation contract.
+//!
+//! # Build configuration
 //!
 //! - `cli`: build the `octra-sqlite` command line interface.
 //! - `http`: include the default blocking HTTP RPC transport.
 //! - `wasm-behavior`: enable host-harness tests for the bundled Circle WASM.
+//!
+//! docs.rs builds the library with `http` and without the CLI. The default
+//! crate configuration includes both `cli` and `http`.
+//!
+//! # Stability
 //!
 //! The CLI JSON envelopes and OSR1/OSW1 wire formats are treated as public
 //! surfaces. The Rust API is still `0.x`; breaking Rust API cleanup happens in
@@ -64,4 +104,5 @@ pub use serde_json::Value;
 
 #[cfg(feature = "cli")]
 #[path = "cli/mod.rs"]
+/// Human and automation CLI entrypoints.
 pub mod cli;

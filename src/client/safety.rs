@@ -1,26 +1,39 @@
 /// Public database operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
+    /// Read-only SQL query.
     Query,
+    /// Owner-signed write with receipt confirmation.
     Execute,
+    /// Owner-signed write without receipt confirmation.
     ExecuteNoWait,
+    /// Owner-write authorization inspection.
     AuthInfo,
+    /// Deployed Circle program inspection.
     ProgramInfo,
 }
 
 /// Safety metadata for a database operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationSafety {
+    /// Operation described by this metadata.
     pub operation: Operation,
+    /// Whether the operation carries SQL text.
     pub reads_sql: bool,
+    /// Whether the operation can mutate Circle state.
     pub mutates_state: bool,
+    /// Whether the operation submits an Octra transaction.
     pub submits_transaction: bool,
+    /// Whether the operation waits for a confirmed receipt.
     pub waits_for_receipt: bool,
+    /// Whether the operation requires signed Octra RPC authentication.
     pub requires_signed_rpc: bool,
+    /// Whether the operation requires OSW1 owner-write intent.
     pub requires_owner_write_intent: bool,
 }
 
 impl Operation {
+    /// Return declarative safety properties for this operation.
     pub fn safety(self) -> OperationSafety {
         match self {
             Operation::Query => OperationSafety {

@@ -1,7 +1,10 @@
+//! OSR1 typed SQLite result decoding.
+
 use super::error::{Error, Result};
 use base64::{Engine as _, engine::general_purpose};
 use serde_json::{Value, json};
 
+/// Prefix identifying an OSR1 typed-result payload.
 pub const TYPED_PREFIX: &str = "OSR1:";
 const MAX_ENVELOPE_BYTES: usize = 65_526;
 const MAX_ENCODED_PAYLOAD_BYTES: usize = MAX_ENVELOPE_BYTES - TYPED_PREFIX.len();
@@ -9,6 +12,7 @@ const MAX_DECODED_PAYLOAD_BYTES: usize = (MAX_ENCODED_PAYLOAD_BYTES / 4) * 3;
 const MAX_COLUMNS: usize = 128;
 const MAX_ROWS: usize = 512;
 
+/// Decode and validate a base64 OSR1 result into its JSON table envelope.
 pub fn decode_typed_result(encoded: &str) -> Result<Value> {
     if encoded.len() > MAX_ENCODED_PAYLOAD_BYTES {
         return Err(Error::new("typed result exceeds maximum payload size"));

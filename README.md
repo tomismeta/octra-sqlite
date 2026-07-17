@@ -152,9 +152,9 @@ checks the Circle import/export surface,
 release manifests publish the bundled WASM hash and record live devnet proofs
 when completed.
 
-The `0.6.1` crate keeps SQLite 3.53.3 and adds deterministic SQL work budgets
-plus client and upgrade hardening. The current release manifest is
-[release/octra-sqlite-0.6.1.json](./release/octra-sqlite-0.6.1.json).
+The `0.6.2` crate keeps SQLite 3.53.3 and the audited `0.6.1` Circle WASM while
+converging the routine CLI and Rust client paths. The current release manifest
+is [release/octra-sqlite-0.6.2.json](./release/octra-sqlite-0.6.2.json).
 Existing Circles keep the engine they were deployed with until their owner runs
 `upgrade`; historical release manifests retain the prior deployment proofs.
 

@@ -73,9 +73,23 @@ package contents, artifact bytes, hashes, deployment proofs, or release claims.
 For crates.io preparation, verify the package before tagging:
 
 ```sh
-cargo package --list --allow-dirty
-cargo publish --dry-run --allow-dirty
+cargo package --list
+cargo publish --dry-run --locked
 ```
+
+## Release Flow
+
+Prepare releases on one focused branch and merge through a green pull request.
+Keep history linear with squash or rebase; do not publish from a dirty tree or
+an unreviewed branch. After the version, changelog, release notes, manifest, and
+package dry run agree, tag the exact clean `main` commit and publish its GitHub
+release.
+
+The `publish.yml` workflow exchanges GitHub OIDC for a short-lived crates.io
+token and publishes that exact release tag. crates.io must trust
+`tomismeta/octra-sqlite`, `publish.yml`, and the `release` environment. Keep
+that environment approval-gated; no long-lived registry token belongs in
+GitHub secrets.
 
 ## Security
 

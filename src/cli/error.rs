@@ -24,6 +24,7 @@ pub(super) fn coded_error(code: &'static str, message: impl Into<String>) -> Any
 }
 
 /// Return the stable CLI automation code carried by an error chain.
+/// Return the stable CLI automation code for an error chain.
 pub fn error_code(error: &AnyError) -> &'static str {
     for cause in error.chain() {
         if let Some(error) = cause.downcast_ref::<CodedError>() {

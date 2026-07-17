@@ -1,22 +1,37 @@
+//! Canonical Octra transaction serialization used for signing.
+
 use serde::Serialize;
 
+/// Octra transaction fields used by Circle deployment and calls.
 #[derive(Clone, PartialEq, Serialize)]
 pub struct Tx {
+    /// Sender wallet address.
     pub from: String,
+    /// Destination wallet or Circle address.
     pub to_: String,
+    /// Native asset amount encoded as a decimal string.
     pub amount: String,
+    /// Sender account nonce.
     pub nonce: i64,
+    /// Octra unit budget encoded as a decimal string.
     pub ou: String,
+    /// Transaction timestamp.
     pub timestamp: f64,
+    /// Octra operation type.
     pub op_type: String,
+    /// Optional operation-specific encrypted-data field.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub encrypted_data: String,
+    /// Optional operation-specific message payload.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub message: String,
+    /// Transaction signature.
     pub signature: String,
+    /// Signing public key.
     pub public_key: String,
 }
 
+/// Serialize the exact unsigned transaction fields covered by the signature.
 pub fn canonical_tx(tx: &Tx) -> String {
     let mut s = String::new();
     s.push_str("{\"from\":\"");

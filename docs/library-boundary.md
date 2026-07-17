@@ -24,9 +24,20 @@ Root exports are intentionally small:
 `Client` is the control plane: configuration, transport ownership, and database
 selection. `Database` is the data plane: SQL reads, writes, and inspection.
 
+The CLI's ordinary one-statement query and write paths use this same
+`Database` data plane. CLI-only workflows stay lower level where they need
+capabilities the application API deliberately does not expose: RPC tracing,
+script batching, restore, deployment, verification, and engine upgrades. This
+keeps one implementation for routine SQL without inflating the root API to fit
+operator concerns.
+
 `Database::execute(sql)` is the confirmed write path.
 `Database::execute_no_wait(sql)` returns `SubmittedTransaction`; pass it to
 `Database::wait(&submitted)` to complete the lifecycle.
+
+`Error::kind()` supplies a stable broad category. `Error::code()` preserves a
+precise source code when the RPC, Circle, or receipt supplies one. Callers
+should not classify human error text.
 
 ## Client
 
@@ -63,7 +74,8 @@ tests, and advanced adapters.
 It exposes sessions and direct Octra RPC helpers such as `view`, `query_typed`,
 `exec_sql`, `submit_tx`, and `wait_for_transaction`. New app, REST, MCP, A2A,
 or service integrations should start with `Client` and `Database` and use
-`raw` only when they need to reproduce the CLI's signed Octra transaction flow.
+`raw` only when they need direct RPC control or an operator workflow that is
+not part of the application data plane.
 
 ## Protocol
 

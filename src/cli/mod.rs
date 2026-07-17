@@ -1,3 +1,5 @@
+//! SQLite-shaped CLI orchestration for humans and automation.
+
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -68,9 +70,9 @@ use zeroize::Zeroize;
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.1.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.2.json";
 const EMBEDDED_WASM_BYTES: &[u8] = include_bytes!("../../circle/wasm/octra_sqlite_circle.wasm");
-const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.1.json");
+const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.2.json");
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
@@ -602,6 +604,7 @@ struct BackupSummary {
     sha256: String,
 }
 
+/// Parse process arguments and run one CLI command.
 pub fn run() -> Result<()> {
     let code = run_with_exit_code()?;
     if code == 0 {
@@ -611,6 +614,7 @@ pub fn run() -> Result<()> {
     }
 }
 
+/// Parse process arguments, run one command, and return its requested exit code.
 pub fn run_with_exit_code() -> Result<i32> {
     let args = normalize_args(env::args().collect());
     let cli = Cli::parse_from(args);

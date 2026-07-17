@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.2
+
+- Routed ordinary one-statement CLI query and execute through the same
+  `Database` data plane used by Rust applications, while keeping tracing,
+  scripts, restore, deploy, verify, and upgrade on explicit control-plane
+  plumbing.
+- Split the CLI catch-all module into responsibility-owned onboarding,
+  database, SQL, inspection, deployment, catalog, and test modules without
+  changing commands or output envelopes.
+- Preserved precise RPC, Circle, receipt, and local policy error codes at their
+  construction sites; added `Error::code()` while retaining the existing CLI
+  JSON error vocabulary and broad `ErrorKind` categories.
+- Curated the docs.rs crate landing page and advanced module boundaries while
+  keeping the README focused on product use.
+- Added crates.io trusted publishing from exact GitHub release tags through a
+  dedicated release environment using short-lived OIDC credentials.
+- Clarified the roadmap boundary: patch-compatible convergence ships in
+  `0.6.2`; secret ownership changes to `ClientOptions` remain reserved for a
+  justified `0.7.0` API break.
+- Kept SQLite 3.53.3, the bundled Circle WASM, OSR1/OSW1, owner-write
+  authorization, top-level CLI commands, JSON envelopes, and root Rust types
+  unchanged from `0.6.1`.
+
 ## 0.6.1
 
 - Added deterministic SQLite progress-handler budgets: 5,000,000 VDBE steps

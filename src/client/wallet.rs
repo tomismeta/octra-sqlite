@@ -90,10 +90,12 @@ pub(super) fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
     }
 }
 
+/// Discover the first supported wallet path from the local environment.
 pub fn discover_wallet_path() -> Option<PathBuf> {
     wallet_candidates().into_iter().find(|path| path.is_file())
 }
 
+/// Resolve or derive the caller address for a wallet-backed session.
 pub fn wallet_caller(path: Option<&Path>, caller: Option<&str>) -> Result<Option<String>> {
     let wallet = load_wallet(path)?;
     Ok(first_string(&[

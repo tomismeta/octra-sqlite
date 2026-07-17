@@ -145,7 +145,14 @@ requiring callers to parse human help text.
 ## Public
 
 - `src/main.rs`: tiny binary entrypoint.
-- `src/cli/mod.rs`: top-level Rust CLI command orchestration.
+- `src/cli/mod.rs`: command vocabulary, argument types, and top-level dispatch.
+- `src/cli/onboarding.rs`: setup, database creation, and wallet onboarding.
+- `src/cli/databases.rs`: saved database names and defaults.
+- `src/cli/sql.rs`: ordinary SQL, script, restore, and check dispatch.
+- `src/cli/inspection.rs`: status, config, verify, and artifact inspection.
+- `src/cli/deployment.rs`: Circle creation, WASM personalization, and deploy.
+- `src/cli/catalog.rs`: machine-readable command and limit catalogs.
+- `src/cli/upgrade.rs`: safe engine upgrade and rollback workflow.
 - `src/cli/output.rs`: CLI table/json/csv rendering.
 - `src/cli/shell.rs`: interactive SQLite-style shell and dot commands.
 - `src/cli/portability.rs`: backup, dump, SQL restore, and CSV import helpers.
@@ -176,7 +183,7 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.6.1.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.6.2.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.

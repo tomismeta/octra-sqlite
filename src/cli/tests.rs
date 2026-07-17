@@ -451,8 +451,11 @@ fn default_release_artifacts_are_embedded() {
     if env::var_os("OCTRA_SQLITE_MANIFEST").is_none() {
         let artifact = resolve_release_manifest().unwrap();
         assert_eq!(artifact.source, format!("embedded:{RELEASE_MANIFEST_REL}"));
-        assert!(artifact.text.contains("\"release\": \"0.6.1\""));
         let manifest: Value = serde_json::from_str(&artifact.text).unwrap();
+        assert_eq!(
+            manifest["release"].as_str(),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
         assert_eq!(
             EMBEDDED_WASM_BYTES
                 .windows(OWNER_PUBKEY_PLACEHOLDER.len())
