@@ -12,16 +12,24 @@ const DEFAULT_CONFIG_JSON: &str = include_str!("../../config/defaults.json");
 /// Local octra-sqlite configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
+    /// Active wallet JSON path.
     pub wallet: Option<String>,
+    /// Active network RPC URL.
     pub rpc: Option<String>,
+    /// Active network explorer base URL.
     pub explorer: Option<String>,
+    /// Active network name.
     pub network: Option<String>,
+    /// Named network profiles.
     #[serde(default)]
     pub networks: BTreeMap<String, NetworkConfig>,
+    /// Saved database name selected when no target is given.
     #[serde(default)]
     pub default_database: Option<String>,
+    /// Saved database names mapped to `oct://` URIs.
     #[serde(default)]
     pub databases: BTreeMap<String, String>,
+    /// Deployment metadata keyed by saved database name.
     #[serde(default)]
     pub database_metadata: BTreeMap<String, DatabaseMetadata>,
 }
@@ -29,30 +37,46 @@ pub struct Config {
 /// Per-network RPC and explorer profile.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkConfig {
+    /// Octra RPC URL for this network.
     pub rpc: Option<String>,
+    /// Explorer base URL for this network.
     pub explorer: Option<String>,
 }
 
 /// Saved database metadata written by `octra-sqlite new`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct DatabaseMetadata {
+    /// Canonical `oct://` database URI.
     pub uri: String,
+    /// Octra network name.
     pub network: String,
+    /// Circle ID.
     pub circle: String,
+    /// Saved read-mode preference.
     #[serde(default = "default_read_mode")]
     pub read_mode: ReadMode,
+    /// Octra deployment privacy class.
     #[serde(default = "default_privacy_class")]
     pub privacy_class: String,
+    /// Octra browser access mode.
     #[serde(default = "default_browser_mode")]
     pub browser_mode: String,
+    /// Octra resource access mode.
     #[serde(default = "default_resource_mode")]
     pub resource_mode: String,
+    /// Circle owner address at creation.
     pub owner: String,
+    /// Owner public key personalized into the Circle WASM.
     pub owner_pubkey: String,
+    /// Database identity personalized into OSW1.
     pub db_id: String,
+    /// Personalized deployed WASM SHA-256.
     pub code_hash: String,
+    /// Deployed WASM byte length.
     pub code_bytes: usize,
+    /// Circle creation transaction hash when known.
     pub create_tx: Option<String>,
+    /// Program update transaction hash when one was required.
     #[serde(default)]
     pub program_update_tx: Option<String>,
 }
@@ -74,6 +98,7 @@ fn default_resource_mode() -> String {
 }
 
 impl Config {
+    /// Resolve the RPC URL for a network, preferring active overrides.
     pub fn rpc_for_network(&self, network: &str) -> Option<String> {
         if self.network.as_deref() == Some(network) {
             return self
@@ -86,6 +111,7 @@ impl Config {
             .and_then(|profile| profile.rpc.clone())
     }
 
+    /// Resolve the explorer URL for a network, preferring active overrides.
     pub fn explorer_for_network(&self, network: &str) -> Option<String> {
         if self.network.as_deref() == Some(network) {
             return self
@@ -98,6 +124,7 @@ impl Config {
             .and_then(|profile| profile.explorer.clone())
     }
 
+    /// Copy the active network profile into the legacy active URL fields.
     pub fn apply_active_network_profile(&mut self) {
         let Some(network) = self.network.as_deref() else {
             return;
@@ -113,6 +140,7 @@ impl Config {
         }
     }
 
+    /// Find saved deployment metadata for a requested and resolved target.
     pub fn metadata_for_target(
         &self,
         requested: &str,
@@ -128,6 +156,7 @@ impl Config {
     }
 }
 
+/// Return the active config path, including `OCTRA_SQLITE_CONFIG` overrides.
 pub fn config_path() -> Result<PathBuf> {
     if let Ok(path) = env::var("OCTRA_SQLITE_CONFIG") {
         return Ok(PathBuf::from(path));
@@ -137,6 +166,7 @@ pub fn config_path() -> Result<PathBuf> {
     Ok(home.join(".octra").join("sqlite.json"))
 }
 
+/// Load bundled defaults overlaid with the active local config.
 pub fn load_config() -> Result<Config> {
     let path = config_path()?;
     load_config_at(&path)
@@ -167,6 +197,7 @@ fn load_config_at(path: &Path) -> Result<Config> {
     Ok(merge_config(defaults, user_config))
 }
 
+/// Atomically write local config with owner-only permissions where supported.
 pub fn write_config(config: &Config) -> Result<()> {
     let path = config_path()?;
     write_config_at(&path, config)

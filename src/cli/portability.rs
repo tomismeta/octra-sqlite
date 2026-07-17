@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::client::raw::{Session, auth_info, exec_sql, exec_sql_with_owner_auth, view};
 
-use super::BackupSummary;
+use super::{BackupSummary, error::coded_error};
 
 pub(super) const MAX_SQL_TEXT_BYTES: usize = 8_191;
 pub(super) const SQL_BATCH_TARGET_BYTES: usize = 7_500;
@@ -594,9 +594,12 @@ fn ensure_exec_payload_size(sql: &str) -> Result<()> {
 
 fn ensure_sql_len(label: &str, len: usize) -> Result<()> {
     if len > MAX_SQL_TEXT_BYTES {
-        bail!(
-            "{label} is {len} bytes; Octra SQLite accepts at most {MAX_SQL_TEXT_BYTES} bytes per statement"
-        );
+        return Err(coded_error(
+            "sql_too_large",
+            format!(
+                "{label} is {len} bytes; Octra SQLite accepts at most {MAX_SQL_TEXT_BYTES} bytes per statement"
+            ),
+        ));
     }
     Ok(())
 }
@@ -635,9 +638,12 @@ fn ensure_supported_restore_statement(statement: &str) -> Result<()> {
         || trimmed.starts_with("release ")
         || (trimmed.starts_with("begin") && trimmed != "begin transaction");
     if unsupported {
-        bail!(
-            "transactions_not_supported: restore only strips SQLite dump wrappers (BEGIN TRANSACTION, COMMIT, PRAGMA foreign_keys); unsupported transaction control statement: {statement}"
-        );
+        return Err(coded_error(
+            "transactions_not_supported",
+            format!(
+                "transactions_not_supported: restore only strips SQLite dump wrappers (BEGIN TRANSACTION, COMMIT, PRAGMA foreign_keys); unsupported transaction control statement: {statement}"
+            ),
+        ));
     }
     Ok(())
 }

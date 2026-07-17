@@ -101,7 +101,7 @@ cargo +stable install octra-sqlite --locked
 Pinned release install:
 
 ```sh
-cargo +stable install --git https://github.com/tomismeta/octra-sqlite --tag v0.6.1 --locked
+cargo +stable install --git https://github.com/tomismeta/octra-sqlite --tag v0.6.2 --locked
 ```
 
 Source checkout install:

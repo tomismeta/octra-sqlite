@@ -1,3 +1,8 @@
+//! Low-level Octra session and RPC plumbing.
+//!
+//! This module supports the CLI, audits, and adapters that need direct Circle
+//! calls. Application query and write paths should prefer [`crate::Database`].
+
 #[cfg(all(feature = "cli", feature = "http"))]
 use super::write::prepare_write_with_owner_auth;
 #[cfg(feature = "http")]
@@ -32,18 +37,21 @@ use serde_json::Value;
 use serde_json::json;
 
 #[cfg(feature = "http")]
+/// Call a Circle view method through the default HTTP transport.
 pub fn view(session: &Session, method: &str, params: Vec<Value>) -> Result<Value> {
     let transport = HttpTransport::default();
     view_with(&transport, session, method, params)
 }
 
 #[cfg(feature = "http")]
+/// Run read-only SQL and return the raw typed-result JSON envelope.
 pub fn query_typed(session: &Session, sql: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     query_typed_with(&transport, session, sql)
 }
 
 #[cfg(feature = "http")]
+/// Run read-only SQL while writing a JSONL RPC trace.
 pub fn query_typed_traced(
     session: &Session,
     sql: &str,
@@ -55,24 +63,28 @@ pub fn query_typed_traced(
 }
 
 #[cfg(feature = "http")]
+/// Read owner-write authorization metadata.
 pub fn auth_info(session: &Session) -> Result<AuthInfo> {
     let transport = HttpTransport::default();
     auth_info_with(&transport, session)
 }
 
 #[cfg(feature = "http")]
+/// Read raw deployed program metadata.
 pub fn program_info(session: &Session) -> Result<Value> {
     let transport = HttpTransport::default();
     program_info_with(&transport, session)
 }
 
 #[cfg(feature = "http")]
+/// Read raw Octra Circle metadata.
 pub fn circle_info(session: &Session) -> Result<Value> {
     let transport = HttpTransport::default();
     circle_info_with(&transport, session)
 }
 
 #[cfg(feature = "http")]
+/// Prepare, sign, and submit owner-write SQL through the default transport.
 pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
     let operation = if no_wait {
@@ -106,30 +118,35 @@ pub(crate) fn exec_sql_with_owner_auth(
 }
 
 #[cfg(feature = "http")]
+/// Read the next transaction nonce for the session wallet.
 pub fn next_nonce(session: &Session) -> Result<i64> {
     let transport = HttpTransport::default();
     next_nonce_with(&transport, session)
 }
 
 #[cfg(feature = "http")]
+/// Sign and submit a generic Octra transaction.
 pub fn submit_tx(session: &Session, tx: Tx, no_wait: bool) -> Result<Value> {
     let transport = HttpTransport::default();
     super::write::sign_and_submit_tx_with(&transport, session, tx, no_wait)
 }
 
 #[cfg(feature = "http")]
+/// Wait for a transaction to reach a terminal receipt state.
 pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     wait_for_transaction_with(&transport, session, tx_hash)
 }
 
 #[cfg(feature = "http")]
+/// Read a transaction by hash.
 pub fn transaction(session: &Session, tx_hash: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     transport.call(session.rpc(), "octra_transaction", json!([tx_hash]))
 }
 
 #[cfg(feature = "http")]
+/// Read transactions involving an address with RPC pagination.
 pub fn transactions_by_address(
     session: &Session,
     address: &str,

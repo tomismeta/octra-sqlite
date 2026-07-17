@@ -11,7 +11,7 @@ use std::env;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Deserialize, Default)]
 pub(super) struct WalletFile {
@@ -90,10 +90,12 @@ pub(super) fn load_wallet(path: Option<&Path>) -> Result<WalletFile> {
     }
 }
 
+/// Discover the first supported wallet path from the local environment.
 pub fn discover_wallet_path() -> Option<PathBuf> {
     wallet_candidates().into_iter().find(|path| path.is_file())
 }
 
+/// Resolve or derive the caller address for a wallet-backed session.
 pub fn wallet_caller(path: Option<&Path>, caller: Option<&str>) -> Result<Option<String>> {
     let wallet = load_wallet(path)?;
     Ok(first_string(&[
@@ -114,22 +116,24 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
             format!("wallet {} is missing address/addr", path.display()),
         )
     })?;
-    let mut private_key = first_secret_string([
-        wallet.priv_field,
-        wallet.priv_,
-        wallet.private_key,
-        wallet.private_key_b64,
-        key_pair.secret_key,
-    ])
-    .ok_or_else(|| {
-        Error::with_kind(
-            ErrorKind::Wallet,
-            format!(
-                "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
-                path.display()
-            ),
-        )
-    })?;
+    let private_key = Zeroizing::new(
+        first_secret_string([
+            wallet.priv_field,
+            wallet.priv_,
+            wallet.private_key,
+            wallet.private_key_b64,
+            key_pair.secret_key,
+        ])
+        .ok_or_else(|| {
+            Error::with_kind(
+                ErrorKind::Wallet,
+                format!(
+                    "wallet {} is missing private_key_b64/priv or keyPair.secretKey",
+                    path.display()
+                ),
+            )
+        })?,
+    );
     let supplied_public_key = first_string(&[
         wallet.pub_field,
         wallet.pub_,
@@ -137,8 +141,7 @@ pub(crate) fn wallet_file_material(path: &Path) -> Result<WalletMaterial> {
         wallet.public_key_b64,
         key_pair.public_key,
     ]);
-    let material = wallet_material_from_private_key(&private_key, supplied_public_key)?;
-    private_key.zeroize();
+    let material = wallet_material_from_private_key(private_key.as_str(), supplied_public_key)?;
     if material.address != supplied_address {
         return Err(Error::with_kind(
             ErrorKind::Wallet,
@@ -171,7 +174,7 @@ pub(crate) fn wallet_material_from_private_key(
 
 pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned)
+    let mut raw = decode_key_text(cleaned.as_str())
         .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "private key must be base64 or hex"))?;
     if raw.len() != 32 && raw.len() != 64 {
         raw.zeroize();
@@ -198,7 +201,7 @@ pub(super) fn signing_key_from_text(text: &str) -> Result<SigningKey> {
 
 pub(super) fn normalized_public_key_b64(text: &str, expected: &[u8; 32]) -> Result<String> {
     let cleaned = clean_key_text(text);
-    let mut raw = decode_key_text(&cleaned)
+    let mut raw = decode_key_text(cleaned.as_str())
         .ok_or_else(|| Error::with_kind(ErrorKind::Wallet, "public key must be base64 or hex"))?;
     if raw.len() != 32 {
         raw.zeroize();
@@ -255,8 +258,8 @@ fn first_secret_string(values: impl IntoIterator<Item = Option<String>>) -> Opti
     selected
 }
 
-fn clean_key_text(text: &str) -> String {
-    text.chars().filter(|ch| !ch.is_whitespace()).collect()
+fn clean_key_text(text: &str) -> Zeroizing<String> {
+    Zeroizing::new(text.chars().filter(|ch| !ch.is_whitespace()).collect())
 }
 
 fn decode_key_text(cleaned: &str) -> Option<Vec<u8>> {
@@ -281,6 +284,12 @@ fn address_from_public_key(public_key: &[u8; 32]) -> String {
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalized_key_text_is_zeroizing() {
+        let cleaned: Zeroizing<String> = clean_key_text("AA AA\n");
+        assert_eq!(cleaned.as_str(), "AAAA");
+    }
 
     #[test]
     fn wallet_material_derives_octra_address() {

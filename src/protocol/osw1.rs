@@ -1,7 +1,11 @@
+//! OSW1 owner-write intent framing.
+
 use super::error::{Error, Result};
 
+/// Domain separator for OSW1 owner-write intent frames.
 pub const DOMAIN: &[u8] = b"octra-sqlite.osw1.v1\0";
 
+/// Frame a database, sequence, Circle method, and SQL for owner signing.
 pub fn frame(db_id: &[u8; 32], sequence: u64, method: &str, sql: &str) -> Result<Vec<u8>> {
     if method.is_empty() || method.len() > 16 {
         return Err(Error::new("OSW1 method must be 1..16 bytes"));

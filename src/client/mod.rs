@@ -1,3 +1,10 @@
+//! Advanced client configuration, transport, and signing building blocks.
+//!
+//! Most applications should begin with [`crate::Client`] and
+//! [`crate::Database`]. This module exposes custom transports, local config,
+//! operation safety metadata, and the prepare/sign/submit write lifecycle.
+//! Direct session and RPC helpers live in [`raw`].
+
 mod config;
 mod database;
 mod error;

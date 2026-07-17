@@ -16,7 +16,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+/// Synchronous Octra JSON-RPC transport used by [`crate::Client`].
 pub trait Transport {
+    /// Call one JSON-RPC method and return its decoded result.
     fn call(&self, rpc: &str, method: &str, params: Value) -> Result<Value>;
 }
 
@@ -24,6 +26,7 @@ pub trait Transport {
 const MAX_RPC_ATTEMPTS: usize = 4;
 
 #[cfg(feature = "http")]
+/// Default blocking HTTP transport with bounded read retries.
 #[derive(Clone)]
 pub struct HttpTransport {
     agent: ureq::Agent,
@@ -31,12 +34,17 @@ pub struct HttpTransport {
 }
 
 #[cfg(feature = "http")]
+/// Disclosure level for JSONL RPC traces.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RpcTraceMode {
+    /// Record complete request and response bodies.
     #[default]
     Full,
+    /// Record method, hashes, sizes, status, and timing without bodies.
     Summary,
+    /// Record the complete request but only response metadata.
     RequestOnly,
+    /// Record request and response metadata without either body.
     ResponseMeta,
 }
 
@@ -56,6 +64,7 @@ impl Default for HttpTransport {
 
 #[cfg(feature = "http")]
 impl HttpTransport {
+    /// Construct the default blocking HTTP transport.
     pub fn new() -> Self {
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
@@ -67,10 +76,12 @@ impl HttpTransport {
         }
     }
 
+    /// Construct a transport that writes full JSONL RPC traces to a new file.
     pub fn with_trace_jsonl(path: &Path) -> Result<Self> {
         Self::with_trace_jsonl_mode(path, RpcTraceMode::Full)
     }
 
+    /// Construct a transport that writes the selected JSONL trace mode.
     pub fn with_trace_jsonl_mode(path: &Path, mode: RpcTraceMode) -> Result<Self> {
         let mut transport = Self::new();
         if let Some(parent) = path
@@ -212,7 +223,12 @@ impl Transport for HttpTransport {
                         sleep_before_retry(attempt, retry_after);
                         continue;
                     }
-                    return Err(Error::with_kind(ErrorKind::Decode, message));
+                    let code = if status_code == 429 {
+                        "rpc_rate_limited"
+                    } else {
+                        "rpc_non_json"
+                    };
+                    return Err(Error::with_code(ErrorKind::Decode, code, message));
                 }
             };
             if !status.is_success() {
@@ -232,6 +248,13 @@ impl Transport for HttpTransport {
                     sleep_before_retry(attempt, retry_after);
                     continue;
                 }
+                if status_code == 429 {
+                    return Err(Error::with_code(
+                        ErrorKind::Transport,
+                        "rpc_rate_limited",
+                        message,
+                    ));
+                }
                 return Err(Error::with_kind(ErrorKind::Transport, message));
             }
             if let Some(error) = payload.get("error") {
@@ -247,6 +270,16 @@ impl Transport for HttpTransport {
                 if should_retry_rpc_error(attempt, retryable, error) {
                     sleep_before_retry(attempt, retry_after);
                     continue;
+                }
+                if rpc_error_is_rate_limited(error) {
+                    return Err(Error::with_code(
+                        ErrorKind::Rpc,
+                        "rpc_rate_limited",
+                        message,
+                    ));
+                }
+                if let Some(code) = rpc_error_source_code(error) {
+                    return Err(Error::with_code(ErrorKind::Rpc, code, message));
                 }
                 return Err(Error::with_kind(ErrorKind::Rpc, message));
             }
@@ -279,9 +312,11 @@ fn should_retry_non_json(attempt: usize, retryable: bool, text: &str) -> bool {
 
 #[cfg(feature = "http")]
 fn should_retry_rpc_error(attempt: usize, retryable: bool, error: &Value) -> bool {
-    if !should_retry_transport(attempt, retryable) {
-        return false;
-    }
+    should_retry_transport(attempt, retryable) && rpc_error_is_rate_limited(error)
+}
+
+#[cfg(feature = "http")]
+fn rpc_error_is_rate_limited(error: &Value) -> bool {
     let code = error.get("code").and_then(Value::as_i64);
     let message = error
         .get("message")
@@ -292,6 +327,26 @@ fn should_retry_rpc_error(attempt: usize, retryable: bool, error: &Value) -> boo
         || message.contains("too many requests")
         || message.contains("rate limit")
         || message.contains("temporarily unavailable")
+}
+
+#[cfg(feature = "http")]
+fn rpc_error_source_code(error: &Value) -> Option<&'static str> {
+    match error.get("code").and_then(Value::as_str) {
+        Some("storage_uninitialized") => return Some("storage_uninitialized"),
+        Some("auth_uninitialized") => return Some("auth_uninitialized"),
+        _ => {}
+    }
+    let message = error
+        .as_str()
+        .or_else(|| error.get("message").and_then(Value::as_str))?
+        .to_ascii_lowercase();
+    if message.contains("missing storage cache") || message.contains("storage_uninitialized") {
+        Some("storage_uninitialized")
+    } else if message.contains("auth_uninitialized") {
+        Some("auth_uninitialized")
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "http")]
@@ -387,6 +442,23 @@ fn trace_value_meta(value: &Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn rpc_error_source_codes_are_parsed_at_the_transport_boundary() {
+        assert_eq!(
+            rpc_error_source_code(&json!({"message": "missing storage cache: octABC:0000"})),
+            Some("storage_uninitialized")
+        );
+        assert_eq!(
+            rpc_error_source_code(&json!("auth_uninitialized: auth_info is unavailable")),
+            Some("auth_uninitialized")
+        );
+        assert_eq!(
+            rpc_error_source_code(&json!({"code": "storage_uninitialized"})),
+            Some("storage_uninitialized")
+        );
+        assert_eq!(rpc_error_source_code(&json!({"message": "other"})), None);
+    }
 
     #[test]
     fn trace_writer_records_json_rpc_request_and_response() {

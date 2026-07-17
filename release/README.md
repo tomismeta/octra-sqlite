@@ -3,7 +3,7 @@
 This directory contains machine-readable release manifests for audited,
 network-specific artifacts.
 
-`octra-sqlite-0.6.1.json` is the current release manifest checked by
+`octra-sqlite-0.6.2.json` is the current release manifest checked by
 `octra-sqlite status`.
 
 `octra-sqlite-0.1.0.json`, `octra-sqlite-0.2.0.json`,
@@ -23,3 +23,7 @@ Circle status, and the metadata-only catalog of blessed historical WASM epochs.
 The `0.6.1` manifest records the deterministic SQLite work budgets, corrected
 generation-manifest capacity, hardening scope, and the previous `0.6.0` WASM in
 that metadata-only catalog, with recorded local and devnet proof.
+The `0.6.2` manifest is a client-only release over the identical `0.6.1` Circle
+artifact and devnet proof. It records CLI/client convergence, source-owned error
+codes, documentation curation, and trusted publishing without adding a new
+engine epoch.

@@ -14,6 +14,7 @@ pub struct QueryResult {
 }
 
 impl QueryResult {
+    /// Decode a raw Circle query response into validated typed rows.
     pub fn from_value(value: Value) -> Result<Self> {
         let columns = value
             .get("columns")
@@ -72,6 +73,7 @@ impl QueryResult {
         })
     }
 
+    /// Return the original query response.
     pub fn raw(&self) -> &Value {
         &self.raw
     }
@@ -91,6 +93,7 @@ pub struct SubmittedTransaction {
 }
 
 impl SubmittedTransaction {
+    /// Decode a raw transaction-submission response.
     pub fn from_value(value: Value) -> Result<Self> {
         Ok(Self {
             circle: string_field(&value, "circle"),
@@ -113,6 +116,7 @@ pub struct ExecuteResult {
 }
 
 impl ExecuteResult {
+    /// Decode a confirmed execution response and fail if its receipt failed.
     pub fn from_value(value: Value) -> Result<Self> {
         let submitted = SubmittedTransaction::from_value(value.clone())?;
         let receipt = value
@@ -127,13 +131,17 @@ impl ExecuteResult {
 /// Deployed Circle program metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgramInfo {
+    /// Circle program version when reported by Octra.
     pub version: Option<String>,
+    /// Deployed personalized WASM SHA-256 when reported by Octra.
     pub code_hash: Option<String>,
+    /// Deployed WASM byte length when reported by Octra.
     pub code_bytes: Option<u64>,
     raw: Value,
 }
 
 impl ProgramInfo {
+    /// Decode a raw Circle program-info response.
     pub fn from_value(value: Value) -> Result<Self> {
         Ok(Self {
             version: string_field(&value, "version"),
@@ -145,6 +153,7 @@ impl ProgramInfo {
         })
     }
 
+    /// Return the original program-info response.
     pub fn raw(&self) -> &Value {
         &self.raw
     }
@@ -153,9 +162,13 @@ impl ProgramInfo {
 /// Owner-write authorization metadata exposed by the Circle program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthInfo {
+    /// Whether owner-write authorization is configured.
     pub configured: bool,
+    /// Database identity bound into OSW1 owner-write intents.
     pub db_id: String,
+    /// Owner public key accepted by the Circle program.
     pub owner_pubkey: Option<String>,
+    /// Next owner-write sequence when the Circle reports it.
     pub owner_sequence: Option<u64>,
 }
 
@@ -165,15 +178,15 @@ pub(super) fn ensure_receipt_success(receipt: &Value) -> Result<()> {
         || receipt.get("error").is_some_and(|error| !error.is_null())
         || sql_error.is_some();
     if failed {
-        return Err(Error::with_kind(
-            ErrorKind::Receipt,
-            format!(
-                "SQL execution failed: {}",
-                sql_error
-                    .map(|error| format_sql_error_event(&error))
-                    .unwrap_or_else(|| receipt_error_text(receipt))
-            ),
-        ));
+        let detail = sql_error
+            .as_deref()
+            .map(format_sql_error_event)
+            .unwrap_or_else(|| receipt_error_text(receipt));
+        let message = format!("SQL execution failed: {detail}");
+        return match sql_error.as_deref().and_then(sql_error_code) {
+            Some(code) => Err(Error::with_code(ErrorKind::Receipt, code, message)),
+            None => Err(Error::with_kind(ErrorKind::Receipt, message)),
+        };
     }
     Ok(())
 }
@@ -221,6 +234,11 @@ fn format_sql_error_event(error: &str) -> String {
         }
         _ => error.to_string(),
     }
+}
+
+fn sql_error_code(error: &str) -> Option<&str> {
+    let code = error.split_once(':').map(|(code, _)| code).unwrap_or(error);
+    (!code.is_empty()).then_some(code)
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {

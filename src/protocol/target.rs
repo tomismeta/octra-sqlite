@@ -1,3 +1,5 @@
+//! `oct://` database targets and Octra read modes.
+
 use super::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +17,7 @@ pub enum ReadMode {
 }
 
 impl ReadMode {
+    /// Return the URI/config spelling for this mode.
     pub fn as_str(self) -> &'static str {
         match self {
             ReadMode::Auto => "auto",
@@ -23,6 +26,7 @@ impl ReadMode {
         }
     }
 
+    /// Return whether this mode can use unsigned Circle views.
     pub fn allows_unsigned_read(self) -> bool {
         matches!(self, ReadMode::Auto | ReadMode::Public)
     }
@@ -31,13 +35,19 @@ impl ReadMode {
 /// Parsed `oct://` target plus read mode and RPC context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTarget {
+    /// Original target text.
     pub raw: String,
+    /// Octra network name.
     pub network: String,
+    /// Circle ID.
     pub circle: String,
+    /// Resolved Octra RPC URL.
     pub rpc: String,
+    /// Requested or detected read mode.
     pub read_mode: ReadMode,
 }
 
+/// Parse a Circle ID or `oct://` URI using optional network and RPC defaults.
 pub fn parse_database_target(
     value: &str,
     default_network: Option<&str>,

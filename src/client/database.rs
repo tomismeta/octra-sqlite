@@ -107,6 +107,14 @@ impl Database<HttpTransport> {
     pub fn open(options: ClientOptions) -> Result<Self> {
         Self::open_with_transport(options, HttpTransport::default())
     }
+
+    #[cfg(feature = "cli")]
+    pub(crate) fn from_session(session: Session) -> Self {
+        Self {
+            session,
+            transport: Arc::new(HttpTransport::default()),
+        }
+    }
 }
 
 impl<T: Transport> Database<T> {
@@ -124,25 +132,31 @@ impl<T: Transport> Database<T> {
 
     /// Run read-only SQL and return typed rows.
     pub fn query(&self, sql: &str) -> Result<QueryResult> {
-        QueryResult::from_value(query_typed_with(
-            self.transport.as_ref(),
-            &self.session,
-            sql,
-        )?)
+        QueryResult::from_value(self.query_value(sql)?)
+    }
+
+    pub(crate) fn query_value(&self, sql: &str) -> Result<serde_json::Value> {
+        query_typed_with(self.transport.as_ref(), &self.session, sql)
     }
 
     /// Submit a write and wait for its receipt.
     pub fn execute(&self, sql: &str) -> Result<ExecuteResult> {
-        let prepared = self.prepare_write(sql)?;
-        let signed = self.sign_write(&prepared)?;
-        self.submit_signed_write_and_wait(signed)
+        ExecuteResult::from_value(self.execute_value(sql, false)?)
     }
 
     /// Submit a write without waiting for confirmation.
     pub fn execute_no_wait(&self, sql: &str) -> Result<SubmittedTransaction> {
-        let prepared = self.prepare_write_no_wait(sql)?;
+        SubmittedTransaction::from_value(self.execute_value(sql, true)?)
+    }
+
+    pub(crate) fn execute_value(&self, sql: &str, no_wait: bool) -> Result<serde_json::Value> {
+        let prepared = if no_wait {
+            self.prepare_write_no_wait(sql)?
+        } else {
+            self.prepare_write(sql)?
+        };
         let signed = self.sign_write(&prepared)?;
-        self.submit_signed_write(signed)
+        submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
     }
 
     /// Prepare a write for later signing and no-wait submission.
@@ -484,6 +498,24 @@ mod tests {
         let error = db.execute("bad sql").unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Receipt);
         assert!(error.to_string().contains("syntax error"));
+        assert!(error.to_string().contains("tx_hash: abc123"));
+    }
+
+    #[test]
+    fn database_execute_preserves_receipt_error_code_with_tx_context() {
+        let transport = MockTransport::with_receipt(json!({
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["exec_budget_exceeded:statement exceeded execution budget"]
+            }]
+        }));
+        let db = Database::open_with_transport(test_options(), transport).unwrap();
+        let error = db.execute("select expensive_work();").unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Receipt);
+        assert_eq!(error.code(), Some("exec_budget_exceeded"));
+        assert!(error.to_string().contains("execution budget"));
         assert!(error.to_string().contains("tx_hash: abc123"));
     }
 

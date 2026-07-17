@@ -1,5 +1,44 @@
 # Release Notes
 
+## 0.6.2
+
+This is a focused client architecture, automation, and documentation release
+over `0.6.1`. It makes the CLI exercise the same routine SQL data plane as Rust
+applications without adding commands or crate-root types.
+
+### Changed
+
+- Ordinary one-statement CLI reads and writes now flow through `Database`.
+- CLI responsibilities are separated into named modules instead of one catch-all
+  orchestrator.
+- Precise source error codes survive into CLI automation; the public client
+  exposes them through the additive `Error::code()` method, and
+  `cli::error_code()` owns the binary's stable JSON classification.
+- docs.rs now presents a deliberate start path, read/write model, API map,
+  error contract, advanced boundaries, and build configuration.
+- GitHub releases can publish to crates.io through a dedicated release
+  environment and OIDC workflow with no long-lived registry token.
+- Pasted and stdin-imported private-key text is zeroized on parse failures, and
+  the standalone `wasm-behavior` test feature now compiles independently.
+
+Keep the GitHub `release` environment approval-gated, non-bypassable, and
+restricted to `v*` refs. Before the first OIDC publish, register its exact
+repository, workflow, and environment as the crates.io trusted publisher.
+
+### Unchanged
+
+- SQLite remains 3.53.3.
+- The bundled Circle WASM is byte-for-byte identical to `0.6.1`; existing
+  Circles do not need an upgrade.
+- OSR1/OSW1, owner-write authorization, top-level commands, CLI JSON envelopes,
+  and crate-root type names are unchanged.
+
+### Version Boundary
+
+This work is patch-compatible and therefore belongs in `0.6.2`. A future
+change to `ClientOptions` key ownership, clone semantics, or signer interfaces
+would break the public Rust API and remains reserved for a justified `0.7.0`.
+
 ## 0.6.1
 
 This is a focused security and reliability hardening release over `0.6.0`.

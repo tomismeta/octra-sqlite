@@ -1,6 +1,7 @@
 # Devnet Proof
 
-Current public devnet proof Circle for `0.6.1`:
+Current public devnet proof Circle, established for `0.6.1` and inherited
+unchanged by the client-only `0.6.2` release:
 
 ```text
 oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x
