@@ -76,7 +76,8 @@ impl Error {
         self.kind
     }
 
-    /// Precise source error code when the RPC, Circle, or receipt supplied one.
+    /// Precise machine-readable code supplied by a remote source or assigned
+    /// at a local protocol boundary.
     pub fn code(&self) -> Option<&str> {
         self.code.as_deref()
     }

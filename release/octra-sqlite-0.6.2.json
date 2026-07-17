@@ -194,7 +194,7 @@
     "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
   },
   "client_release": {
-    "notes": "Client-only release. Routes ordinary CLI SQL through the Database data plane, preserves source-owned error codes, organizes CLI responsibilities, curates docs.rs, zeroizes transient CLI key input on every exit, makes the standalone WASM behavior feature self-contained, and adds trusted publishing. SQLite 3.53.3, Circle WASM, OSR1/OSW1, owner-write authorization, command names, and CLI JSON envelopes remain unchanged from 0.6.1."
+    "notes": "Client-only release. Routes ordinary CLI SQL through the Database data plane, preserves source-owned error codes, organizes CLI responsibilities, curates docs.rs, zeroizes pasted and stdin-imported private-key text on every exit path, makes the standalone WASM behavior feature self-contained, and adds trusted publishing. SQLite 3.53.3, Circle WASM, OSR1/OSW1, owner-write authorization, command names, and CLI JSON envelopes remain unchanged from 0.6.1."
   },
   "status": "0.6.2 client-only release; inherits the identical 0.6.1 Circle artifact and devnet proof"
 }

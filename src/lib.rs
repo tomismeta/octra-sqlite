@@ -73,8 +73,9 @@
 //! # Errors
 //!
 //! [`Error::kind`] is the stable broad category for application handling.
-//! [`Error::code`] preserves a more precise code when the RPC, Circle, or
-//! receipt supplied one. Human error text is not an automation contract.
+//! [`Error::code`] preserves a more precise machine-readable code supplied by
+//! the RPC, Circle, or receipt, or assigned at a local protocol boundary.
+//! Human error text is not an automation contract.
 //!
 //! # Build configuration
 //!
