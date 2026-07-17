@@ -42,7 +42,9 @@ use crate::{
 use catalog::*;
 use databases::*;
 use deployment::*;
-use error::{auth_error, coded_error, with_fallback_code};
+use error::{
+    auth_error, auth_info_error, coded_error, target_error, wallet_error, with_fallback_code,
+};
 use inspection::*;
 use onboarding::*;
 use output::{

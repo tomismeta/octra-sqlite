@@ -27,6 +27,18 @@ pub(super) fn auth_error(message: impl Into<String>) -> AnyError {
     coded_error("auth_failed", message)
 }
 
+pub(super) fn auth_info_error(message: impl Into<String>) -> AnyError {
+    coded_error("auth_uninitialized", message)
+}
+
+pub(super) fn target_error(message: impl Into<String>) -> AnyError {
+    coded_error("target_error", message)
+}
+
+pub(super) fn wallet_error(message: impl Into<String>) -> AnyError {
+    coded_error("wallet_error", message)
+}
+
 pub(super) fn with_fallback_code(error: AnyError, code: &'static str) -> AnyError {
     match classified_error_code(&error) {
         Some(existing) if existing != "command_failed" => error,
@@ -149,6 +161,9 @@ mod tests {
             "read_only",
             "bootstrap_unverified",
             "bootstrap_already_done",
+            "auth_uninitialized",
+            "target_error",
+            "wallet_error",
         ] {
             assert_eq!(error_code(&coded_error(code, code)), code);
         }

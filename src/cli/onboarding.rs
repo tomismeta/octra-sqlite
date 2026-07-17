@@ -511,7 +511,9 @@ pub(super) fn ensure_new_database_name_available(
             format!("octra-sqlite database remove {}", shell_quote(name)),
         );
     }
-    bail!("database name '{name}' already exists for database URI {existing_uri}");
+    Err(target_error(format!(
+        "database name '{name}' already exists for database URI {existing_uri}"
+    )))
 }
 
 pub(super) fn print_circle_recovery(args: &NewArgs, target_uri: &str, problem: &str, saved: bool) {
@@ -1124,15 +1126,16 @@ pub(super) fn reject_encrypted_oct_wallet(path: &Path) -> Result<()> {
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("oct"))
     {
-        bail!(
-            "webcli .oct wallets are encrypted and need PIN-based decryption; export/import the private key with `octra-sqlite wallet import --stdin` or attach a plaintext wallet JSON"
-        );
+        return Err(wallet_error(
+            "webcli .oct wallets are encrypted and need PIN-based decryption; export/import the private key with `octra-sqlite wallet import --stdin` or attach a plaintext wallet JSON",
+        ));
     }
     Ok(())
 }
 
 pub(super) fn canonical_existing_wallet_path(path: &Path) -> Result<PathBuf> {
-    fs::canonicalize(path).with_context(|| format!("wallet not found at {}", path.display()))
+    fs::canonicalize(path)
+        .map_err(|error| wallet_error(format!("wallet not found at {}: {error}", path.display())))
 }
 
 pub(super) fn default_wallet_output_path() -> Result<PathBuf> {

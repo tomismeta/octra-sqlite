@@ -491,7 +491,7 @@ fn cmd_upgrade_rollback(args: UpgradeArgs) -> Result<()> {
             .auth
             .owner_pubkey
             .as_deref()
-            .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?,
+            .ok_or_else(|| auth_info_error("auth_info missing owner_pubkey"))?,
         &before.auth.db_id,
         &previous_hash,
         previous_wasm.len(),
@@ -631,7 +631,7 @@ fn ensure_upgrade_owner(session: &Session, snapshot: &UpgradeSnapshot) -> Result
         .auth
         .owner_pubkey
         .as_deref()
-        .ok_or_else(|| auth_error("auth_info missing owner_pubkey"))?;
+        .ok_or_else(|| auth_info_error("auth_info missing owner_pubkey"))?;
     let wallet_pubkey = hex::encode(session.intent_public_key()?);
     if owner_pubkey != wallet_pubkey {
         return Err(auth_error(

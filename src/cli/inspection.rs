@@ -724,7 +724,7 @@ pub(super) fn personalized_wasm_hash(session: &Session) -> Result<Option<String>
         "owner_pubkey",
         auth.owner_pubkey
             .as_deref()
-            .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?,
+            .ok_or_else(|| auth_info_error("auth_info missing owner_pubkey"))?,
     )?;
     let db_id = hex_to_32("db_id", &auth.db_id)?;
     let artifact = resolve_bundled_wasm_artifact()?;

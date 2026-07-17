@@ -177,13 +177,13 @@ pub(super) fn patch_wasm_auth_bytes(
 
 pub(super) fn patch_wasm_auth_from_info(wasm: &mut [u8], auth: &AuthInfo) -> Result<AuthPatch> {
     if !auth.configured {
-        bail!("auth_info reports unconfigured OSW1 auth");
+        return Err(auth_info_error("auth_info reports unconfigured OSW1 auth"));
     }
     let owner_pubkey = hex_to_32(
         "owner_pubkey",
         auth.owner_pubkey
             .as_deref()
-            .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?,
+            .ok_or_else(|| auth_info_error("auth_info missing owner_pubkey"))?,
     )?;
     let db_id = hex_to_32("db_id", &auth.db_id)?;
     patch_wasm_auth_bytes(wasm, &owner_pubkey, &db_id)

@@ -120,7 +120,7 @@ pub(super) fn cmd_restore(args: RestoreArgs) -> Result<()> {
         let owner_pubkey = auth
             .owner_pubkey
             .as_deref()
-            .ok_or_else(|| anyhow!("auth_info missing owner_pubkey"))?;
+            .ok_or_else(|| auth_info_error("auth_info missing owner_pubkey"))?;
         execute_sql_script_with_owner_auth_progress(
             &session,
             &sql,

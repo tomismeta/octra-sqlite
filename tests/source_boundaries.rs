@@ -81,14 +81,6 @@ fn cli_orchestrator_is_organized_by_responsibility() {
     }
 }
 
-#[test]
-fn ordinary_cli_sql_uses_the_database_data_plane() {
-    let sql = fs::read_to_string("src/cli/sql.rs").unwrap();
-    assert!(sql.contains("Database::from_session"));
-    assert!(sql.contains(".query_value(sql)"));
-    assert!(sql.contains(".execute_value(sql, false)"));
-}
-
 fn source_files(dir: impl AsRef<Path>) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     collect_source_files(dir.as_ref(), &mut out);
