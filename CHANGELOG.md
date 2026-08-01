@@ -33,6 +33,8 @@
   expression-index reads, JSON extraction, and malformed JSONB failure.
 - Updated the optional `wasm-behavior` harness dependency to `wasmtime` 36.0.13
   to keep `cargo audit` green.
+- Made the GitHub Release publish workflow idempotent when the crate version is
+  already present on crates.io.
 - Kept OSR1/OSW1, owner-write authorization, storage accounting, execution
   budgets, root Rust entry points, and runtime dependencies unchanged from
   `0.6.2`.
