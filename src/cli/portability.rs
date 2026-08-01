@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::client::raw::{Session, auth_info, exec_sql, exec_sql_with_owner_auth, view};
+use crate::client::raw::{
+    Session, auth_info, exec_sql, exec_sql_with_ou, exec_sql_with_owner_auth_ou, view,
+};
 
 use super::{BackupSummary, error::coded_error};
 
@@ -310,10 +312,6 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-pub(super) fn execute_sql_script(session: &Session, sql: &str) -> Result<usize> {
-    Ok(execute_sql_script_with_progress(session, sql, false, |_| {})?.statements)
-}
-
 pub(super) fn submit_sql_script_no_wait(
     session: &Session,
     sql: &str,
@@ -351,11 +349,22 @@ pub(super) fn execute_sql_script_with_progress(
     execute_sql_script_with_submitter(session, sql, no_wait, false, &mut progress)
 }
 
+pub(super) fn execute_sql_script_with_progress_ou(
+    session: &Session,
+    sql: &str,
+    no_wait: bool,
+    ou: &str,
+    mut progress: impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_submitter_ou(session, sql, no_wait, Some(ou), false, &mut progress)
+}
+
 pub(super) fn execute_sql_script_with_owner_auth_progress(
     session: &Session,
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
     verbose_sql: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
@@ -364,6 +373,7 @@ pub(super) fn execute_sql_script_with_owner_auth_progress(
         sql,
         db_id,
         owner_pubkey,
+        ou,
         verbose_sql,
         &mut progress,
     )
@@ -374,6 +384,7 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
     verbose_sql: bool,
     mut progress: impl FnMut(SqlBatchProgress),
 ) -> Result<BootstrapOwnerSqlScriptExecution> {
@@ -382,6 +393,7 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
         sql,
         db_id,
         owner_pubkey,
+        ou,
         verbose_sql,
         &mut progress,
     )
@@ -391,6 +403,17 @@ fn execute_sql_script_with_submitter(
     session: &Session,
     sql: &str,
     no_wait: bool,
+    verbose_sql: bool,
+    progress: &mut impl FnMut(SqlBatchProgress),
+) -> Result<SqlScriptExecution> {
+    execute_sql_script_with_submitter_ou(session, sql, no_wait, None, verbose_sql, progress)
+}
+
+fn execute_sql_script_with_submitter_ou(
+    session: &Session,
+    sql: &str,
+    no_wait: bool,
+    ou: Option<&str>,
     verbose_sql: bool,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
@@ -416,8 +439,11 @@ fn execute_sql_script_with_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event.clone());
-        let result = exec_sql(session, &batch.sql, no_wait)
-            .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
+        let result = match ou {
+            Some(ou) => exec_sql_with_ou(session, &batch.sql, no_wait, ou),
+            None => exec_sql(session, &batch.sql, no_wait),
+        }
+        .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
     }
@@ -433,6 +459,7 @@ fn execute_sql_script_with_owner_auth_submitter(
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
     verbose_sql: bool,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<SqlScriptExecution> {
@@ -458,7 +485,7 @@ fn execute_sql_script_with_owner_auth_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event);
-        let result = exec_sql_with_owner_auth(session, &batch.sql, db_id, owner_pubkey)
+        let result = exec_sql_with_owner_auth_ou(session, &batch.sql, db_id, owner_pubkey, ou)
             .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
@@ -475,6 +502,7 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
     verbose_sql: bool,
     progress: &mut impl FnMut(SqlBatchProgress),
 ) -> Result<BootstrapOwnerSqlScriptExecution> {
@@ -504,7 +532,7 @@ fn execute_sql_script_with_bootstrap_owner_submitter(
             bytes: batch.bytes,
         };
         progress(progress_event);
-        let result = exec_sql_with_owner_auth(session, &batch.sql, db_id, owner_pubkey)
+        let result = exec_sql_with_owner_auth_ou(session, &batch.sql, db_id, owner_pubkey, ou)
             .with_context(|| batch_context(offset, total_batches, batch, verbose_sql))?;
         results.push(result);
         executed += batch.statements;
@@ -976,11 +1004,12 @@ fn skip_bracket_quoted_sql(sql: &str) -> &str {
     ""
 }
 
-pub(super) fn import_csv(
+pub(super) fn import_csv_with_ou(
     session: &Session,
     path: &Path,
     table: &str,
     skip: usize,
+    ou: Option<&str>,
 ) -> Result<usize> {
     let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let mut inserted = 0usize;
@@ -1000,8 +1029,7 @@ pub(super) fn import_csv(
         ensure_sql_statement_size(&statement)
             .with_context(|| format!("CSV row {} is too large to import", idx + 1))?;
         if !batch.is_empty() && batch.len() + statement.len() + 1 >= SQL_BATCH_TARGET_BYTES {
-            ensure_exec_payload_size(&batch)?;
-            exec_sql(session, &batch, false)?;
+            submit_import_batch(session, &batch, ou)?;
             batch.clear();
         }
         batch.push_str(&statement);
@@ -1009,10 +1037,18 @@ pub(super) fn import_csv(
         inserted += 1;
     }
     if !batch.trim().is_empty() {
-        ensure_exec_payload_size(&batch)?;
-        exec_sql(session, &batch, false)?;
+        submit_import_batch(session, &batch, ou)?;
     }
     Ok(inserted)
+}
+
+fn submit_import_batch(session: &Session, batch: &str, ou: Option<&str>) -> Result<()> {
+    ensure_exec_payload_size(batch)?;
+    match ou {
+        Some(ou) => exec_sql_with_ou(session, batch, false, ou)?,
+        None => exec_sql(session, batch, false)?,
+    };
+    Ok(())
 }
 
 fn parse_csv_records(text: &str) -> Result<Vec<Vec<String>>> {

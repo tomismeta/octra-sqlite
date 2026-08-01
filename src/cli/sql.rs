@@ -18,21 +18,45 @@ pub(super) fn cmd_open(args: OpenArgs) -> Result<()> {
     warn_wallet_load_error_for_public_reads(&session, mode);
     if let Some(path) = &args.sql_file {
         let sql = read_sql_file_arg(path)?;
-        return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
+        return run_sql_input(
+            &session,
+            &sql,
+            mode,
+            true,
+            args.read_only,
+            trace_rpc_json,
+            args.ou.as_deref(),
+        );
     }
     if args.sql.is_empty() {
         if let Some(sql) = read_stdin_sql()? {
-            return run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json);
+            return run_sql_input(
+                &session,
+                &sql,
+                mode,
+                true,
+                args.read_only,
+                trace_rpc_json,
+                args.ou.as_deref(),
+            );
         }
         if args.trace_rpc_json.is_some() {
             bail!(
                 "--trace-rpc-json requires one SQL statement; interactive shell tracing is not supported"
             );
         }
-        run_shell(session, mode)
+        run_shell(session, mode, args.ou)
     } else {
         let sql = args.sql.join(" ");
-        run_sql_input(&session, &sql, mode, true, args.read_only, trace_rpc_json)
+        run_sql_input(
+            &session,
+            &sql,
+            mode,
+            true,
+            args.read_only,
+            trace_rpc_json,
+            args.ou.as_deref(),
+        )
     }
 }
 
@@ -97,12 +121,14 @@ pub(super) fn cmd_restore(args: RestoreArgs) -> Result<()> {
     }
     let mut progress_events = Vec::new();
     let mut post_auth_error = None;
+    let write_ou = resolve_write_ou_arg(args.ou.as_deref())?;
     let mut execution = if let Some(BootstrapOwnerMode::FirstWrite(metadata)) = &bootstrap_owner {
         let outcome = execute_sql_script_with_bootstrap_owner_progress(
             &session,
             &sql,
             &metadata.db_id,
             &metadata.owner_pubkey,
+            &write_ou,
             args.verbose_sql,
             |progress| {
                 if !json_output {
@@ -126,6 +152,7 @@ pub(super) fn cmd_restore(args: RestoreArgs) -> Result<()> {
             &sql,
             &auth.db_id,
             owner_pubkey,
+            &write_ou,
             args.verbose_sql,
             |progress| {
                 if !json_output {
@@ -466,69 +493,99 @@ pub(super) fn run_sql_input(
     headers: bool,
     read_only: bool,
     trace_rpc_json: Option<(&Path, RpcTraceMode)>,
+    write_ou: Option<&str>,
 ) -> Result<()> {
-    run_one_sql_to(session, sql, mode, headers, None, read_only, trace_rpc_json)
+    run_one_sql_to(
+        session,
+        sql,
+        SqlRunOptions {
+            mode,
+            headers,
+            output: None,
+            read_only,
+            trace_rpc_json,
+            write_ou,
+        },
+    )
+}
+
+pub(super) struct SqlRunOptions<'a> {
+    pub(super) mode: OutputMode,
+    pub(super) headers: bool,
+    pub(super) output: Option<&'a Path>,
+    pub(super) read_only: bool,
+    pub(super) trace_rpc_json: Option<(&'a Path, RpcTraceMode)>,
+    pub(super) write_ou: Option<&'a str>,
 }
 
 pub(super) fn run_one_sql_to(
     session: &Session,
     sql: &str,
-    mode: OutputMode,
-    headers: bool,
-    output: Option<&Path>,
-    read_only: bool,
-    trace_rpc_json: Option<(&Path, RpcTraceMode)>,
+    options: SqlRunOptions<'_>,
 ) -> Result<()> {
     let trimmed = sql.trim();
     if trimmed.starts_with('.') && !trimmed.contains('\n') {
-        if trace_rpc_json.is_some() {
+        if options.trace_rpc_json.is_some() {
             bail!("--trace-rpc-json supports one read-only SQL statement, not dot commands");
         }
-        if read_only && write_dot_command(trimmed) {
+        if options.read_only && write_dot_command(trimmed) {
             return Err(coded_error(
                 "read_only",
                 "read_only: dot command may write to the database",
             ));
         }
-        run_dot_command(session.clone(), mode, headers, output, trimmed)?;
+        run_dot_command(
+            session.clone(),
+            options.mode,
+            options.headers,
+            options.output,
+            trimmed,
+            options.write_ou,
+        )?;
         return Ok(());
     }
     if looks_like_sql_script(sql) {
-        if trace_rpc_json.is_some() {
+        if options.trace_rpc_json.is_some() {
             bail!("--trace-rpc-json supports one read-only SQL statement, not SQL scripts");
         }
-        if read_only {
+        if options.read_only {
             return Err(coded_error(
                 "read_only",
                 "read_only: multi-statement SQL scripts are not submitted in read-only mode",
             ));
         }
-        return run_exec_script_to(session, sql, mode, output);
+        return run_exec_script_to(session, sql, options.mode, options.output, options.write_ou);
     }
     ensure_sql_text_fits(sql)?;
-    let query_result = match trace_rpc_json {
+    let query_result = match options.trace_rpc_json {
         Some((path, mode)) => query_typed_traced(session, sql, path, mode),
         None => Database::from_session(session.clone()).query_value(sql),
     };
     match query_result {
         Ok(result) => {
-            if mode == OutputMode::Json {
-                write_text(output, &format_json(&query_envelope(session, result))?)
+            if options.mode == OutputMode::Json {
+                write_text(
+                    options.output,
+                    &format_json(&query_envelope(session, result))?,
+                )
             } else {
-                write_text(output, &format_result(&result, mode, headers)?)
+                write_text(
+                    options.output,
+                    &format_result(&result, options.mode, options.headers)?,
+                )
             }
         }
         Err(error) if sqlite_requires_exec(&error) => {
-            if trace_rpc_json.is_some() {
+            if options.trace_rpc_json.is_some() {
                 bail!("--trace-rpc-json is read-only; SQL would write");
             }
-            if read_only {
+            if options.read_only {
                 return Err(coded_error(
                     "read_only",
                     "read_only: SQL would write; remove --read-only to sign and submit it",
                 ));
             }
-            run_exec_sql_to(session, sql, mode, output)
+            run_exec_sql_to(session, sql, options.mode, options.output, options.write_ou)
         }
         Err(error) => Err(error.into()),
     }
@@ -539,9 +596,11 @@ pub(super) fn run_exec_sql_to(
     sql: &str,
     mode: OutputMode,
     output: Option<&Path>,
+    write_ou: Option<&str>,
 ) -> Result<()> {
+    let write_ou = resolve_write_ou_arg(write_ou)?;
     let result = with_explorer(
-        Database::from_session(session.clone()).execute_value(sql, false)?,
+        Database::from_session(session.clone()).execute_value_with_ou(sql, false, &write_ou)?,
         session,
     );
     if mode == OutputMode::Json {
@@ -559,12 +618,15 @@ pub(super) fn run_exec_script_to(
     sql: &str,
     mode: OutputMode,
     output: Option<&Path>,
+    write_ou: Option<&str>,
 ) -> Result<()> {
     let plan = plan_sql_script(sql)?;
     let mut progress_events = Vec::new();
-    let mut execution = execute_sql_script_with_progress(session, sql, false, |progress| {
-        progress_events.push(progress);
-    })?;
+    let write_ou = resolve_write_ou_arg(write_ou)?;
+    let mut execution =
+        execute_sql_script_with_progress_ou(session, sql, false, &write_ou, |progress| {
+            progress_events.push(progress);
+        })?;
     for result in &mut execution.results {
         let raw = std::mem::take(result);
         *result = with_explorer(raw, session);
@@ -644,6 +706,8 @@ pub(super) fn write_envelope(session: &Session, result: Value, statements: Optio
         "database": database_identity(session),
         "status": summary["status"].clone(),
         "tx_hash": summary["tx_hash"].clone(),
+        "nonce": summary["nonce"].clone(),
+        "ou": summary["ou"].clone(),
         "statements": statements,
         "cost": summary["cost"].clone(),
         "receipt": result.get("receipt").cloned().unwrap_or(Value::Null),
@@ -735,9 +799,7 @@ pub(super) fn progress_json(progress: &SqlBatchProgress) -> Value {
 
 pub(super) fn write_result_summary(result: &Value) -> Value {
     let receipt = result.get("receipt");
-    let success = receipt
-        .and_then(|receipt| receipt.get("success"))
-        .and_then(Value::as_bool);
+    let success = receipt.and_then(receipt_success_status);
     let status = match success {
         Some(true) => "confirmed",
         Some(false) => "rejected",
@@ -751,6 +813,8 @@ pub(super) fn write_result_summary(result: &Value) -> Value {
         "tx_hash": result.get("tx_hash").cloned().unwrap_or(Value::Null),
         "tx_url": result.get("tx_url").cloned().unwrap_or(Value::Null),
         "circle_url": result.get("circle_url").cloned().unwrap_or(Value::Null),
+        "nonce": result.get("nonce").cloned().unwrap_or(Value::Null),
+        "ou": result.get("ou").cloned().unwrap_or(Value::Null),
         "cost": {
             "ou": result.pointer("/result/ou_cost").cloned().unwrap_or(Value::Null),
             "effort": receipt
@@ -759,6 +823,26 @@ pub(super) fn write_result_summary(result: &Value) -> Value {
                 .unwrap_or(Value::Null),
         }
     })
+}
+
+fn receipt_success_status(receipt: &Value) -> Option<bool> {
+    let success = receipt.get("success").and_then(Value::as_bool)?;
+    if !success {
+        return Some(false);
+    }
+    if receipt.get("error").is_some_and(|error| !error.is_null())
+        || receipt
+            .get("events")
+            .and_then(Value::as_array)
+            .is_some_and(|events| {
+                events.iter().any(|event| {
+                    event.get("event").and_then(Value::as_str) == Some("octra.sqlite.error")
+                })
+            })
+    {
+        return Some(false);
+    }
+    Some(true)
 }
 
 pub(super) fn script_plan_json(plan: &SqlScriptPlan) -> Value {

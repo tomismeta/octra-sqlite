@@ -20,15 +20,15 @@ mod upgrade;
 use crate::{
     client::{
         AuthInfo, ClientOptions, Config, Database, DatabaseMetadata, Error, ErrorKind,
-        RpcTraceMode, config_path, load_config,
+        ExecuteResult, RpcTraceMode, config_path, load_config,
         raw::{
             Session, WalletMaterial, auth_info,
             build_control_session as client_build_control_session,
-            build_session as client_build_session, circle_info, discover_wallet_path, exec_sql,
-            next_nonce, program_info, query_typed, query_typed_traced,
+            build_session as client_build_session, circle_info, discover_wallet_path,
+            exec_sql_with_ou, next_nonce, program_info, query_typed, query_typed_traced,
             resolve_database_target as client_resolve_database_target,
             resolve_wallet_path as client_resolve_wallet_path, submit_tx, transaction,
-            transactions_by_address, view, wait_for_transaction, wallet_caller,
+            transactions_by_address, view, wait_for_receipt, wait_for_transaction, wallet_caller,
             wallet_file_material, wallet_material_from_private_key,
         },
         write_config,
@@ -56,8 +56,8 @@ use portability::{
     MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES, SqlBatchProgress, SqlScriptExecution,
     SqlScriptPlan, backup_database, ensure_sql_text_fits,
     execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_owner_auth_progress,
-    execute_sql_script_with_progress, plan_sql_script, run_local_sqlite_integrity,
-    submit_sql_script_no_wait,
+    execute_sql_script_with_progress, execute_sql_script_with_progress_ou, plan_sql_script,
+    run_local_sqlite_integrity, submit_sql_script_no_wait,
 };
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -85,6 +85,9 @@ const EXPECTED_WASM_SHA256: &str =
 const EXPECTED_WASM_BYTES: usize = 611_677;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
 const SQLITE_VERSION: &str = "3.53.4";
+const WRITE_OU_ENV: &str = "OCTRA_SQLITE_WRITE_OU";
+const VERIFY_WRITE_OU_ENV: &str = "OCTRA_SQLITE_VERIFY_WRITE_OU";
+const DEFAULT_WRITE_OU: &str = "1000";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
 const MAX_DB_PAGES: usize = 8_069;
@@ -142,6 +145,8 @@ enum Commands {
     CommandList(CommandsArgs),
     /// Verify deployed database code, storage, typed queries, schema, and optionally a write.
     Verify(VerifyArgs),
+    /// Wait for a submitted Circle transaction receipt.
+    Receipt(ReceiptArgs),
     /// Safely upgrade an existing octra-sqlite Circle to the bundled engine.
     Upgrade(UpgradeArgs),
     /// Show local config, wallet, bundled WASM, and live database health.
@@ -264,6 +269,9 @@ struct OpenArgs {
     /// Refuse to submit state-changing SQL.
     #[arg(long)]
     read_only: bool,
+    /// OU budget for owner-signed SQL writes.
+    #[arg(long, value_name = "OU")]
+    ou: Option<String>,
     /// SQL to run directly instead of opening the shell.
     sql: Vec<String>,
 }
@@ -430,6 +438,9 @@ struct UpgradeArgs {
     /// Run an owner-signed write smoke after the program update.
     #[arg(long)]
     write_smoke: bool,
+    /// OU budget for --write-smoke. Defaults to OCTRA_SQLITE_VERIFY_WRITE_OU, OCTRA_SQLITE_WRITE_OU, or 1000.
+    #[arg(long, value_name = "OU")]
+    write_ou: Option<String>,
     /// UNSAFE: continue without rollback bytes if the previous live WASM cannot be recovered.
     #[arg(long)]
     unsafe_no_rollback: bool,
@@ -475,9 +486,24 @@ struct VerifyArgs {
     /// Run a live write/read smoke test against the database.
     #[arg(long)]
     write_smoke: bool,
+    /// OU budget for --write-smoke. Defaults to OCTRA_SQLITE_VERIFY_WRITE_OU, OCTRA_SQLITE_WRITE_OU, or 1000.
+    #[arg(long = "write-ou", value_name = "OU")]
+    write_ou: Option<String>,
     /// Back up to a temporary SQLite file and run local sqlite3 integrity_check.
     #[arg(long)]
     integrity: bool,
+    /// Print a stable JSON summary.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct ReceiptArgs {
+    /// Transaction hash returned by a submitted write.
+    #[arg(value_name = "TX_HASH")]
+    tx_hash: String,
+    #[command(flatten)]
+    target: TargetArgs,
     /// Print a stable JSON summary.
     #[arg(long)]
     json: bool,
@@ -568,6 +594,9 @@ struct RestoreArgs {
     /// Include full SQL text in restore batch errors. Off by default.
     #[arg(long)]
     verbose_sql: bool,
+    /// OU budget for owner-signed restore batches.
+    #[arg(long, value_name = "OU")]
+    ou: Option<String>,
 }
 
 #[derive(Args)]
@@ -638,11 +667,13 @@ pub fn run_with_exit_code() -> Result<i32> {
                 &session,
                 args.expected_hash.as_deref(),
                 args.write_smoke,
+                args.write_ou.as_deref(),
                 args.integrity,
                 args.json,
             )
             .map(|_| 0)
         }
+        Commands::Receipt(args) => cmd_receipt(args),
         Commands::Upgrade(args) => upgrade::cmd_upgrade(args).map(|_| 0),
         Commands::Status(args) => cmd_status(args, "status"),
         Commands::Config(args) => cmd_config(args).map(|_| 0),
@@ -651,7 +682,7 @@ pub fn run_with_exit_code() -> Result<i32> {
     }
 }
 
-pub use error::error_code;
+pub use error::{error_code, error_details};
 
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     const KNOWN: &[&str] = &[
@@ -664,6 +695,7 @@ fn normalize_args(mut args: Vec<String>) -> Vec<String> {
         "limits",
         "commands",
         "verify",
+        "receipt",
         "upgrade",
         "status",
         "config",
@@ -753,6 +785,62 @@ fn build_control_session(args: &TargetArgs, network: &str) -> Result<Session> {
         &session_options(args),
         network,
     )?)
+}
+
+pub(super) fn resolve_write_ou_arg(explicit: Option<&str>) -> Result<String> {
+    resolve_write_ou_from(explicit, "--ou", WRITE_OU_ENV, None)
+}
+
+pub(super) fn resolve_verify_write_ou_arg(explicit: Option<&str>) -> Result<String> {
+    resolve_write_ou_from(
+        explicit,
+        "--write-ou",
+        VERIFY_WRITE_OU_ENV,
+        Some(WRITE_OU_ENV),
+    )
+}
+
+fn resolve_write_ou_from(
+    explicit: Option<&str>,
+    explicit_label: &str,
+    primary_env: &str,
+    fallback_env: Option<&str>,
+) -> Result<String> {
+    if let Some(value) = explicit {
+        return normalize_write_ou(explicit_label, value);
+    }
+    if let Some(value) = env_write_ou(primary_env)? {
+        return Ok(value);
+    }
+    if let Some(fallback_env) = fallback_env
+        && let Some(value) = env_write_ou(fallback_env)?
+    {
+        return Ok(value);
+    }
+    Ok(DEFAULT_WRITE_OU.to_string())
+}
+
+fn env_write_ou(name: &str) -> Result<Option<String>> {
+    match env::var(name) {
+        Ok(value) => normalize_write_ou(name, &value).map(Some),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => bail!("{name} must be valid UTF-8"),
+    }
+}
+
+fn normalize_write_ou(label: &str, value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || !trimmed.as_bytes().iter().all(u8::is_ascii_digit)
+        || trimmed
+            .parse::<u64>()
+            .ok()
+            .filter(|value| *value > 0)
+            .is_none()
+    {
+        bail!("{label} must be a positive decimal integer");
+    }
+    Ok(trimmed.to_string())
 }
 
 fn sample_sql(name: &str) -> Result<String> {

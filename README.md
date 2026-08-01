@@ -238,19 +238,20 @@ URI.
 | `octra-sqlite new [DATABASE] [SQL]` | Create a Circle-backed SQLite database. |
 | `octra-sqlite new DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
 | `octra-sqlite new DATABASE --read-mode public` | Create a public-read database; writes remain owner-signed. |
-| `octra-sqlite DATABASE "SQL"` | Run one SQL statement or script against a database. |
+| `octra-sqlite DATABASE "SQL"` | Run one SQL statement or script against a database; use `--ou` for owner-signed write budget. |
 | `octra-sqlite DATABASE --read-only "SQL"` | Run SQL while refusing state-changing statements. |
 | `octra-sqlite DATABASE --sql-file FILE` | Run SQL from a file. |
-| `octra-sqlite open DATABASE` | Open the interactive `sqlite>` shell. |
-| `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution. |
+| `octra-sqlite open DATABASE` | Open the interactive `sqlite>` shell; use `--ou` for owner-signed write budget. |
+| `octra-sqlite restore DATABASE --file dump.sql` | Restore large SQL text with chunked execution; use `--ou` for per-batch write budget. |
 | `octra-sqlite check DATABASE --sql-file dump.sql` | Check script size and batching without writing. |
 | `octra-sqlite limits [DATABASE]` | Show SQL, restore, transaction, auth, and trace limits. |
 | `octra-sqlite commands` | Show supported CLI commands and JSON envelopes. |
 | `octra-sqlite status [DATABASE]` | Check config, wallet, WASM, Circle, auth, storage, and SQLite health. |
 | `octra-sqlite status [DATABASE] --ready` | Exit nonzero unless live read/query readiness checks pass. |
-| `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status and optional integrity/write checks. |
+| `octra-sqlite verify [DATABASE]` | Verify live Circle SQLite status and optional integrity/write checks; use `--write-ou` for write-smoke budget. |
+| `octra-sqlite receipt TX_HASH [DATABASE]` | Wait for a submitted Circle transaction receipt without resubmitting the write. |
 | `octra-sqlite upgrade` | Guided backup, upgrade, and verify workflow. |
-| `octra-sqlite upgrade DATABASE` | Backup, upgrade, and verify a database Circle against the bundled SQLite engine. |
+| `octra-sqlite upgrade DATABASE` | Backup, upgrade, and verify a database Circle against the bundled SQLite engine; use `--write-ou` with `--write-smoke`. |
 | `octra-sqlite upgrade DATABASE --dry-run` | Run upgrade preflight without writing. |
 | `octra-sqlite upgrade rollback BUNDLE` | Restore the previous verified Circle program from an upgrade bundle. |
 | `octra-sqlite config` | Show local config, networks, RPC, explorer, and saved databases. |

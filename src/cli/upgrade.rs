@@ -39,6 +39,17 @@ struct UpgradeBundlePaths {
     manifest: PathBuf,
 }
 
+struct UpgradePlanInput<'a> {
+    session: &'a Session,
+    before: &'a UpgradeSnapshot,
+    target_wasm: &'a PreparedUpgradeWasm,
+    rollback: Option<&'a RecoveredWasm>,
+    bundle_paths: Option<&'a UpgradeBundlePaths>,
+    dry_run: bool,
+    already_current: bool,
+    write_smoke_ou: Option<&'a str>,
+}
+
 pub(super) fn cmd_upgrade(args: UpgradeArgs) -> Result<()> {
     if args.target.as_deref() == Some("rollback") {
         return cmd_upgrade_rollback(args);
@@ -50,14 +61,29 @@ pub(super) fn cmd_upgrade(args: UpgradeArgs) -> Result<()> {
 }
 
 fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
+    if args.write_ou.is_some() && !args.write_smoke {
+        bail!(
+            "upgrade --write-ou requires --write-smoke; use verify --write-smoke --write-ou for standalone write checks"
+        );
+    }
     let requested = resolve_upgrade_database_arg(&mut args)?;
     let target_args = upgrade_target_args(&args, Some(requested.clone()));
     let session = build_session(&target_args)?;
+    let mut write_smoke_ou = if args.write_smoke {
+        Some(resolve_verify_write_ou_arg(args.write_ou.as_deref())?)
+    } else {
+        None
+    };
     let before = upgrade_snapshot(&session).context("reading current database state")?;
     ensure_upgrade_owner(&session, &before)?;
     let target_wasm = prepare_upgrade_wasm(&before.auth)?;
 
     let already_current = before.code_hash == target_wasm.hash;
+    if already_current && args.write_smoke {
+        bail!(
+            "upgrade --write-smoke only runs after an engine upgrade; use verify --write-smoke for already-current databases"
+        );
+    }
     if !already_current {
         ensure_target_storage_capacity(&before.storage)?;
     }
@@ -82,15 +108,16 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
     };
     let mut previous_wasm_path = None;
 
-    let plan = upgrade_plan_json(
-        &session,
-        &before,
-        &target_wasm,
-        rollback.as_ref(),
-        bundle_paths.as_ref(),
+    let plan = upgrade_plan_json(UpgradePlanInput {
+        session: &session,
+        before: &before,
+        target_wasm: &target_wasm,
+        rollback: rollback.as_ref(),
+        bundle_paths: bundle_paths.as_ref(),
         dry_run,
         already_current,
-    );
+        write_smoke_ou: write_smoke_ou.as_deref(),
+    });
     if dry_run {
         if args.json {
             return print_json(&plan);
@@ -118,6 +145,11 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
             bail!("upgrade --json writes require --yes; use --dry-run --json for preflight");
         }
         prompt_upgrade_wizard(&mut args, &plan, bundle_paths.as_ref())?;
+        write_smoke_ou = if args.write_smoke {
+            Some(resolve_verify_write_ou_arg(args.write_ou.as_deref())?)
+        } else {
+            None
+        };
     }
 
     let mut backup_json = json!({
@@ -203,36 +235,6 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         )
     })?;
 
-    let write_smoke = if args.write_smoke {
-        let table = smoke_table_name("upgrade", &session);
-        let sql = upgrade_write_smoke_sql(&table);
-        let result = with_explorer(
-            exec_sql(&session, &sql, false).with_context(|| {
-                format!(
-                    "program update is applied; write smoke failed; recovery manifest remains at {}",
-                    manifest_file.display()
-                )
-            })?,
-            &session,
-        );
-        Some(write_envelope(&session, result, Some(3)))
-    } else {
-        None
-    };
-    let final_after = if write_smoke.is_some() {
-        let snapshot = upgrade_snapshot(&session).with_context(|| {
-            format!(
-                "program update is applied; could not read state after write smoke; recovery manifest remains at {}",
-                manifest_file.display()
-            )
-        })?;
-        ensure_sqlite_version(&snapshot, SQLITE_VERSION)?;
-        snapshot
-    } else {
-        after
-    };
-    let clean_rollback = clean_rollback_state(&guard, &final_after);
-
     let saved_metadata = save_database_metadata(
         &session,
         &target_wasm.patch.owner_pubkey_hex,
@@ -248,7 +250,10 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         )
     })?;
 
-    let manifest = upgrade_manifest_json(UpgradeManifestInput {
+    let mut final_after = after;
+    let mut clean_rollback = clean_rollback_state(&guard, &final_after);
+    let mut write_smoke = None;
+    let mut manifest = upgrade_manifest_json(UpgradeManifestInput {
         status: "complete",
         created_at_unix: manifest_created_at,
         session: &session,
@@ -269,6 +274,50 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
             manifest_file.display()
         )
     })?;
+
+    if let Some(write_ou) = write_smoke_ou.as_deref() {
+        let table = smoke_table_name("upgrade", &session);
+        let sql = upgrade_write_smoke_sql(&table);
+        let result = with_explorer(
+            exec_sql_with_ou(&session, &sql, false, write_ou).with_context(|| {
+                format!(
+                    "upgrade is complete; write smoke failed; upgrade manifest is at {}",
+                    manifest_file.display()
+                )
+            })?,
+            &session,
+        );
+        write_smoke = Some(write_envelope(&session, result, Some(3)));
+        final_after = upgrade_snapshot(&session).with_context(|| {
+            format!(
+                "upgrade is complete; could not read state after write smoke; upgrade manifest is at {}",
+                manifest_file.display()
+            )
+        })?;
+        ensure_sqlite_version(&final_after, SQLITE_VERSION)?;
+        clean_rollback = clean_rollback_state(&guard, &final_after);
+        manifest = upgrade_manifest_json(UpgradeManifestInput {
+            status: "complete",
+            created_at_unix: manifest_created_at,
+            session: &session,
+            before: &before,
+            after: &final_after,
+            target_wasm: &target_wasm,
+            rollback: rollback.as_ref(),
+            previous_wasm_path: previous_wasm_path.as_deref(),
+            backup: &backup_json,
+            update: &update,
+            clean_rollback,
+            write_smoke: write_smoke.as_ref(),
+            saved_metadata: &saved_metadata,
+        });
+        replace_private_json(&manifest_file, &manifest).with_context(|| {
+            format!(
+                "upgrade is complete; write smoke finished but could not be recorded in {}",
+                manifest_file.display()
+            )
+        })?;
+    }
 
     let mut envelope = upgrade_result_json(UpgradeResultInput {
         session: &session,
@@ -1193,31 +1242,27 @@ fn submit_program_update(
     })
 }
 
-fn upgrade_plan_json(
-    session: &Session,
-    before: &UpgradeSnapshot,
-    target_wasm: &PreparedUpgradeWasm,
-    rollback: Option<&RecoveredWasm>,
-    bundle_paths: Option<&UpgradeBundlePaths>,
-    dry_run: bool,
-    already_current: bool,
-) -> Value {
+fn upgrade_plan_json(input: UpgradePlanInput<'_>) -> Value {
     json!({
         "ok": true,
         "type": "upgrade",
         "schema": "octra-sqlite.cli.v1",
-        "mode": if already_current { "already_current" } else if dry_run { "dry_run" } else { "planned" },
-        "status": if already_current { "already_current" } else { "upgrade_needed" },
-        "upgrade_required": !already_current,
-        "dry_run": dry_run,
-        "database": database_identity(session),
-        "from": snapshot_program_json(before),
-        "to": target_program_json(target_wasm),
-        "rollback": if already_current { rollback_not_needed_json() } else { rollback_json(rollback, None, before, None) },
-        "bundle": bundle_paths.map(|paths| bundle_json(&paths.bundle_dir, Some(&paths.manifest))).unwrap_or(Value::Null),
-        "backup": bundle_paths.map(|paths| json!({
+        "mode": if input.already_current { "already_current" } else if input.dry_run { "dry_run" } else { "planned" },
+        "status": if input.already_current { "already_current" } else { "upgrade_needed" },
+        "upgrade_required": !input.already_current,
+        "dry_run": input.dry_run,
+        "database": database_identity(input.session),
+        "from": snapshot_program_json(input.before),
+        "to": target_program_json(input.target_wasm),
+        "rollback": if input.already_current { rollback_not_needed_json() } else { rollback_json(input.rollback, None, input.before, None) },
+        "bundle": input.bundle_paths.map(|paths| bundle_json(&paths.bundle_dir, Some(&paths.manifest))).unwrap_or(Value::Null),
+        "backup": input.bundle_paths.map(|paths| json!({
             "path": paths.backup.display().to_string(),
         })).unwrap_or(Value::Null),
+        "write_smoke": {
+            "requested": input.write_smoke_ou.is_some(),
+            "ou": input.write_smoke_ou,
+        },
     })
 }
 
@@ -1507,6 +1552,17 @@ fn print_upgrade_plan(plan: &Value) {
     if let Some(path) = plan.pointer("/backup/path").and_then(Value::as_str) {
         print_field("backup", path);
     }
+    if plan
+        .pointer("/write_smoke/requested")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let ou = plan
+            .pointer("/write_smoke/ou")
+            .and_then(Value::as_str)
+            .unwrap_or("?");
+        print_field("write smoke", format!("post-upgrade, OU {ou}"));
+    }
 }
 
 fn json_u64_relaxed(value: &Value) -> Option<u64> {
@@ -1715,6 +1771,69 @@ mod tests {
     }
 
     #[test]
+    fn upgrade_plan_exposes_write_smoke_budget() {
+        let session = client_build_session(&ClientOptions {
+            target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCurrent".to_string()),
+            ..ClientOptions::default()
+        })
+        .unwrap();
+        let before = UpgradeSnapshot {
+            program_info: json!({}),
+            storage: json!({}),
+            auth: AuthInfo {
+                configured: true,
+                db_id: "11".repeat(32),
+                owner_pubkey: Some("22".repeat(32)),
+                owner_sequence: Some(1),
+            },
+            sqlite_version: "3.53.3".to_string(),
+            code_hash: "oldhash".to_string(),
+            code_bytes: Some(1),
+            storage_generation: Some(1),
+            owner_sequence: Some(1),
+        };
+        let target = PreparedUpgradeWasm {
+            source: "embedded:test".to_string(),
+            bytes: vec![1, 2, 3],
+            hash: "newhash".to_string(),
+            patch: AuthPatch {
+                owner_pubkey_hex: "22".repeat(32),
+                db_id_hex: "11".repeat(32),
+                owner_pubkey_offset: 1,
+                db_id_offset: 2,
+            },
+        };
+
+        let plan = upgrade_plan_json(UpgradePlanInput {
+            session: &session,
+            before: &before,
+            target_wasm: &target,
+            rollback: None,
+            bundle_paths: None,
+            dry_run: true,
+            already_current: false,
+            write_smoke_ou: Some("200000"),
+        });
+        assert_eq!(plan["write_smoke"]["requested"], true);
+        assert_eq!(plan["write_smoke"]["ou"], "200000");
+
+        let plan = upgrade_plan_json(UpgradePlanInput {
+            session: &session,
+            before: &before,
+            target_wasm: &target,
+            rollback: None,
+            bundle_paths: None,
+            dry_run: true,
+            already_current: false,
+            write_smoke_ou: None,
+        });
+        assert_eq!(plan["write_smoke"]["requested"], false);
+        assert!(plan["write_smoke"]["ou"].is_null());
+    }
+
+    #[test]
     fn upgrade_write_smoke_uses_a_new_table_and_cleans_it_up() {
         let sql = upgrade_write_smoke_sql("octra_sqlite_upgrade_0123");
         assert!(sql.contains("create table octra_sqlite_upgrade_0123"));
@@ -1747,11 +1866,16 @@ mod tests {
             .unwrap();
         let submitted = source.find("let update = submit_program_update").unwrap();
         let applied = source.find("let applied_manifest =").unwrap();
+        let saved_metadata = source.find("let saved_metadata =").unwrap();
+        let complete = source
+            .find("let mut manifest = upgrade_manifest_json")
+            .unwrap();
         let smoke = source
-            .find("let write_smoke = if args.write_smoke")
+            .find("if let Some(write_ou) = write_smoke_ou.as_deref()")
             .unwrap();
         assert!(prepared < persisted && persisted < submitted);
-        assert!(submitted < applied && applied < smoke);
+        assert!(submitted < applied && applied < saved_metadata);
+        assert!(saved_metadata < complete && complete < smoke);
     }
 
     #[test]

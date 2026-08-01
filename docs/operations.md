@@ -121,7 +121,10 @@ Strict runbook for mainnet or high-value Circles:
 7. Run `octra-sqlite status DATABASE --ready --json`, confirm `write_ready:
    true`, `engine_current: true`, and `upgrade_needed: false`, then run an
    application query.
-8. Resume writers and confirm a real application write lands.
+8. Resume writers and confirm a real application write lands. On busy or
+   production-like paths, set `OCTRA_SQLITE_WRITE_OU` before the write and
+   `OCTRA_SQLITE_VERIFY_WRITE_OU` before `verify --write-smoke`, or pass
+   `--ou` / `--write-ou` explicitly.
 
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
@@ -252,6 +255,27 @@ the cause. There is no persisted resume checkpoint in the current release line.
 On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
 transient `429`, `503`, timeout, and non-JSON gateway responses. It does not
 silently replay accepted write submissions.
+
+Owner-signed SQL writes default to `1000` OU. Operators can raise the signed
+budget without changing SQL:
+
+```sh
+export OCTRA_SQLITE_WRITE_OU=200000
+octra-sqlite DATABASE "insert into events(id, body) values (1, 'ok');"
+octra-sqlite restore DATABASE --file dump.sql --ou 200000
+octra-sqlite verify DATABASE --write-smoke --write-ou 200000
+octra-sqlite upgrade DATABASE --write-smoke --write-ou 200000
+```
+
+If a write was submitted but the receipt did not arrive before the wait
+deadline, the CLI returns `receipt_pending`. With `--json` or
+`--json-summary`, `error.details` includes the transaction hash, nonce, OU,
+Circle, and recovery command when known. Follow the submitted transaction; do
+not retry the write blindly:
+
+```sh
+octra-sqlite receipt TX_HASH DATABASE --json
+```
 
 ## Limits
 

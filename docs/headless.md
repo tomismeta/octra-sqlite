@@ -144,6 +144,22 @@ octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite restore DATABASE --file dump.sql
 ```
 
+For production-like writers, set an explicit write budget in the environment or
+on the command:
+
+```sh
+export OCTRA_SQLITE_WRITE_OU=200000
+octra-sqlite restore DATABASE --file dump.sql --ou 200000
+octra-sqlite verify DATABASE --write-smoke --write-ou 200000
+```
+
+If a submitted write times out waiting for its receipt, recover from the
+transaction hash instead of resubmitting the SQL:
+
+```sh
+octra-sqlite receipt TX_HASH DATABASE --json
+```
+
 Use `--json` or `--json-summary` for machine-readable output, and prefer full
 `oct://NETWORK/<circle>` URIs in automation. For read proof/debugging, write
 RPC traces to a file. Use `summary` when logs should stay compact:

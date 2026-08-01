@@ -842,15 +842,114 @@ pub(super) fn render_historical_wasm_match(
     )
 }
 
+pub(super) fn cmd_receipt(args: ReceiptArgs) -> Result<i32> {
+    let session = build_session(&args.target)?;
+    let receipt = wait_for_receipt(&session, &args.tx_hash).map_err(|error| {
+        if error.kind() == ErrorKind::Timeout {
+            let database = canonical_database_uri(session.target());
+            let next_command = format!("octra-sqlite receipt {} {database} --json", args.tx_hash);
+            Error::with_code_and_details(
+                ErrorKind::Timeout,
+                "receipt_pending",
+                format!(
+                    "receipt is still pending; tx_hash={}; circle={}; next=\"{next_command}\"",
+                    args.tx_hash,
+                    session.target().circle
+                ),
+                [
+                    ("tx_hash", Value::String(args.tx_hash.clone())),
+                    ("circle", Value::String(session.target().circle.clone())),
+                    ("database", Value::String(database)),
+                    ("nonce", Value::Null),
+                    ("ou", Value::Null),
+                    ("next_command", Value::String(next_command)),
+                ],
+            )
+        } else {
+            error
+        }
+    })?;
+    ensure_receipt_matches_circle(&receipt, &session.target().circle)?;
+    let tx_hash = args.tx_hash;
+    let mut result = json!({
+        "circle": session.target().circle.clone(),
+        "tx_hash": tx_hash,
+        "result": {},
+        "receipt": receipt,
+    });
+    result = with_explorer(result, &session);
+    let success = receipt_result_success(&result);
+
+    if args.json {
+        print_json(&json!({
+            "ok": success,
+            "type": "receipt",
+            "schema": "octra-sqlite.cli.v1",
+            "database": database_identity(&session),
+            "status": if success { "confirmed" } else { "rejected" },
+            "tx_hash": result.get("tx_hash").cloned().unwrap_or(Value::Null),
+            "tx_url": result.get("tx_url").cloned().unwrap_or(Value::Null),
+            "receipt": result.get("receipt").cloned().unwrap_or(Value::Null),
+            "result": result,
+        }))?;
+    } else {
+        print_exec_result(&result)?;
+    }
+    Ok(if success { 0 } else { 1 })
+}
+
+pub(super) fn receipt_result_success(result: &Value) -> bool {
+    ExecuteResult::from_value(result.clone()).is_ok()
+}
+
+pub(super) fn ensure_receipt_matches_circle(receipt: &Value, expected_circle: &str) -> Result<()> {
+    let Some(actual_circle) = receipt_circle(receipt) else {
+        return Err(Error::with_code_and_details(
+            ErrorKind::Receipt,
+            "receipt_target_mismatch",
+            format!(
+                "receipt does not identify its Circle; refusing to confirm against {expected_circle}"
+            ),
+            [("circle", Value::String(expected_circle.to_string()))],
+        )
+        .into());
+    };
+    if actual_circle != expected_circle {
+        return Err(Error::with_code_and_details(
+            ErrorKind::Receipt,
+            "receipt_target_mismatch",
+            format!(
+                "receipt Circle {actual_circle} does not match selected database Circle {expected_circle}"
+            ),
+            [
+                ("circle", Value::String(expected_circle.to_string())),
+                ("receipt_circle", Value::String(actual_circle.to_string())),
+            ],
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn receipt_circle(receipt: &Value) -> Option<&str> {
+    receipt
+        .get("contract")
+        .or_else(|| receipt.get("circle"))
+        .or_else(|| receipt.get("to_"))
+        .or_else(|| receipt.get("to"))
+        .and_then(Value::as_str)
+}
+
 pub(super) fn verify(
     session: &Session,
     expected_hash: Option<&str>,
     write_smoke: bool,
+    write_ou: Option<&str>,
     integrity: bool,
     json_mode: bool,
 ) -> Result<()> {
     if json_mode {
-        return verify_json(session, expected_hash, write_smoke, integrity);
+        return verify_json(session, expected_hash, write_smoke, write_ou, integrity);
     }
     print_field("database", &session.target().raw);
     print_field(
@@ -947,7 +1046,8 @@ pub(super) fn verify(
     )?;
     print_result(&tables, OutputMode::Table, true)?;
     if write_smoke {
-        let smoke = run_verify_write_smoke(session)?;
+        let write_ou = resolve_verify_write_ou_arg(write_ou)?;
+        let smoke = run_verify_write_smoke(session, &write_ou)?;
         print_exec_result(&smoke.create)?;
         print_result(&smoke.rows, OutputMode::Table, true)?;
         print_exec_result(&smoke.cleanup)?;
@@ -971,6 +1071,7 @@ pub(super) fn verify_json(
     session: &Session,
     expected_hash: Option<&str>,
     write_smoke: bool,
+    write_ou: Option<&str>,
     integrity: bool,
 ) -> Result<()> {
     let info = program_info(session)?;
@@ -1005,7 +1106,8 @@ pub(super) fn verify_json(
         "select name from sqlite_master where type='table' order by name;",
     )?;
     let write_smoke_result = if write_smoke {
-        let smoke = run_verify_write_smoke(session)?;
+        let write_ou = resolve_verify_write_ou_arg(write_ou)?;
+        let smoke = run_verify_write_smoke(session, &write_ou)?;
         let mut envelope = write_envelope(session, smoke.create, Some(2));
         if let Some(object) = envelope.as_object_mut() {
             object.insert("rows".to_string(), smoke.rows);
@@ -1050,16 +1152,20 @@ pub(super) fn verify_json(
     }))
 }
 
-pub(super) fn run_verify_write_smoke(session: &Session) -> Result<VerifyWriteSmoke> {
+pub(super) fn run_verify_write_smoke(
+    session: &Session,
+    write_ou: &str,
+) -> Result<VerifyWriteSmoke> {
     let table = smoke_table_name("verify", session);
     let create = with_explorer(
-        exec_sql(
+        exec_sql_with_ou(
             session,
             &format!(
                 "create table {table}(first_name text not null, last_name text not null);\n\
                  insert into {table}(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
             ),
             false,
+            write_ou,
         )?,
         session,
     );
@@ -1067,7 +1173,7 @@ pub(super) fn run_verify_write_smoke(session: &Session) -> Result<VerifyWriteSmo
         session,
         &format!("select first_name,last_name from {table} order by first_name;"),
     );
-    let cleanup = exec_sql(session, &format!("drop table {table};"), false)
+    let cleanup = exec_sql_with_ou(session, &format!("drop table {table};"), false, write_ou)
         .map(|result| with_explorer(result, session));
     match (rows, cleanup) {
         (Ok(rows), Ok(cleanup)) => Ok(VerifyWriteSmoke {

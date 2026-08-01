@@ -102,6 +102,8 @@ fn restore_check_and_limits_are_public_commands() {
         "art",
         "--file",
         "dump.sql",
+        "--ou",
+        "200000",
         "--json",
     ])
     .unwrap();
@@ -109,6 +111,7 @@ fn restore_check_and_limits_are_public_commands() {
         Commands::Restore(args) => {
             assert_eq!(args.target.target.as_deref(), Some("art"));
             assert_eq!(args.file.as_deref(), Some(Path::new("dump.sql")));
+            assert_eq!(args.ou.as_deref(), Some("200000"));
             assert!(args.json);
         }
         _ => panic!("expected restore command"),
@@ -138,6 +141,17 @@ fn restore_check_and_limits_are_public_commands() {
     match commands.command {
         Commands::CommandList(args) => assert!(args.json),
         _ => panic!("expected commands command"),
+    }
+
+    let receipt =
+        Cli::try_parse_from(["octra-sqlite", "receipt", "abc123", "art", "--json"]).unwrap();
+    match receipt.command {
+        Commands::Receipt(args) => {
+            assert_eq!(args.tx_hash, "abc123");
+            assert_eq!(args.target.target.as_deref(), Some("art"));
+            assert!(args.json);
+        }
+        _ => panic!("expected receipt command"),
     }
 }
 
@@ -423,6 +437,23 @@ fn upgrade_parses_apply_and_rollback_workflows() {
     let cli = Cli::try_parse_from([
         "octra-sqlite",
         "upgrade",
+        "art",
+        "--write-smoke",
+        "--write-ou",
+        "200000",
+    ])
+    .unwrap();
+    match cli.command {
+        Commands::Upgrade(args) => {
+            assert!(args.write_smoke);
+            assert_eq!(args.write_ou.as_deref(), Some("200000"));
+        }
+        _ => panic!("expected upgrade command"),
+    }
+
+    let cli = Cli::try_parse_from([
+        "octra-sqlite",
+        "upgrade",
         "rollback",
         "/tmp/octra-sqlite-upgrade",
         "--yes",
@@ -681,6 +712,7 @@ fn trace_mode_requires_trace_path() {
         trace_rpc_json_mode: TraceRpcJsonMode::Summary,
         sql_file: None,
         read_only: false,
+        ou: None,
         sql: vec!["select 1;".to_string()],
     };
     let error = cmd_open(args).unwrap_err().to_string();
@@ -725,6 +757,64 @@ fn restore_summary_envelope_omits_per_batch_receipts() {
     assert_eq!(envelope["writes"]["first_tx_hash"], "tx1");
     assert_eq!(envelope["writes"]["last_tx_hash"], "tx2");
     assert!(envelope.get("progress").is_none());
+}
+
+#[test]
+fn receipt_result_success_uses_sqlite_error_events() {
+    let ok = json!({
+        "circle": "octABC",
+        "wallet": "octCaller",
+        "tx_hash": "tx1",
+        "result": {},
+        "receipt": {"success": true, "error": null, "events": []}
+    });
+    assert!(receipt_result_success(&ok));
+
+    let failed = json!({
+        "circle": "octABC",
+        "wallet": "octCaller",
+        "tx_hash": "tx1",
+        "result": {},
+        "receipt": {
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["sqlite_exec_failed: near bad: syntax error"]
+            }]
+        }
+    });
+    assert!(!receipt_result_success(&failed));
+}
+
+#[test]
+fn receipt_target_validation_fails_closed() {
+    let ok = json!({"contract": "octABC", "success": true});
+    assert!(ensure_receipt_matches_circle(&ok, "octABC").is_ok());
+
+    let mismatch =
+        ensure_receipt_matches_circle(&json!({"contract": "octOTHER", "success": true}), "octABC")
+            .unwrap_err();
+    assert_eq!(error_code(&mismatch), "target_error");
+
+    let missing = ensure_receipt_matches_circle(&json!({"success": true}), "octABC").unwrap_err();
+    assert_eq!(error_code(&missing), "target_error");
+}
+
+#[test]
+fn write_summary_treats_sqlite_error_event_as_rejected() {
+    let summary = write_result_summary(&json!({
+        "tx_hash": "tx1",
+        "receipt": {
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["sqlite_exec_failed: no such table"]
+            }]
+        }
+    }));
+    assert_eq!(summary["status"], "rejected");
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use crate::client::{Error as ClientError, ErrorKind};
 use anyhow::Error as AnyError;
+use serde_json::Value;
 use std::fmt;
 
 #[derive(Debug)]
@@ -51,6 +52,32 @@ pub fn error_code(error: &AnyError) -> &'static str {
     classified_error_code(error).unwrap_or("command_failed")
 }
 
+/// Return structured error details when a typed source supplies them.
+pub fn error_details(error: &AnyError) -> Option<Value> {
+    for cause in error.chain() {
+        if let Some(error) = cause.downcast_ref::<ClientError>()
+            && let Some(details) = error.details()
+        {
+            let mut value = serde_json::to_value(details).ok()?;
+            if error.code() == Some("receipt_pending")
+                && let Some(object) = value.as_object_mut()
+                && !object.contains_key("next_command")
+                && let (Some(tx_hash), Some(database)) = (
+                    object.get("tx_hash").and_then(Value::as_str),
+                    object.get("database").and_then(Value::as_str),
+                )
+            {
+                object.insert(
+                    "next_command".to_string(),
+                    Value::String(format!("octra-sqlite receipt {tx_hash} {database} --json")),
+                );
+            }
+            return Some(value);
+        }
+    }
+    None
+}
+
 fn classified_error_code(error: &AnyError) -> Option<&'static str> {
     for cause in error.chain() {
         if let Some(error) = cause.downcast_ref::<CodedError>() {
@@ -74,6 +101,8 @@ fn client_error_code(error: &ClientError) -> &'static str {
             "result_limit_exceeded" => "result_limit_exceeded",
             "query_budget_exceeded" => "query_budget_exceeded",
             "exec_budget_exceeded" => "exec_budget_exceeded",
+            "receipt_pending" => "receipt_pending",
+            "receipt_target_mismatch" => "target_error",
             "response_too_large" => "result_too_large",
             code if code.starts_with("auth_") => "auth_failed",
             code if code.starts_with("sqlite_") && error.kind() != ErrorKind::Receipt => {
@@ -120,6 +149,27 @@ mod tests {
     }
 
     #[test]
+    fn client_error_details_survive_classification() {
+        let error = AnyError::new(ClientError::with_code_and_details(
+            ErrorKind::Timeout,
+            "receipt_pending",
+            "receipt pending",
+            [
+                ("tx_hash", Value::String("abc123".to_string())),
+                ("database", Value::String("oct://devnet/octABC".to_string())),
+                ("ou", Value::String("200000".to_string())),
+            ],
+        ));
+        let details = error_details(&error).unwrap();
+        assert_eq!(details["tx_hash"], "abc123");
+        assert_eq!(
+            details["next_command"],
+            "octra-sqlite receipt abc123 oct://devnet/octABC --json"
+        );
+        assert_eq!(details["ou"], "200000");
+    }
+
+    #[test]
     fn client_error_kind_supplies_the_stable_fallback() {
         let error = AnyError::new(ClientError::with_kind(
             ErrorKind::Wallet,
@@ -162,6 +212,7 @@ mod tests {
             "bootstrap_unverified",
             "bootstrap_already_done",
             "auth_uninitialized",
+            "receipt_pending",
             "target_error",
             "wallet_error",
         ] {
@@ -172,6 +223,8 @@ mod tests {
             ("result_limit_exceeded", "result_limit_exceeded"),
             ("query_budget_exceeded", "query_budget_exceeded"),
             ("exec_budget_exceeded", "exec_budget_exceeded"),
+            ("receipt_pending", "receipt_pending"),
+            ("receipt_target_mismatch", "target_error"),
             ("response_too_large", "result_too_large"),
             ("sqlite_prepare_failed", "sql_rejected"),
             ("auth_denied", "auth_failed"),

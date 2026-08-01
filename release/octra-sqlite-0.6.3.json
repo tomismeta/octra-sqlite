@@ -158,7 +158,7 @@
     "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
   },
   "engine_release": {
-    "notes": "Engine maintenance release. Rebuilds the bundled Circle WASM with SQLite 3.53.4, carrying upstream fixes for problems in 3.53.0 through 3.53.3. OSR1/OSW1, owner-write authorization, command names, CLI JSON envelopes, root Rust types, storage accounting, execution budgets, and runtime dependencies remain unchanged from 0.6.2. The optional wasm-behavior harness dependency is patched to wasmtime 36.0.13."
+    "notes": "Engine maintenance release. Rebuilds the bundled Circle WASM with SQLite 3.53.4, carrying upstream fixes for problems in 3.53.0 through 3.53.3. Adds configurable CLI OU budgets for ordinary owner-signed SQL writes, restore batches, verify write-smoke, and upgrade write-smoke; adds receipt follow-up for already-submitted transactions; and includes nonce/OU metadata in submitted write results. OSR1/OSW1, owner-write authorization, storage accounting, execution budgets, root Rust entry points, and runtime dependencies remain unchanged from 0.6.2. The optional wasm-behavior harness dependency is patched to wasmtime 36.0.13."
   },
   "status": "0.6.3 SQLite 3.53.4 engine maintenance candidate; devnet and Vitals upgrade proof pending before crates.io publish"
 }

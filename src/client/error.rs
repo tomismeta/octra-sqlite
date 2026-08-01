@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
 use std::fmt;
+
+use serde_json::Value;
 
 /// Result alias for octra-sqlite client operations.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -9,6 +12,7 @@ pub struct Error {
     kind: ErrorKind,
     code: Option<String>,
     message: String,
+    details: Option<BTreeMap<String, Value>>,
 }
 
 /// Stable category for a client error.
@@ -51,6 +55,7 @@ impl Error {
             kind,
             code: None,
             message: message.into(),
+            details: None,
         }
     }
 
@@ -63,6 +68,26 @@ impl Error {
             kind,
             code: Some(code.into()),
             message: message.into(),
+            details: None,
+        }
+    }
+
+    pub(crate) fn with_code_and_details(
+        kind: ErrorKind,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        details: impl IntoIterator<Item = (impl Into<String>, Value)>,
+    ) -> Self {
+        Self {
+            kind,
+            code: Some(code.into()),
+            message: message.into(),
+            details: Some(
+                details
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value))
+                    .collect(),
+            ),
         }
     }
 
@@ -80,6 +105,12 @@ impl Error {
     /// at a local protocol boundary.
     pub fn code(&self) -> Option<&str> {
         self.code.as_deref()
+    }
+
+    /// Structured details for automation when a local protocol boundary can
+    /// identify resumable context.
+    pub fn details(&self) -> Option<&BTreeMap<String, Value>> {
+        self.details.as_ref()
     }
 }
 

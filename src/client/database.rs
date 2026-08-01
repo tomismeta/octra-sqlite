@@ -159,6 +159,23 @@ impl<T: Transport> Database<T> {
         submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
     }
 
+    #[cfg(feature = "cli")]
+    pub(crate) fn execute_value_with_ou(
+        &self,
+        sql: &str,
+        no_wait: bool,
+        ou: &str,
+    ) -> Result<serde_json::Value> {
+        let operation = if no_wait {
+            Operation::ExecuteNoWait
+        } else {
+            Operation::Execute
+        };
+        let prepared = self.prepare_write_for_with_ou(sql, operation, ou)?;
+        let signed = self.sign_write(&prepared)?;
+        submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
+    }
+
     /// Prepare a write for later signing and no-wait submission.
     pub fn prepare_write_no_wait(&self, sql: &str) -> Result<PreparedWrite> {
         self.prepare_write_for(sql, Operation::ExecuteNoWait)
@@ -171,6 +188,22 @@ impl<T: Transport> Database<T> {
 
     fn prepare_write_for(&self, sql: &str, operation: Operation) -> Result<PreparedWrite> {
         prepare_write_with(self.transport.as_ref(), &self.session, sql, operation)
+    }
+
+    #[cfg(feature = "cli")]
+    fn prepare_write_for_with_ou(
+        &self,
+        sql: &str,
+        operation: Operation,
+        ou: &str,
+    ) -> Result<PreparedWrite> {
+        super::write::prepare_write_with_ou(
+            self.transport.as_ref(),
+            &self.session,
+            sql,
+            operation,
+            ou,
+        )
     }
 
     /// Sign a prepared write with the database session wallet.

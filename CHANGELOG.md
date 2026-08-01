@@ -7,6 +7,15 @@
 - Added the 0.6.1-0.6.2 Circle WASM as a metadata-only historical upgrade
   catalog entry so rollback recovery can identify the previous 3.53.3 epoch
   without bundling old WASM bytes.
+- Added `--ou` for ordinary CLI SQL writes and restore batches, plus
+  `OCTRA_SQLITE_WRITE_OU` as the CLI write budget default.
+- Added `verify --write-ou`, `upgrade --write-smoke --write-ou`, and
+  `OCTRA_SQLITE_VERIFY_WRITE_OU` for confirmed write-smoke rehearsals.
+- Added `receipt TX_HASH [DATABASE] --json` for following an already-submitted
+  Circle transaction without resubmitting SQL.
+- Added `nonce` and signed `ou` metadata to submitted write results and
+  introduced the stable `receipt_pending` CLI error code for accepted writes
+  whose receipt is not available before the wait deadline.
 - Updated the release manifest, toolchain record, README badge, and roadmap for
   the 3.53.4 engine epoch.
 - Added a WASM harness smoke test for the 3.53.4 engine path: version reporting,
@@ -14,8 +23,8 @@
 - Updated the optional `wasm-behavior` harness dependency to `wasmtime` 36.0.13
   to keep `cargo audit` green.
 - Kept OSR1/OSW1, owner-write authorization, storage accounting, execution
-  budgets, command names, CLI JSON envelopes, root Rust types, and runtime
-  dependencies unchanged from `0.6.2`.
+  budgets, root Rust entry points, and runtime dependencies unchanged from
+  `0.6.2`.
 
 ## 0.6.2
 

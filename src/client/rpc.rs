@@ -213,14 +213,31 @@ pub(super) fn wait_for_receipt_with<T: Transport>(
     session: &Session,
     tx_hash: &str,
 ) -> Result<Value> {
-    for _ in 0..45 {
+    wait_for_receipt_with_policy(transport, session, tx_hash, 45, Duration::from_secs(2))
+}
+
+fn wait_for_receipt_with_policy<T: Transport>(
+    transport: &T,
+    session: &Session,
+    tx_hash: &str,
+    attempts: usize,
+    delay: Duration,
+) -> Result<Value> {
+    let mut saw_pending = false;
+    let mut last_error = None;
+    for _ in 0..attempts {
         let result = rpc_call(transport, session, "contract_receipt", json!([tx_hash]));
-        if let Ok(receipt) = result
-            && !receipt.is_null()
-        {
-            return Ok(receipt);
+        match result {
+            Ok(receipt) if !receipt.is_null() => return Ok(receipt),
+            Ok(_) => saw_pending = true,
+            Err(error) => last_error = Some(error),
         }
-        std::thread::sleep(Duration::from_secs(2));
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+    }
+    if !saw_pending && let Some(error) = last_error {
+        return Err(error.with_context(format!("waiting for receipt {tx_hash}")));
     }
     Err(Error::with_kind(
         ErrorKind::Timeout,
@@ -312,6 +329,52 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::session::{ClientOptions, build_session};
+
+    struct ReceiptFailureTransport;
+
+    impl Transport for ReceiptFailureTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "contract_receipt" => Err(Error::with_code(
+                    ErrorKind::Rpc,
+                    "rpc_unavailable",
+                    "rpc is down",
+                )),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
+    struct PendingReceiptTransport;
+
+    impl Transport for PendingReceiptTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "contract_receipt" => Ok(Value::Null),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
+    fn test_session() -> Session {
+        build_session(&ClientOptions {
+            target: Some("oct://devnet/octABC".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCaller".to_string()),
+            private_key: Some(
+                "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
+            ),
+            ..ClientOptions::default()
+        })
+        .unwrap()
+    }
 
     #[test]
     fn nonce_parsing_accepts_numbers_and_decimal_strings() {
@@ -343,5 +406,34 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Authorization);
         assert_eq!(error.code(), Some("auth_denied"));
+    }
+
+    #[test]
+    fn receipt_wait_preserves_non_pending_rpc_failure() {
+        let error = wait_for_receipt_with_policy(
+            &ReceiptFailureTransport,
+            &test_session(),
+            "abc123",
+            2,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Rpc);
+        assert_eq!(error.code(), Some("rpc_unavailable"));
+        assert!(error.to_string().contains("waiting for receipt abc123"));
+    }
+
+    #[test]
+    fn receipt_wait_times_out_after_observed_pending_state() {
+        let error = wait_for_receipt_with_policy(
+            &PendingReceiptTransport,
+            &test_session(),
+            "abc123",
+            2,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Timeout);
+        assert_eq!(error.code(), None);
     }
 }

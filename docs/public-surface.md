@@ -50,9 +50,11 @@ octra-sqlite new DATABASE --read-mode public --schema public-schema.sql
 octra-sqlite new DATABASE < schema.sql
 octra-sqlite new DATABASE "create table ..."
 octra-sqlite restore DATABASE --file dump.sql
+octra-sqlite restore DATABASE --file dump.sql --ou 200000
 octra-sqlite restore DATABASE --file dump.sql --json-summary
 octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite database default DATABASE
+octra-sqlite receipt TX_HASH DATABASE --json
 octra-sqlite upgrade
 octra-sqlite upgrade DATABASE --dry-run
 octra-sqlite upgrade DATABASE --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
@@ -134,6 +136,10 @@ They should stay expressive enough that users do not need to inspect
 read/write relationship without printing wallet secrets.
 For automation, use `--json` on non-interactive commands and prefer full
 `oct://NETWORK/<circle>` URIs over local database names.
+Owner-signed SQL writes use `--ou` or `OCTRA_SQLITE_WRITE_OU`; verify write
+smoke uses `--write-ou` or `OCTRA_SQLITE_VERIFY_WRITE_OU`. If receipt polling
+times out after a successful submit, use `receipt TX_HASH [DATABASE] --json`
+instead of resubmitting SQL.
 Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the
 Octra JSON-RPC request/response envelope for proof or debugging. Use
 `--trace-rpc-json-mode summary` when hashes and sizes are enough.

@@ -29,6 +29,11 @@ Errors use the same schema on stderr:
 }
 ```
 
+Some recoverable errors add `error.details`. For `receipt_pending`, details can
+include `tx_hash`, `nonce`, `ou`, `circle`, `database`, and `next_command`.
+`nonce` and `ou` are present for writes submitted by the current command and may
+be `null` when polling an already-submitted transaction.
+
 Process exit codes are intentionally small for now:
 
 | Exit | Meaning |
@@ -46,6 +51,7 @@ Stable error classifications:
 | `result_limit_exceeded` | Query exceeded the Circle row limit. |
 | `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
 | `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
+| `receipt_pending` | A write was submitted, but its Circle receipt was not available before the wait deadline. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
@@ -154,6 +160,8 @@ Produced by single-statement writes with `--json`.
   "schema": "octra-sqlite.cli.v1",
   "status": "confirmed",
   "tx_hash": "abc...",
+  "nonce": 42,
+  "ou": "200000",
   "statements": null,
   "cost": {},
   "receipt": {},
@@ -162,6 +170,34 @@ Produced by single-statement writes with `--json`.
 ```
 
 Writes do not include `columns` or `rows`.
+`nonce` and `ou` report the submitted Octra account nonce and signed write
+budget when known.
+
+If submission succeeds but the receipt is still pending, the command exits with
+`error.code: "receipt_pending"`. `error.message` identifies the submitted
+transaction, and `error.details.next_command` gives the
+`octra-sqlite receipt TX_HASH DATABASE --json` follow-up when the database is
+known.
+
+### `receipt`
+
+Produced by `receipt TX_HASH [DATABASE] --json`.
+
+```json
+{
+  "ok": true,
+  "type": "receipt",
+  "schema": "octra-sqlite.cli.v1",
+  "database": {},
+  "status": "confirmed",
+  "tx_hash": "abc...",
+  "tx_url": "https://...",
+  "receipt": {},
+  "result": {}
+}
+```
+
+`receipt` waits for an already-submitted transaction. It does not resubmit SQL.
 
 ### `write_script`
 
@@ -354,7 +390,7 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`
+### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`, `receipt`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an

@@ -11,11 +11,11 @@ use super::{
     results::AuthInfo,
     rpc::{
         auth_info_with, circle_info_with, next_nonce_with, program_info_with, query_typed_with,
-        view_with, wait_for_transaction_with,
+        view_with, wait_for_receipt_with, wait_for_transaction_with,
     },
     safety::Operation,
     transport::{HttpTransport, RpcTraceMode, Transport},
-    write::{prepare_write_with, sign_write, submit_signed_write_with},
+    write::{DEFAULT_WRITE_OU, prepare_write_with_ou, sign_write, submit_signed_write_with},
 };
 
 pub use super::session::{
@@ -86,23 +86,30 @@ pub fn circle_info(session: &Session) -> Result<Value> {
 #[cfg(feature = "http")]
 /// Prepare, sign, and submit owner-write SQL through the default transport.
 pub fn exec_sql(session: &Session, sql: &str, no_wait: bool) -> Result<Value> {
+    exec_sql_with_ou(session, sql, no_wait, DEFAULT_WRITE_OU)
+}
+
+#[cfg(feature = "http")]
+/// Prepare, sign, and submit owner-write SQL with an explicit OU budget.
+pub fn exec_sql_with_ou(session: &Session, sql: &str, no_wait: bool, ou: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     let operation = if no_wait {
         Operation::ExecuteNoWait
     } else {
         Operation::Execute
     };
-    let prepared = prepare_write_with(&transport, session, sql, operation)?;
+    let prepared = prepare_write_with_ou(&transport, session, sql, operation, ou)?;
     let signed = sign_write(session, &prepared)?;
     submit_signed_write_with(&transport, session, signed, no_wait)
 }
 
 #[cfg(all(feature = "cli", feature = "http"))]
-pub(crate) fn exec_sql_with_owner_auth(
+pub(crate) fn exec_sql_with_owner_auth_ou(
     session: &Session,
     sql: &str,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
 ) -> Result<Value> {
     let transport = HttpTransport::default();
     let prepared = prepare_write_with_owner_auth(
@@ -112,6 +119,7 @@ pub(crate) fn exec_sql_with_owner_auth(
         Operation::Execute,
         db_id,
         owner_pubkey,
+        ou,
     )?;
     let signed = sign_write(session, &prepared)?;
     submit_signed_write_with(&transport, session, signed, false)
@@ -136,6 +144,13 @@ pub fn submit_tx(session: &Session, tx: Tx, no_wait: bool) -> Result<Value> {
 pub fn wait_for_transaction(session: &Session, tx_hash: &str) -> Result<Value> {
     let transport = HttpTransport::default();
     wait_for_transaction_with(&transport, session, tx_hash)
+}
+
+#[cfg(feature = "http")]
+/// Wait for a Circle contract receipt.
+pub fn wait_for_receipt(session: &Session, tx_hash: &str) -> Result<Value> {
+    let transport = HttpTransport::default();
+    wait_for_receipt_with(&transport, session, tx_hash)
 }
 
 #[cfg(feature = "http")]

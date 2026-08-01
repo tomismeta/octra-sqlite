@@ -15,6 +15,8 @@ use std::env;
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(super) const DEFAULT_WRITE_OU: &str = "1000";
+
 /// Unsigned owner-write transaction plus the SQL and OSW1 intent it commits to.
 #[derive(Clone, PartialEq)]
 pub struct PreparedWrite {
@@ -25,6 +27,7 @@ pub struct PreparedWrite {
     circle: String,
     wallet: String,
     public_key: String,
+    ou: String,
     owner_write: PreparedOwnerWrite,
     safety: OperationSafety,
 }
@@ -65,6 +68,11 @@ impl PreparedWrite {
         &self.public_key
     }
 
+    /// Return the Octra unit budget that will be signed into the transaction.
+    pub fn ou(&self) -> &str {
+        &self.ou
+    }
+
     /// Return the prepared OSW1 owner-write metadata.
     pub fn owner_write(&self) -> &PreparedOwnerWrite {
         &self.owner_write
@@ -83,6 +91,7 @@ impl fmt::Debug for PreparedWrite {
             .field("nonce", &self.nonce)
             .field("circle", &self.circle)
             .field("wallet", &self.wallet)
+            .field("ou", &self.ou)
             .field("owner_write", &self.owner_write)
             .field("safety", &self.safety)
             .finish_non_exhaustive()
@@ -188,6 +197,16 @@ pub(super) fn prepare_write_with<T: Transport>(
     sql: &str,
     operation: Operation,
 ) -> Result<PreparedWrite> {
+    prepare_write_with_ou(transport, session, sql, operation, DEFAULT_WRITE_OU)
+}
+
+pub(super) fn prepare_write_with_ou<T: Transport>(
+    transport: &T,
+    session: &Session,
+    sql: &str,
+    operation: Operation,
+    ou: &str,
+) -> Result<PreparedWrite> {
     let nonce = next_nonce_with(transport, session)?;
     let timestamp = now_timestamp();
     let method = if trace_sql_event_enabled() {
@@ -209,10 +228,13 @@ pub(super) fn prepare_write_with<T: Transport>(
     prepare_write_with_owner_parts(
         session,
         sql,
-        operation,
-        nonce,
-        timestamp,
-        method,
+        PreparedWriteContext {
+            operation,
+            ou,
+            nonce,
+            timestamp,
+            method,
+        },
         OwnerWriteAuth {
             db_id: &auth.db_id,
             owner_pubkey: auth.owner_pubkey.as_deref(),
@@ -228,6 +250,7 @@ pub(super) fn prepare_write_with_owner_auth<T: Transport>(
     operation: Operation,
     db_id: &str,
     owner_pubkey: &str,
+    ou: &str,
 ) -> Result<PreparedWrite> {
     let nonce = next_nonce_with(transport, session)?;
     let timestamp = now_timestamp();
@@ -239,10 +262,13 @@ pub(super) fn prepare_write_with_owner_auth<T: Transport>(
     prepare_write_with_owner_parts(
         session,
         sql,
-        operation,
-        nonce,
-        timestamp,
-        method,
+        PreparedWriteContext {
+            operation,
+            ou,
+            nonce,
+            timestamp,
+            method,
+        },
         OwnerWriteAuth {
             db_id,
             owner_pubkey: Some(owner_pubkey),
@@ -255,15 +281,21 @@ struct OwnerWriteAuth<'a> {
     owner_pubkey: Option<&'a str>,
 }
 
+struct PreparedWriteContext<'a> {
+    operation: Operation,
+    ou: &'a str,
+    nonce: i64,
+    timestamp: f64,
+    method: &'a str,
+}
+
 fn prepare_write_with_owner_parts(
     session: &Session,
     sql: &str,
-    operation: Operation,
-    nonce: i64,
-    timestamp: f64,
-    method: &str,
+    context: PreparedWriteContext<'_>,
     auth: OwnerWriteAuth<'_>,
 ) -> Result<PreparedWrite> {
+    let ou = normalize_write_ou("write OU", context.ou)?;
     let db_id_bytes = hex_to_32("db_id", auth.db_id)?;
     let session_owner_pubkey = session.intent_public_key()?;
     let owner_pubkey = match auth.owner_pubkey {
@@ -279,23 +311,24 @@ fn prepare_write_with_owner_parts(
         }
         None => hex::encode(session_owner_pubkey),
     };
-    let frame = osw1::frame(&db_id_bytes, nonce as u64, method, sql)?;
+    let frame = osw1::frame(&db_id_bytes, context.nonce as u64, context.method, sql)?;
     let owner_write = PreparedOwnerWrite {
         db_id: auth.db_id.to_string(),
         owner_pubkey,
-        sequence: nonce as u64,
+        sequence: context.nonce as u64,
         frame_hex: hex::encode(frame),
     };
     Ok(PreparedWrite {
         sql: sql.to_string(),
-        method: method.to_string(),
-        nonce,
-        timestamp,
+        method: context.method.to_string(),
+        nonce: context.nonce,
+        timestamp: context.timestamp,
         circle: session.target().circle.clone(),
         wallet: session.caller().to_string(),
         public_key: session.public_key_b64()?.to_string(),
+        ou,
         owner_write,
-        safety: operation.safety(),
+        safety: context.operation.safety(),
     })
 }
 
@@ -314,7 +347,7 @@ pub(super) fn sign_write(session: &Session, prepared: &PreparedWrite) -> Result<
         to_: prepared.circle.clone(),
         amount: "0".to_string(),
         nonce: prepared.nonce,
-        ou: "1000".to_string(),
+        ou: prepared.ou.clone(),
         timestamp: prepared.timestamp,
         op_type: "circle_call".to_string(),
         encrypted_data: prepared.method.clone(),
@@ -355,6 +388,8 @@ fn submit_tx_with<T: Transport>(
 ) -> Result<Value> {
     let tx_circle = tx.to_.clone();
     let tx_wallet = tx.from.clone();
+    let tx_nonce = tx.nonce;
+    let tx_ou = tx.ou.clone();
     let result = rpc_call(transport, session, "octra_submit", json!([tx]))?;
     let tx_hash = result
         .get("tx_hash")
@@ -362,13 +397,21 @@ fn submit_tx_with<T: Transport>(
         .and_then(Value::as_str)
         .map(str::to_string);
     let mut out = Map::new();
-    out.insert("circle".to_string(), Value::String(tx_circle));
+    out.insert("circle".to_string(), Value::String(tx_circle.clone()));
     out.insert("wallet".to_string(), Value::String(tx_wallet));
+    out.insert("nonce".to_string(), json!(tx_nonce));
+    out.insert("ou".to_string(), Value::String(tx_ou));
     out.insert("result".to_string(), result);
     if let Some(hash) = tx_hash.clone() {
         out.insert("tx_hash".to_string(), Value::String(hash.clone()));
         if !no_wait {
-            let receipt = wait_for_receipt_with(transport, session, &hash)?;
+            let receipt = wait_for_receipt_with(transport, session, &hash).map_err(|error| {
+                if error.kind() == ErrorKind::Timeout {
+                    receipt_pending_error(session, &hash, &tx_circle, tx_nonce, &out)
+                } else {
+                    error
+                }
+            })?;
             if let Err(error) = ensure_receipt_success(&receipt) {
                 return Err(error.with_context(format!("tx_hash: {hash}")));
             }
@@ -376,6 +419,34 @@ fn submit_tx_with<T: Transport>(
         }
     }
     Ok(Value::Object(out))
+}
+
+fn receipt_pending_error(
+    session: &Session,
+    tx_hash: &str,
+    circle: &str,
+    nonce: i64,
+    submitted: &Map<String, Value>,
+) -> Error {
+    let ou = submitted
+        .get("ou")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_WRITE_OU);
+    let database = format!("oct://{}/{}", session.target().network, circle);
+    Error::with_code_and_details(
+        ErrorKind::Timeout,
+        "receipt_pending",
+        format!(
+            "transaction submitted but receipt is still pending; tx_hash={tx_hash}; nonce={nonce}; ou={ou}; circle={circle}"
+        ),
+        [
+            ("tx_hash", Value::String(tx_hash.to_string())),
+            ("nonce", json!(nonce)),
+            ("ou", Value::String(ou.to_string())),
+            ("circle", Value::String(circle.to_string())),
+            ("database", Value::String(database)),
+        ],
+    )
 }
 
 fn ensure_prepared_for_session(session: &Session, prepared: &PreparedWrite) -> Result<()> {
@@ -441,6 +512,24 @@ fn trace_sql_event_enabled() -> bool {
     env::var("OCTRA_SQLITE_EMIT_SQL_ONCHAIN_EVENT")
         .ok()
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
+fn normalize_write_ou(label: &str, value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || !trimmed.as_bytes().iter().all(u8::is_ascii_digit)
+        || trimmed
+            .parse::<u64>()
+            .ok()
+            .filter(|value| *value > 0)
+            .is_none()
+    {
+        return Err(Error::with_kind(
+            ErrorKind::Config,
+            format!("{label} must be a positive decimal integer"),
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 fn now_timestamp() -> f64 {
@@ -542,9 +631,11 @@ mod tests {
         let tx = tx_for(&session, "pre-signed");
         let signed = SignedWrite::new(tx, Operation::ExecuteNoWait.safety());
 
-        submit_signed_write_with(&transport, &session, signed, true).unwrap();
+        let result = submit_signed_write_with(&transport, &session, signed, true).unwrap();
 
         assert_eq!(submitted_signature(&transport), "pre-signed");
+        assert_eq!(result["nonce"], 42);
+        assert_eq!(result["ou"], "1000");
     }
 
     #[test]
@@ -578,5 +669,59 @@ mod tests {
                 .to_string()
                 .contains("refusing to choose unsigned exec")
         );
+    }
+
+    #[test]
+    fn signed_write_uses_prepared_ou() {
+        let session = test_session();
+        let owner_pubkey = hex::encode(session.intent_public_key().unwrap());
+        let prepared = prepare_write_with_owner_parts(
+            &session,
+            "create table demo(id integer);",
+            PreparedWriteContext {
+                operation: Operation::ExecuteNoWait,
+                ou: "50000",
+                nonce: 42,
+                timestamp: 1000.0,
+                method: "exec",
+            },
+            OwnerWriteAuth {
+                db_id: "0000000000000000000000000000000000000000000000000000000000000001",
+                owner_pubkey: Some(&owner_pubkey),
+            },
+        )
+        .unwrap();
+
+        let signed = sign_write(&session, &prepared).unwrap();
+
+        assert_eq!(prepared.ou(), "50000");
+        assert_eq!(signed.tx().ou, "50000");
+    }
+
+    #[test]
+    fn write_ou_must_be_positive_decimal() {
+        assert_eq!(normalize_write_ou("--ou", " 200000 ").unwrap(), "200000");
+        for value in ["", "0", "-1", "1.5", "abc"] {
+            let error = normalize_write_ou("--ou", value).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::Config);
+        }
+    }
+
+    #[test]
+    fn receipt_pending_error_carries_resumable_details() {
+        let session = test_session();
+        let mut submitted = Map::new();
+        submitted.insert("ou".to_string(), Value::String("200000".to_string()));
+
+        let error = receipt_pending_error(&session, "abc123", "octABC", 42, &submitted);
+
+        assert_eq!(error.code(), Some("receipt_pending"));
+        let details = error.details().unwrap();
+        assert_eq!(details["tx_hash"], "abc123");
+        assert_eq!(details["nonce"], json!(42));
+        assert_eq!(details["ou"], "200000");
+        assert_eq!(details["circle"], "octABC");
+        assert_eq!(details["database"], "oct://devnet/octABC");
+        assert!(details.get("next_command").is_none());
     }
 }

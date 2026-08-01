@@ -11,11 +11,12 @@ use crate::client::{
 
 use super::output::{OutputMode, dim, format_json, format_result, strong, write_text};
 use super::portability::{
-    backup_database, dump_database, execute_sql_script, fullschema_database, import_csv,
-    sql_string_literal,
+    backup_database, dump_database, execute_sql_script_with_progress_ou, fullschema_database,
+    import_csv_with_ou, sql_string_literal,
 };
 use super::{
-    BackupSummary, format_schema_result, linked_circle, print_field, run_one_sql_to, verify,
+    BackupSummary, SqlRunOptions, format_schema_result, linked_circle, print_field,
+    resolve_write_ou_arg, run_one_sql_to, verify,
 };
 
 struct ShellState {
@@ -25,6 +26,7 @@ struct ShellState {
     timer: bool,
     output: Option<PathBuf>,
     once_output: Option<PathBuf>,
+    write_ou: Option<String>,
 }
 
 pub(super) fn run_dot_command(
@@ -33,6 +35,7 @@ pub(super) fn run_dot_command(
     headers: bool,
     output: Option<&Path>,
     line: &str,
+    write_ou: Option<&str>,
 ) -> Result<bool> {
     let mut state = ShellState {
         session,
@@ -41,11 +44,16 @@ pub(super) fn run_dot_command(
         timer: false,
         output: output.map(Path::to_path_buf),
         once_output: None,
+        write_ou: write_ou.map(str::to_string),
     };
     handle_dot_command(&mut state, line)
 }
 
-pub(super) fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
+pub(super) fn run_shell(
+    session: Session,
+    mode: OutputMode,
+    write_ou: Option<String>,
+) -> Result<()> {
     println!(
         "{}",
         strong(format!("SQLite on Octra ({})", session.target().network))
@@ -63,6 +71,7 @@ pub(super) fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
         timer: false,
         output: None,
         once_output: None,
+        write_ou,
     };
     let mut editor = rustyline::DefaultEditor::new()?;
     let history_path = shell_history_path()?;
@@ -100,11 +109,14 @@ pub(super) fn run_shell(session: Session, mode: OutputMode) -> Result<()> {
             if let Err(error) = run_one_sql_to(
                 &state.session,
                 &sql,
-                state.mode,
-                state.headers,
-                output.as_deref(),
-                false,
-                None,
+                SqlRunOptions {
+                    mode: state.mode,
+                    headers: state.headers,
+                    output: output.as_deref(),
+                    read_only: false,
+                    trace_rpc_json: None,
+                    write_ou: state.write_ou.as_deref(),
+                },
             ) {
                 eprintln!("error: {error:#}");
             }
@@ -198,7 +210,7 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
                 print_field("wallet", path.display().to_string());
             }
         }
-        ".verify" => verify(&state.session, None, false, false, false)?,
+        ".verify" => verify(&state.session, None, false, None, false, false)?,
         ".backup" => {
             let path = backup_path_from_args(args)?;
             let summary = backup_database(&state.session, &path)?;
@@ -217,11 +229,14 @@ fn handle_dot_command(state: &mut ShellState, line: &str) -> Result<bool> {
             let path = args.first().ok_or_else(|| anyhow!("usage: .read FILE"))?;
             reject_shell_pipe_arg(path, ".read")?;
             let sql = fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
-            execute_sql_script(&state.session, &sql)?;
+            let write_ou = resolve_write_ou_arg(state.write_ou.as_deref())?;
+            execute_sql_script_with_progress_ou(&state.session, &sql, false, &write_ou, |_| {})?;
         }
         ".import" => {
             let (path, table, skip) = import_args(args)?;
-            let inserted = import_csv(&state.session, &path, &table, skip)?;
+            let write_ou = resolve_write_ou_arg(state.write_ou.as_deref())?;
+            let inserted =
+                import_csv_with_ou(&state.session, &path, &table, skip, Some(&write_ou))?;
             print_field("imported", format!("{inserted} rows"));
         }
         ".indexes" => {

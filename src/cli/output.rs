@@ -263,9 +263,7 @@ fn visible_len(text: &str) -> usize {
 pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
     let mut out = String::new();
     let receipt = result.get("receipt");
-    let success = receipt
-        .and_then(|receipt| receipt.get("success"))
-        .and_then(Value::as_bool);
+    let success = receipt.and_then(receipt_success_status);
     let submitted_status = result
         .pointer("/result/status")
         .and_then(Value::as_str)
@@ -301,6 +299,12 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
         };
         out.push_str(&format_field("tx", hash));
     }
+    if let Some(nonce) = result.get("nonce") {
+        out.push_str(&format_field("nonce", value_to_string(nonce)));
+    }
+    if let Some(ou) = result.get("ou") {
+        out.push_str(&format_field("ou", value_to_string(ou)));
+    }
     if let Some(url) = result.get("tx_url").and_then(Value::as_str) {
         out.push_str(&format_field("tx_url", url));
     }
@@ -330,6 +334,19 @@ pub(crate) fn format_exec_result(result: &Value) -> Result<String> {
 
 fn auth_event(receipt: &Value) -> Option<String> {
     event_values(receipt, "octra.sqlite.auth")
+}
+
+fn receipt_success_status(receipt: &Value) -> Option<bool> {
+    let success = receipt.get("success").and_then(Value::as_bool)?;
+    if !success {
+        return Some(false);
+    }
+    if receipt.get("error").is_some_and(|error| !error.is_null())
+        || event_values(receipt, "octra.sqlite.error").is_some()
+    {
+        return Some(false);
+    }
+    Some(true)
 }
 
 fn event_values(receipt: &Value, topic: &str) -> Option<String> {
@@ -596,7 +613,7 @@ mod tests {
             }
         });
         let rendered = format_exec_result(&result).unwrap();
-        assert!(rendered.contains("write: confirmed"));
+        assert!(rendered.contains("write: rejected"));
         assert!(rendered.contains("sql_error: sqlite_exec_failed:no such table: correction"));
         assert!(!rendered.contains("\"events\""));
     }
