@@ -100,7 +100,7 @@ Produced by `new DATABASE --json`.
   "program": {
     "runtime": "wasm_v1",
     "wasm_hash": "hex...",
-    "wasm_bytes": 611456
+    "wasm_bytes": 611677
   },
   "initializer": {
     "present": true,
@@ -260,21 +260,21 @@ and `upgrade rollback BUNDLE --json`.
   "dry_run": false,
   "database": {},
   "from": {
-    "sqlite_version": "3.53.2",
+    "sqlite_version": "3.53.3",
     "code_hash": "hex..."
   },
   "to": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "code_hash": "hex..."
   },
   "target": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "code_hash": "hex...",
     "wasm": "embedded:circle/wasm/octra_sqlite_circle.wasm"
   },
   "backup": {
     "skipped": false,
-    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/devnet-oct...-sqlite-3.53.2-20260707.sqlite",
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/devnet-oct...-sqlite-3.53.3-20260801.sqlite",
     "sha256": "hex..."
   },
   "rollback": {
@@ -292,13 +292,13 @@ and `upgrade rollback BUNDLE --json`.
     "tx_url": "https://..."
   },
   "verification": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "storage_generation_unchanged": true,
     "owner_sequence_unchanged": true
   },
   "bundle": {
-    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707",
-    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/upgrade.json"
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801",
+    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/upgrade.json"
   }
 }
 ```

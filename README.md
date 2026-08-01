@@ -6,7 +6,7 @@
 [![docs.rs](https://docs.rs/octra-sqlite/badge.svg)](https://docs.rs/octra-sqlite)
 [![ci](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![sqlite](https://img.shields.io/badge/sqlite-3.53.3-0f766e)](https://sqlite.org/)
+[![sqlite](https://img.shields.io/badge/sqlite-3.53.4-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
 It gives you a SQLite-shaped CLI and a small Rust client for live Circle state:
@@ -152,9 +152,10 @@ checks the Circle import/export surface,
 release manifests publish the bundled WASM hash and record live devnet proofs
 when completed.
 
-The `0.6.2` crate keeps SQLite 3.53.3 and the audited `0.6.1` Circle WASM while
-converging the routine CLI and Rust client paths. The current release manifest
-is [release/octra-sqlite-0.6.2.json](./release/octra-sqlite-0.6.2.json).
+The `0.6.3` crate bundles SQLite 3.53.4 in a rebuilt Circle WASM while keeping
+the CLI, Rust API, storage model, and wire formats unchanged. The current
+release manifest is
+[release/octra-sqlite-0.6.3.json](./release/octra-sqlite-0.6.3.json).
 Existing Circles keep the engine they were deployed with until their owner runs
 `upgrade`; historical release manifests retain the prior deployment proofs.
 
@@ -189,7 +190,7 @@ engine:
 octra-sqlite upgrade
 octra-sqlite upgrade art --dry-run
 octra-sqlite upgrade art
-octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
+octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801
 ```
 
 An upgrade preserves the Circle ID, SQLite pages, read mode, owner-write
@@ -199,7 +200,7 @@ backup by default, and stores a private upgrade bundle with rollback WASM and
 an `upgrade.json` manifest.
 
 Default bundles are named with the network, Circle ID, previous SQLite version,
-and date, for example `devnet-oct...-sqlite-3.53.2-20260707`.
+and date, for example `devnet-oct...-sqlite-3.53.3-20260801`.
 
 For known historical octra-sqlite release engines, the release manifest JSON is
 the catalog source of truth: base WASM SHA-256, byte length, and GitHub source

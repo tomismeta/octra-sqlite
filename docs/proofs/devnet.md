@@ -1,5 +1,9 @@
 # Devnet Proof
 
+`0.6.3` is a SQLite 3.53.4 engine maintenance candidate. Its manifest records
+the rebuilt WASM locally, and the live devnet/Vitals upgrade proof should be
+filled in before publishing to crates.io.
+
 Current public devnet proof Circle, established for `0.6.1` and inherited
 unchanged by the client-only `0.6.2` release:
 

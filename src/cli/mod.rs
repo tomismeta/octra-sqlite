@@ -75,16 +75,16 @@ use zeroize::{Zeroize, Zeroizing};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.2.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.3.json";
 const EMBEDDED_WASM_BYTES: &[u8] = include_bytes!("../../circle/wasm/octra_sqlite_circle.wasm");
-const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.2.json");
+const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.3.json");
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef";
-const EXPECTED_WASM_BYTES: usize = 611_456;
+    "8fe0dad1a4bb4fcfc7afab626a58eda45edeac3b25607f130b201997698d8bcf";
+const EXPECTED_WASM_BYTES: usize = 611_677;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
-const SQLITE_VERSION: &str = "3.53.3";
+const SQLITE_VERSION: &str = "3.53.4";
 const MAX_RESULT_ROWS: usize = 512;
 const MAX_RESPONSE_BYTES: usize = 65_526;
 const MAX_DB_PAGES: usize = 8_069;

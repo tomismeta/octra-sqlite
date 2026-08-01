@@ -103,7 +103,7 @@ octra-sqlite upgrade
 octra-sqlite upgrade DATABASE --dry-run
 octra-sqlite upgrade DATABASE --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
 octra-sqlite upgrade DATABASE
-octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
+octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801
 ```
 
 Strict runbook for mainnet or high-value Circles:
@@ -116,8 +116,12 @@ Strict runbook for mainnet or high-value Circles:
 4. Require `rollback.available: true` before applying. Do not use
    `--unsafe-no-rollback` on mainnet; without rollback bytes, the upgrade
    bundle cannot restore the previous Circle program.
-5. Apply with `octra-sqlite upgrade DATABASE --yes --json`.
-6. Run `octra-sqlite status DATABASE --ready --json` and an application query.
+5. Pause external writers for the database while applying the program update.
+6. Apply with `octra-sqlite upgrade DATABASE --yes --json --require-integrity`.
+7. Run `octra-sqlite status DATABASE --ready --json`, confirm `write_ready:
+   true`, `engine_current: true`, and `upgrade_needed: false`, then run an
+   application query.
+8. Resume writers and confirm a real application write lands.
 
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
@@ -192,8 +196,8 @@ Default bundle names use the environment, Circle ID, previous SQLite version,
 and date only:
 
 ```text
-~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/
-  devnet-oct...-sqlite-3.53.2-20260707.sqlite
+~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/
+  devnet-oct...-sqlite-3.53.3-20260801.sqlite
   previous.wasm
   upgrade.json
 ```

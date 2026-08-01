@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.3
+
+- Rebuilt the bundled Circle WASM with SQLite 3.53.4, taking SQLite's
+  upstream fixes for problems in 3.53.0 through 3.53.3.
+- Added the 0.6.1-0.6.2 Circle WASM as a metadata-only historical upgrade
+  catalog entry so rollback recovery can identify the previous 3.53.3 epoch
+  without bundling old WASM bytes.
+- Updated the release manifest, toolchain record, README badge, and roadmap for
+  the 3.53.4 engine epoch.
+- Added a WASM harness smoke test for the 3.53.4 engine path: version reporting,
+  expression-index reads, JSON extraction, and malformed JSONB failure.
+- Updated the optional `wasm-behavior` harness dependency to `wasmtime` 36.0.13
+  to keep `cargo audit` green.
+- Kept OSR1/OSW1, owner-write authorization, storage accounting, execution
+  budgets, command names, CLI JSON envelopes, root Rust types, and runtime
+  dependencies unchanged from `0.6.2`.
+
 ## 0.6.2
 
 - Routed ordinary one-statement CLI query and execute through the same
@@ -14,8 +31,9 @@
   JSON error vocabulary and broad `ErrorKind` categories.
 - Curated the docs.rs crate landing page and advanced module boundaries while
   keeping the README focused on product use.
-- Added crates.io trusted publishing from exact GitHub release tags through a
-  dedicated release environment using short-lived OIDC credentials.
+- Added the GitHub-side trusted-publishing workflow from exact release tags
+  through a dedicated release environment; crates.io-side publisher
+  registration remains the one-time setup before using OIDC publish.
 - Zeroized pasted/imported private-key text on every exit path and made the
   standalone `wasm-behavior` test feature self-contained without changing the
   resolved dependency set.

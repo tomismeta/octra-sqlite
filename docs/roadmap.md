@@ -27,26 +27,27 @@ work, and do not cut releases for documentation polish alone.
 - **Octra**: adopting native host capabilities without recreating them in the
   Circle program.
 
-## Now: 0.6.2 One Truth Path
+## Now: 0.6.3 Engine Currency
 
-Themes: **Security**, **Architecture**, **Developer Experience**, **Operations**
+Themes: **Security**, **Operations**, **Developer Experience**
 
+- Rebuild the bundled Circle WASM with SQLite 3.53.4, taking upstream fixes for
+  problems in 3.53.0 through 3.53.3.
 - Keep the top-level command set, JSON envelopes, root Rust types, OSR1/OSW1,
-  SQLite 3.53.3, and Circle WASM unchanged.
-- Organize CLI responsibilities into onboarding, saved databases, SQL, inspection,
-  deployment, catalogs, upgrade, shell, output, and portability modules.
-- Route ordinary one-statement CLI query and execute through the same
-  `Database` data plane used by Rust applications. Keep tracing, scripts,
-  restore, deployment, and upgrades on explicit control-plane plumbing.
-- Preserve precise RPC, Circle, and receipt error codes at their construction
-  sites; never classify automation errors from rendered CLI text.
-- Make docs.rs the curated Rust entry point while keeping README product-first.
-- Establish approval-gated crates.io trusted publishing from exact GitHub
-  release tags.
+  storage accounting, execution budgets, and runtime dependency graph
+  unchanged.
+- Add the 0.6.1-0.6.2 3.53.3 WASM epoch to the metadata-only historical catalog
+  so normal upgrades can identify the previous engine without bundling old
+  bytes.
+- Prove `3.53.3 -> 3.53.4` on devnet, then let Octra Vitals rehearse the same
+  path before crates.io publish.
+- Keep trusted publishing as a release hygiene item: use it only after the
+  crates.io-side publisher is registered; otherwise document the manual publish
+  honestly.
 
-Exit: full local gates, package inspection, and the review panel confirm a
-patch-compatible client-only release; then `0.6.2` soaks without forcing an
-engine upgrade on existing Circles.
+Exit: full local gates, WASM harness/audit, devnet proof, Vitals upgrade
+rehearsal, and the review panel confirm a patch-compatible engine maintenance
+release; then `0.6.3` can publish without pulling in unrelated roadmap work.
 
 ## Next: 0.7.0 Secret Ownership
 
