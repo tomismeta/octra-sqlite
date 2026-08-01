@@ -45,6 +45,27 @@ jobs:
           wasm_path="circle/wasm/octra_sqlite_circle.wasm"
           test -f "$release_manifest"
           test "$(jq -r '.release' "$release_manifest")" = "$package_version"
+          devnet_proof="$(jq -r '.verification.devnet // empty' "$release_manifest")"
+          case "$devnet_proof" in
+            passed|inherited_from_*) ;;
+            *)
+              echo "release manifest devnet proof is not complete: $devnet_proof" >&2
+              exit 1
+              ;;
+          esac
+          test "$(jq -r '.public_deployment.status // empty' "$release_manifest")" = "deployed"
+          proof_status_text="$(
+            jq -r '[
+              .status // "",
+              .verification.devnet // "",
+              .public_deployment.status // "",
+              .public_deployment.deployment_kind // ""
+            ] | join("\n")' "$release_manifest"
+          )"
+          if printf '%s\n' "$proof_status_text" | grep -Eiq 'pending|candidate'; then
+            echo "release manifest still contains pending/candidate proof status" >&2
+            exit 1
+          fi
           expected_bytes="$(jq -r '.wasm.bytes' "$release_manifest")"
           expected_sha256="$(jq -r '.wasm.sha256' "$release_manifest")"
           actual_bytes="$(wc -c < "$wasm_path" | tr -d ' ')"
