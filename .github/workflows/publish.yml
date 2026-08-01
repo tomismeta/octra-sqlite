@@ -100,7 +100,10 @@ jobs:
         env:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          if curl -fsSL -o /dev/null "https://crates.io/api/v1/crates/octra-sqlite/$VERSION"; then
+          if curl -fsSL \
+            -A "tomismeta/octra-sqlite release workflow (https://github.com/tomismeta/octra-sqlite)" \
+            -o /dev/null \
+            "https://crates.io/api/v1/crates/octra-sqlite/$VERSION"; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
