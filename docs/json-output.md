@@ -419,6 +419,10 @@ it prints the same single status envelope and exits nonzero when `read_ready` is
 not `true`. `write_ready` is separate so walletless public-read databases can be
 healthy for reads while still reporting that owner writes are unavailable.
 
+`verify --write-smoke --json` reports `write_smoke` as a write envelope for the
+insert step. The same object also includes `create`, `rows`, and `cleanup` so
+operators can see the full create/insert/query/drop cycle without retrying SQL.
+
 `wallet status --json` reports wallet path, file permissions, caller
 address, active target, and read/write relationship to the target Circle. It
 does not print private keys or raw wallet JSON.

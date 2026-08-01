@@ -161,6 +161,9 @@ fn cmd_upgrade_apply(mut args: UpgradeArgs) -> Result<()> {
         },
     });
 
+    ensure_local_metadata_writable().with_context(|| {
+        "local database metadata must be writable before upgrade; run as the config owner or set OCTRA_SQLITE_CONFIG to a writable service config path"
+    })?;
     let bundle_paths =
         bundle_paths.ok_or_else(|| anyhow!("upgrade bundle path was not prepared"))?;
     create_private_dir(&bundle_paths.bundle_dir)?;
@@ -1064,6 +1067,24 @@ fn unique_upgrade_bundle_dir(root: &Path, label: &str) -> PathBuf {
     root.join(format!("{label}-{}", unix_seconds()))
 }
 
+fn ensure_local_metadata_writable() -> Result<()> {
+    let path = config_path()?;
+    ensure_local_metadata_writable_at(&path)
+}
+
+fn ensure_local_metadata_writable_at(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating config directory {}", parent.display()))?;
+    }
+    let (temporary, file) = crate::private_file::create_temporary_near(path, "octra-sqlite-config")
+        .with_context(|| format!("creating temporary metadata file beside {}", path.display()))?;
+    drop(file);
+    fs::remove_file(&temporary)
+        .with_context(|| format!("removing temporary metadata file {}", temporary.display()))?;
+    Ok(())
+}
+
 fn sanitize_path_component(value: &str) -> String {
     let mut out = String::new();
     for ch in value.chars() {
@@ -1839,6 +1860,22 @@ mod tests {
         assert!(sql.contains("create table octra_sqlite_upgrade_0123"));
         assert!(sql.contains("drop table octra_sqlite_upgrade_0123"));
         assert!(!sql.contains("if not exists"));
+    }
+
+    #[test]
+    fn upgrade_metadata_writability_probe_is_temporary() {
+        let root = env::temp_dir().join(format!(
+            "octra-sqlite-metadata-probe-{}-{}",
+            std::process::id(),
+            unix_seconds()
+        ));
+        let path = root.join("config.json");
+
+        ensure_local_metadata_writable_at(&path).unwrap();
+
+        assert!(root.exists());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

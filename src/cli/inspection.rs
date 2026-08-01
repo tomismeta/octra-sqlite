@@ -10,9 +10,10 @@ pub(super) struct MatchedWasmArtifact {
 }
 
 pub(super) struct VerifyWriteSmoke {
-    create: Value,
-    rows: Value,
-    cleanup: Value,
+    pub(super) create: Value,
+    pub(super) insert: Value,
+    pub(super) rows: Value,
+    pub(super) cleanup: Value,
 }
 
 pub(super) struct VerifyIntegrity {
@@ -1099,6 +1100,7 @@ pub(super) fn verify(
         let write_ou = resolve_verify_write_ou_arg(write_ou)?;
         let smoke = run_verify_write_smoke(session, &write_ou)?;
         print_exec_result(&smoke.create)?;
+        print_exec_result(&smoke.insert)?;
         print_result(&smoke.rows, OutputMode::Table, true)?;
         print_exec_result(&smoke.cleanup)?;
     }
@@ -1158,15 +1160,7 @@ pub(super) fn verify_json(
     let write_smoke_result = if write_smoke {
         let write_ou = resolve_verify_write_ou_arg(write_ou)?;
         let smoke = run_verify_write_smoke(session, &write_ou)?;
-        let mut envelope = write_envelope(session, smoke.create, Some(2));
-        if let Some(object) = envelope.as_object_mut() {
-            object.insert("rows".to_string(), smoke.rows);
-            object.insert(
-                "cleanup".to_string(),
-                write_envelope(session, smoke.cleanup, Some(1)),
-            );
-        }
-        Some(envelope)
+        Some(verify_write_smoke_envelope(session, smoke))
     } else {
         None
     };
@@ -1210,24 +1204,52 @@ pub(super) fn run_verify_write_smoke(
     let create = with_explorer(
         exec_sql_with_ou(
             session,
-            &format!(
-                "create table {table}(first_name text not null, last_name text not null);\n\
-                 insert into {table}(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
-            ),
+            &format!("create table {table}(first_name text not null, last_name text not null);"),
             false,
             write_ou,
         )?,
         session,
     );
+    let insert = match exec_sql_with_ou(
+        session,
+        &format!(
+            "insert into {table}(first_name,last_name) values \
+             ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
+        ),
+        false,
+        write_ou,
+    ) {
+        Ok(result) => with_explorer(result, session),
+        Err(insert) => {
+            let cleanup = exec_sql_with_ou(
+                session,
+                &format!("drop table if exists {table};"),
+                false,
+                write_ou,
+            );
+            return match cleanup {
+                Ok(_) => Err(insert.into()),
+                Err(cleanup) => Err(anyhow!(
+                    "write smoke insert failed: {insert}; cleanup also failed: {cleanup}"
+                )),
+            };
+        }
+    };
     let rows = query_typed(
         session,
         &format!("select first_name,last_name from {table} order by first_name;"),
     );
-    let cleanup = exec_sql_with_ou(session, &format!("drop table {table};"), false, write_ou)
-        .map(|result| with_explorer(result, session));
+    let cleanup = exec_sql_with_ou(
+        session,
+        &format!("drop table if exists {table};"),
+        false,
+        write_ou,
+    )
+    .map(|result| with_explorer(result, session));
     match (rows, cleanup) {
         (Ok(rows), Ok(cleanup)) => Ok(VerifyWriteSmoke {
             create,
+            insert,
             rows,
             cleanup,
         }),
@@ -1237,6 +1259,22 @@ pub(super) fn run_verify_write_smoke(
             "write smoke query failed: {query}; cleanup also failed: {cleanup}"
         )),
     }
+}
+
+pub(super) fn verify_write_smoke_envelope(session: &Session, smoke: VerifyWriteSmoke) -> Value {
+    let mut envelope = write_envelope(session, smoke.insert, Some(1));
+    if let Some(object) = envelope.as_object_mut() {
+        object.insert(
+            "create".to_string(),
+            write_envelope(session, smoke.create, Some(1)),
+        );
+        object.insert("rows".to_string(), smoke.rows);
+        object.insert(
+            "cleanup".to_string(),
+            write_envelope(session, smoke.cleanup, Some(1)),
+        );
+    }
+    envelope
 }
 
 pub(super) fn run_verify_integrity(session: &Session) -> Result<VerifyIntegrity> {

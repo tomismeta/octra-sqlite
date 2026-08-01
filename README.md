@@ -189,18 +189,22 @@ engine:
 ```sh
 octra-sqlite upgrade
 octra-sqlite upgrade art --dry-run
-octra-sqlite upgrade art
+octra-sqlite upgrade art --backup-dir ~/.octra/sqlite/upgrades
 octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801
 ```
 
 An upgrade preserves the Circle ID, SQLite pages, read mode, owner-write
 identity, and local database name. Before updating the Circle program, the CLI
-checks Circle ownership, verifies the OSW1 owner wallet, writes a local SQLite
-backup by default, and stores a private upgrade bundle with rollback WASM and
-an `upgrade.json` manifest.
+checks Circle ownership, verifies the OSW1 owner wallet, checks local metadata
+writability, writes a local SQLite backup by default, and stores a private
+upgrade bundle with rollback WASM and an `upgrade.json` manifest. Run
+upgrade/status checks with the current octra-sqlite client after a Circle
+program update.
 
 Default bundles are named with the network, Circle ID, previous SQLite version,
 and date, for example `devnet-oct...-sqlite-3.53.3-20260801`.
+Service deployments should pass `--backup-dir` to a writable app-data path and
+ensure `OCTRA_SQLITE_CONFIG` is writable by the upgrade operator.
 
 For known historical octra-sqlite release engines, the release manifest JSON is
 the catalog source of truth: base WASM SHA-256, byte length, and GitHub source
@@ -219,6 +223,9 @@ live counters needed to prove that are available. The
 optional `--write-smoke` check performs a create/insert/drop write cycle
 against the new engine. It leaves no smoke table behind, but it still dirties
 the database and makes rollback require `--force-after-writes`.
+Normal SQL writes default to `1000` OU. Program upgrades default to `200000` OU;
+use `upgrade --ou` for the program-update transaction and `upgrade
+--write-smoke --write-ou` only for the optional post-upgrade write smoke.
 
 Rollback availability matters only when `from.code_hash` differs from
 `to.code_hash`. If `upgrade --dry-run` reports `status: "already_current"`,

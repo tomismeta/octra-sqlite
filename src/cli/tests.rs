@@ -1252,6 +1252,47 @@ fn status_version_fields_accept_only_strings() {
 }
 
 #[test]
+fn verify_write_smoke_json_reports_each_write_step() {
+    let session = client_build_session(&ClientOptions {
+        target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+        rpc: Some("mock://rpc".to_string()),
+        caller: Some("octCurrent".to_string()),
+        ..ClientOptions::default()
+    })
+    .unwrap();
+    let confirmed = |hash: &str| {
+        json!({
+            "tx_hash": hash,
+            "receipt": {
+                "success": true,
+                "error": null
+            }
+        })
+    };
+    let smoke = VerifyWriteSmoke {
+        create: confirmed("create_tx"),
+        insert: confirmed("insert_tx"),
+        rows: json!({
+            "columns": ["first_name", "last_name"],
+            "rows": [["Ava", "North"]],
+            "row_count": 1
+        }),
+        cleanup: confirmed("cleanup_tx"),
+    };
+
+    let envelope = verify_write_smoke_envelope(&session, smoke);
+
+    assert_eq!(envelope["status"], "confirmed");
+    assert_eq!(envelope["tx_hash"], "insert_tx");
+    assert_eq!(envelope["statements"], 1);
+    assert_eq!(envelope["create"]["status"], "confirmed");
+    assert_eq!(envelope["create"]["tx_hash"], "create_tx");
+    assert_eq!(envelope["cleanup"]["status"], "confirmed");
+    assert_eq!(envelope["cleanup"]["tx_hash"], "cleanup_tx");
+    assert_eq!(envelope["rows"]["row_count"], 1);
+}
+
+#[test]
 fn historical_wasm_catalog_is_manifest_backed_metadata() {
     let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
     let catalog = parse_historical_wasm_catalog(&manifest).unwrap();

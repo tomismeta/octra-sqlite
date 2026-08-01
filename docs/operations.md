@@ -108,23 +108,33 @@ octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53
 
 Strict runbook for mainnet or high-value Circles:
 
-1. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
-2. If `status` is `already_current`, stop; rollback is not relevant because no
+1. Install and run the current octra-sqlite client for upgrade/status checks.
+   Older clients may still query a Circle after an engine upgrade, but their
+   status and upgrade expectations can be stale.
+2. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
+3. If `status` is `already_current`, stop; rollback is not relevant because no
    program update is pending.
-3. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
+4. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
    `from.sqlite_version`, and `to.sqlite_version`.
-4. Require `rollback.available: true` before applying. Do not use
+5. Require `rollback.available: true` before applying. Do not use
    `--unsafe-no-rollback` on mainnet; without rollback bytes, the upgrade
    bundle cannot restore the previous Circle program.
-5. Pause external writers for the database while applying the program update.
-6. Apply with `octra-sqlite upgrade DATABASE --yes --json --require-integrity`.
-7. Run `octra-sqlite status DATABASE --ready --json`, confirm `write_ready:
+6. Pause external writers for the database while applying the program update.
+7. For service deployments, set `OCTRA_SQLITE_CONFIG` to a path writable by the
+   upgrade operator and pass `--backup-dir` to a writable app-data directory.
+8. Apply with `octra-sqlite upgrade DATABASE --yes --json --require-integrity`.
+9. Run `octra-sqlite status DATABASE --ready --json`, confirm `write_ready:
    true`, `engine_current: true`, and `upgrade_needed: false`, then run an
    application query.
-8. Resume writers and confirm a real application write lands. On busy or
+10. Resume writers and confirm a real application write lands. On busy or
    production-like paths, set `OCTRA_SQLITE_WRITE_OU` before the write and
    `OCTRA_SQLITE_VERIFY_WRITE_OU` before `verify --write-smoke`, or pass
    `--ou` / `--write-ou` explicitly.
+
+Normal SQL writes default to `1000` OU. Circle program upgrades default to
+`200000` OU; `upgrade --ou` controls the program-update transaction, while
+`upgrade --write-smoke --write-ou` controls only the optional post-upgrade smoke
+write.
 
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
@@ -137,6 +147,8 @@ target-engine state without writing. A real upgrade:
 
 - verifies that the active wallet is the Circle owner and the OSW1 database
   owner;
+- verifies that the local config path is writable before submitting the program
+  update, so post-upgrade metadata finalization does not fail late;
 - patches the bundled WASM with the existing owner public key and database id;
 - recovers the currently deployed personalized WASM from local metadata, chain
   transaction history, local old release artifacts, or an explicit

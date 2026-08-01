@@ -22,6 +22,10 @@
 - Added operator hints for query/write execution budget exhaustion while
   keeping the existing `query_budget_exceeded` and `exec_budget_exceeded`
   automation codes.
+- Split `verify --write-smoke` into explicit create, insert, query, and cleanup
+  steps and report each write in JSON output.
+- Added a pre-upgrade local metadata writability check so service config
+  permission problems fail before the Circle program update is submitted.
 - Updated the release manifest, toolchain record, README badge, and roadmap for
   the 3.53.4 engine epoch.
 - Added a WASM harness smoke test for the 3.53.4 engine path: version reporting,
