@@ -138,11 +138,11 @@
     "unbounded_exec_budget_proven": true,
     "upgrade_owner_sequence_fallback_proven": true,
     "wasm_audit": "passed",
-    "devnet": "vitals_rehearsal_confirmed_3.53.3_to_3.53.4_upgrade",
+    "devnet": "passed",
     "mainnet": "vitals_mainnet_confirmed_3.53.3_to_3.53.4_upgrade"
   },
   "public_deployment": {
-    "status": "not_refreshed_for_0.6.3",
+    "status": "deployed",
     "deployment_kind": "inherited_public_read_proof",
     "inherited_from_release": "0.6.1",
     "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
