@@ -1081,9 +1081,39 @@ fn new_accepts_initializer_write_ou() {
         Commands::New(args) => {
             assert_eq!(args.name.as_deref(), Some("my-db"));
             assert_eq!(args.ou.as_deref(), Some("10000"));
+            assert_eq!(
+                resolve_new_initializer_write_ou(&args, &["create table t(id);".to_string()])
+                    .unwrap()
+                    .as_deref(),
+                Some("10000")
+            );
         }
         _ => panic!("expected new command"),
     }
+}
+
+#[test]
+fn new_rejects_invalid_initializer_write_ou_before_creation() {
+    let mut args = test_new_args("my-db");
+    args.ou = Some("nope".to_string());
+    let error =
+        resolve_new_initializer_write_ou(&args, &["create table t(id);".to_string()]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("--ou must be a positive decimal integer"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn new_without_initializer_does_not_need_write_ou() {
+    let args = test_new_args("my-db");
+    assert!(
+        resolve_new_initializer_write_ou(&args, &[])
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
