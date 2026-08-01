@@ -16,6 +16,12 @@
 - Added `nonce` and signed `ou` metadata to submitted write results and
   introduced the stable `receipt_pending` CLI error code for accepted writes
   whose receipt is not available before the wait deadline.
+- Promoted `sqlite_version` and `program_version` to stable top-level
+  `status --json` fields alongside `read_ready`, `write_ready`,
+  `engine_current`, and `upgrade_needed`.
+- Added operator hints for query/write execution budget exhaustion while
+  keeping the existing `query_budget_exceeded` and `exec_budget_exceeded`
+  automation codes.
 - Updated the release manifest, toolchain record, README badge, and roadmap for
   the 3.53.4 engine epoch.
 - Added a WASM harness smoke test for the 3.53.4 engine path: version reporting,

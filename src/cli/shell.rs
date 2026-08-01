@@ -15,7 +15,7 @@ use super::portability::{
     import_csv_with_ou, sql_string_literal,
 };
 use super::{
-    BackupSummary, SqlRunOptions, format_schema_result, linked_circle, print_field,
+    BackupSummary, SqlRunOptions, error_hint, format_schema_result, linked_circle, print_field,
     resolve_write_ou_arg, run_one_sql_to, verify,
 };
 
@@ -119,6 +119,9 @@ pub(super) fn run_shell(
                 },
             ) {
                 eprintln!("error: {error:#}");
+                if let Some(hint) = error_hint(&error) {
+                    eprintln!("hint: {hint}");
+                }
             }
             if state.timer {
                 println!("Run Time: real {:.3}", started.elapsed().as_secs_f64());

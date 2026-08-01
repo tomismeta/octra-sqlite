@@ -1214,6 +1214,44 @@ fn status_tracks_upgrade_needed_separately_from_readiness() {
 }
 
 #[test]
+fn status_json_promotes_stable_versions_and_upgrade_state() {
+    let mut report = StatusReport::new("status", true);
+    report.init_database_readiness();
+    for key in DATABASE_READINESS_KEYS {
+        report.ready(key, true);
+    }
+    report.sqlite_version("3.53.4");
+    report.program_version("5");
+    report.engine_current(true);
+
+    let value = report.into_json_value(true, true, true, Some(false));
+
+    assert_eq!(value["sqlite_version"], "3.53.4");
+    assert_eq!(value["program_version"], "5");
+    assert_eq!(value["engine_current"], true);
+    assert_eq!(value["upgrade_needed"], false);
+    assert_eq!(value["read_ready"], true);
+    assert_eq!(value["write_ready"], true);
+}
+
+#[test]
+fn status_version_fields_accept_only_strings() {
+    assert_eq!(
+        program_version_string(&json!({"version": "5"})),
+        Some("5".to_string())
+    );
+    assert_eq!(program_version_string(&json!({"version": 5})), None);
+    assert_eq!(program_version_string(&json!({"version": null})), None);
+
+    assert_eq!(
+        first_result_string(&json!({"rows": [["3.53.4"]]})),
+        Some("3.53.4".to_string())
+    );
+    assert_eq!(first_result_string(&json!({"rows": [[3.53]]})), None);
+    assert_eq!(first_result_string(&json!({"rows": []})), None);
+}
+
+#[test]
 fn historical_wasm_catalog_is_manifest_backed_metadata() {
     let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
     let catalog = parse_historical_wasm_catalog(&manifest).unwrap();

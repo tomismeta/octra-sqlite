@@ -682,7 +682,7 @@ pub fn run_with_exit_code() -> Result<i32> {
     }
 }
 
-pub use error::{error_code, error_details};
+pub use error::{error_code, error_details, error_hint};
 
 fn normalize_args(mut args: Vec<String>) -> Vec<String> {
     const KNOWN: &[&str] = &[

@@ -52,6 +52,16 @@ pub fn error_code(error: &AnyError) -> &'static str {
     classified_error_code(error).unwrap_or("command_failed")
 }
 
+/// Return an operator-facing hint for stable errors with a known recovery path.
+pub fn error_hint(error: &AnyError) -> Option<&'static str> {
+    match error_code(error) {
+        "query_budget_exceeded" | "exec_budget_exceeded" => Some(
+            "SQL exceeded Circle fuel; reduce joins, window-function work, or LIMIT size, or use an index-backed access pattern.",
+        ),
+        _ => None,
+    }
+}
+
 /// Return structured error details when a typed source supplies them.
 pub fn error_details(error: &AnyError) -> Option<Value> {
     for cause in error.chain() {
@@ -146,6 +156,12 @@ mod tests {
             "query exceeded deterministic SQLite work limit",
         ));
         assert_eq!(error_code(&error), "query_budget_exceeded");
+        assert_eq!(
+            error_hint(&error),
+            Some(
+                "SQL exceeded Circle fuel; reduce joins, window-function work, or LIMIT size, or use an index-backed access pattern."
+            )
+        );
     }
 
     #[test]

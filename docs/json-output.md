@@ -34,6 +34,10 @@ include `tx_hash`, `nonce`, `ou`, `circle`, `database`, and `next_command`.
 `nonce` and `ou` are present for writes submitted by the current command and may
 be `null` when polling an already-submitted transaction.
 
+Some errors also include `error.hint` for operator guidance. Budget errors keep
+their stable code and may add a hint to reduce query work, lower result limits,
+or use an index-backed access pattern.
+
 Process exit codes are intentionally small for now:
 
 | Exit | Meaning |
@@ -396,15 +400,19 @@ Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
 embedded typed SQLite query result.
 
-`status --json` includes `ready`, `read_ready`, `write_ready`, and readiness
-booleans for automation: `circle_reachable`, `auth_readable`,
-`owner_write_valid`, `storage_initialized`, `sqlite_ready`, and `query_ready`.
-Values are `null` when live checks are skipped or not reached.
+`status --json` includes top-level fields for automation: `ready`,
+`read_ready`, `write_ready`, `sqlite_version`, `program_version`,
+`engine_current`, and `upgrade_needed`. Version fields are `null` when the live
+check is skipped or cannot complete.
 
-It also reports `engine_current` and `upgrade_needed`. A known historical
-octra-sqlite engine can be read/write healthy while `engine_current` is `false`
-and `upgrade_needed` is `true`; that is an upgrade signal, not a generic
-readiness failure.
+The nested `readiness` object reports the underlying checks:
+`circle_reachable`, `auth_readable`, `owner_write_valid`,
+`storage_initialized`, `sqlite_ready`, and `query_ready`. Values are `null` when
+live checks are skipped or not reached.
+
+A known historical octra-sqlite engine can be read/write healthy while
+`engine_current` is `false` and `upgrade_needed` is `true`; that is an upgrade
+signal, not a generic readiness failure.
 
 Use `status DATABASE --ready` as the read/query operational gate. With `--json`,
 it prints the same single status envelope and exits nonzero when `read_ready` is

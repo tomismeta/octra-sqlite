@@ -228,6 +228,8 @@ pub(super) struct StatusReport {
     json: bool,
     failures: usize,
     warnings: usize,
+    pub(super) sqlite_version: Option<String>,
+    pub(super) program_version: Option<String>,
     pub(super) engine_current: Option<bool>,
     items: Vec<Value>,
     readiness: Map<String, Value>,
@@ -240,6 +242,8 @@ impl StatusReport {
             json,
             failures: 0,
             warnings: 0,
+            sqlite_version: None,
+            program_version: None,
             engine_current: None,
             items: Vec::new(),
             readiness: Map::new(),
@@ -280,6 +284,14 @@ impl StatusReport {
         self.engine_current = Some(current);
     }
 
+    pub(super) fn program_version(&mut self, version: impl Into<String>) {
+        self.program_version = Some(version.into());
+    }
+
+    pub(super) fn sqlite_version(&mut self, version: impl Into<String>) {
+        self.sqlite_version = Some(version.into());
+    }
+
     pub(super) fn init_database_readiness(&mut self) {
         for key in DATABASE_READINESS_KEYS {
             self.readiness.insert(key.to_string(), Value::Null);
@@ -296,24 +308,8 @@ impl StatusReport {
         let ok = self.failures == 0 && (!require_ready || read_ready);
         let upgrade_needed = self.engine_current.map(|current| !current);
         if self.json {
-            let mut readiness = self.readiness;
-            readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
-            readiness.insert("write_ready".to_string(), Value::Bool(write_ready));
-            return print_json(&json!({
-                "ok": ok,
-                "type": self.label,
-                "schema": "octra-sqlite.cli.v1",
-                "ready": read_ready,
-                "read_ready": read_ready,
-                "write_ready": write_ready,
-                "engine_current": self.engine_current,
-                "upgrade_needed": upgrade_needed,
-                "failures": self.failures,
-                "warnings": self.warnings,
-                "readiness": readiness,
-                "items": self.items,
-            }))
-            .map(|_| if ok { 0 } else { 1 });
+            return print_json(&self.into_json_value(ok, read_ready, write_ready, upgrade_needed))
+                .map(|_| if ok { 0 } else { 1 });
         }
         if self.failures != 0 {
             bail!("{label} found {} issue(s)", self.failures)
@@ -334,6 +330,34 @@ impl StatusReport {
             );
             Ok(0)
         }
+    }
+
+    pub(super) fn into_json_value(
+        self,
+        ok: bool,
+        read_ready: bool,
+        write_ready: bool,
+        upgrade_needed: Option<bool>,
+    ) -> Value {
+        let mut readiness = self.readiness;
+        readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
+        readiness.insert("write_ready".to_string(), Value::Bool(write_ready));
+        json!({
+            "ok": ok,
+            "type": self.label,
+            "schema": "octra-sqlite.cli.v1",
+            "ready": read_ready,
+            "read_ready": read_ready,
+            "write_ready": write_ready,
+            "sqlite_version": self.sqlite_version,
+            "program_version": self.program_version,
+            "engine_current": self.engine_current,
+            "upgrade_needed": upgrade_needed,
+            "failures": self.failures,
+            "warnings": self.warnings,
+            "readiness": readiness,
+            "items": self.items,
+        })
     }
 
     pub(super) fn read_ready(&self) -> bool {
@@ -463,10 +487,11 @@ pub(super) fn check_live_target(report: &mut StatusReport, session: &Session, ex
                 "circle",
                 linked_circle(&session.target().network, &session.target().circle),
             );
-            let version = info
-                .get("version")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown");
+            let program_version = program_version_string(&info);
+            if let Some(version) = program_version.clone() {
+                report.program_version(version);
+            }
+            let version = program_version.as_deref().unwrap_or("unknown");
             let code_hash = info
                 .get("code_hash")
                 .and_then(Value::as_str)
@@ -683,14 +708,22 @@ pub(super) fn check_live_target(report: &mut StatusReport, session: &Session, ex
         }
     }
     match query_typed(session, "select sqlite_version() as sqlite_version;") {
-        Ok(result) => {
-            report.ready("sqlite_ready", true);
-            report.ready("query_ready", true);
-            report.ok(
-                "sqlite version",
-                first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
-            );
-        }
+        Ok(result) => match first_result_string(&result) {
+            Some(sqlite_version) => {
+                report.ready("sqlite_ready", true);
+                report.ready("query_ready", true);
+                report.sqlite_version(sqlite_version.clone());
+                report.ok("sqlite version", sqlite_version);
+            }
+            None => {
+                report.ready("sqlite_ready", false);
+                report.ready("query_ready", false);
+                report.fail(
+                    "sqlite version",
+                    "sqlite_version() returned no string value",
+                );
+            }
+        },
         Err(error) => {
             report.ready("sqlite_ready", false);
             report.ready("query_ready", false);
@@ -707,6 +740,23 @@ pub(super) fn first_result_cell(result: &Value) -> Option<String> {
         .as_array()?
         .first()
         .map(value_to_string)
+}
+
+pub(super) fn first_result_string(result: &Value) -> Option<String> {
+    result
+        .get("rows")?
+        .as_array()?
+        .first()?
+        .as_array()?
+        .first()?
+        .as_str()
+        .map(str::to_string)
+}
+
+pub(super) fn program_version_string(info: &Value) -> Option<String> {
+    info.get("version")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 pub(super) fn program_owner(info: &Value) -> Option<&str> {

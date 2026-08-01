@@ -8,6 +8,9 @@ fn main() {
                 eprintln!("{}", error_envelope(&error, &message));
             } else {
                 eprintln!("error: {message}");
+                if let Some(hint) = octra_sqlite::cli::error_hint(&error) {
+                    eprintln!("hint: {hint}");
+                }
             }
             std::process::exit(1);
         }
@@ -31,6 +34,14 @@ fn error_envelope(error: &anyhow::Error, message: &str) -> serde_json::Value {
         && let Some(object) = error_object.as_object_mut()
     {
         object.insert("details".to_string(), details);
+    }
+    if let Some(hint) = octra_sqlite::cli::error_hint(error)
+        && let Some(object) = error_object.as_object_mut()
+    {
+        object.insert(
+            "hint".to_string(),
+            serde_json::Value::String(hint.to_string()),
+        );
     }
     serde_json::json!({
         "ok": false,
