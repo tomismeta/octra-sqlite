@@ -153,11 +153,11 @@ octra-sqlite restore DATABASE --file dump.sql --ou 200000
 octra-sqlite verify DATABASE --write-smoke --write-ou 200000
 ```
 
-Normal SQL writes default to `1000` OU. Circle program upgrades default to
-`200000` OU and are not a recurring writer cost. For service upgrades, run the
-current octra-sqlite client, set `OCTRA_SQLITE_CONFIG` to a path writable by the
-upgrade operator, and pass `upgrade --backup-dir` to a writable app-data
-directory.
+Normal SQL writes, including `new` initializer SQL, default to `1000` OU. Circle
+creation and program upgrades default to `200000` OU and are not a recurring
+writer cost. For service upgrades, run the current octra-sqlite client, set
+`OCTRA_SQLITE_CONFIG` to a path writable by the upgrade operator, and pass
+`upgrade --backup-dir` to a writable app-data directory.
 
 If a submitted write times out waiting for its receipt, recover from the
 transaction hash instead of resubmitting the SQL:

@@ -56,8 +56,7 @@ use portability::{
     MAX_SQL_TEXT_BYTES, SQL_BATCH_TARGET_BYTES, SqlBatchProgress, SqlScriptExecution,
     SqlScriptPlan, backup_database, ensure_sql_text_fits,
     execute_sql_script_with_bootstrap_owner_progress, execute_sql_script_with_owner_auth_progress,
-    execute_sql_script_with_progress, execute_sql_script_with_progress_ou, plan_sql_script,
-    run_local_sqlite_integrity, submit_sql_script_no_wait,
+    execute_sql_script_with_progress_ou, plan_sql_script, run_local_sqlite_integrity,
 };
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -325,6 +324,9 @@ struct NewArgs {
     /// OU budget for Circle creation.
     #[arg(long, default_value = "200000")]
     create_ou: String,
+    /// OU budget for initializer SQL writes. Defaults to OCTRA_SQLITE_WRITE_OU or 1000.
+    #[arg(long)]
+    ou: Option<String>,
     /// Octra RPC URL.
     #[arg(long)]
     rpc: Option<String>,

@@ -45,6 +45,7 @@ The reference configurable database creation path is:
 octra-sqlite new
 octra-sqlite new DATABASE
 octra-sqlite new DATABASE --sample artists
+octra-sqlite new DATABASE --ou 200000 --sample artists
 octra-sqlite new DATABASE --schema schema.sql --manifest database.json --json
 octra-sqlite new DATABASE --read-mode public --schema public-schema.sql
 octra-sqlite new DATABASE < schema.sql
@@ -136,10 +137,10 @@ They should stay expressive enough that users do not need to inspect
 read/write relationship without printing wallet secrets.
 For automation, use `--json` on non-interactive commands and prefer full
 `oct://NETWORK/<circle>` URIs over local database names.
-Owner-signed SQL writes use `--ou` or `OCTRA_SQLITE_WRITE_OU`; verify write
-smoke uses `--write-ou` or `OCTRA_SQLITE_VERIFY_WRITE_OU`. If receipt polling
-times out after a successful submit, use `receipt TX_HASH [DATABASE] --json`
-instead of resubmitting SQL.
+Owner-signed SQL writes use `--ou` or `OCTRA_SQLITE_WRITE_OU`; this includes
+`new` initializer SQL. Verify write-smoke uses `--write-ou` or
+`OCTRA_SQLITE_VERIFY_WRITE_OU`. If receipt polling times out after a successful
+submit, use `receipt TX_HASH [DATABASE] --json` instead of resubmitting SQL.
 Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the
 Octra JSON-RPC request/response envelope for proof or debugging. Use
 `--trace-rpc-json-mode summary` when hashes and sizes are enough.

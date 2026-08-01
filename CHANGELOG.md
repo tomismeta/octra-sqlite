@@ -7,8 +7,8 @@
 - Added the 0.6.1-0.6.2 Circle WASM as a metadata-only historical upgrade
   catalog entry so rollback recovery can identify the previous 3.53.3 epoch
   without bundling old WASM bytes.
-- Added `--ou` for ordinary CLI SQL writes and restore batches, plus
-  `OCTRA_SQLITE_WRITE_OU` as the CLI write budget default.
+- Added `--ou` for ordinary CLI SQL writes, `new` initializer SQL, and restore
+  batches, plus `OCTRA_SQLITE_WRITE_OU` as the CLI write budget default.
 - Added `verify --write-ou`, `upgrade --write-smoke --write-ou`, and
   `OCTRA_SQLITE_VERIFY_WRITE_OU` for confirmed write-smoke rehearsals.
 - Added `receipt TX_HASH [DATABASE] --json` for following an already-submitted

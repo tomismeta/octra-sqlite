@@ -409,12 +409,13 @@ pub(super) fn run_initializer_sql(
     args: &NewArgs,
     init_sql: &[String],
 ) -> Result<Vec<SqlScriptExecution>> {
+    let write_ou = resolve_write_ou_arg(args.ou.as_deref())?;
     let mut executions = Vec::new();
     for sql in init_sql {
         let mut execution = if args.no_wait {
-            submit_sql_script_no_wait(session, sql)?
+            execute_sql_script_with_progress_ou(session, sql, true, &write_ou, |_| {})?
         } else {
-            execute_sql_script_with_progress(session, sql, false, |_| {})?
+            execute_sql_script_with_progress_ou(session, sql, false, &write_ou, |_| {})?
         };
         for result in &mut execution.results {
             let raw = std::mem::take(result);

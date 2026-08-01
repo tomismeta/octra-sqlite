@@ -131,10 +131,11 @@ Strict runbook for mainnet or high-value Circles:
    `OCTRA_SQLITE_VERIFY_WRITE_OU` before `verify --write-smoke`, or pass
    `--ou` / `--write-ou` explicitly.
 
-Normal SQL writes default to `1000` OU. Circle program upgrades default to
-`200000` OU; `upgrade --ou` controls the program-update transaction, while
-`upgrade --write-smoke --write-ou` controls only the optional post-upgrade smoke
-write.
+Normal SQL writes, including `new` initializer SQL, default to `1000` OU. Circle
+creation and program upgrades default to `200000` OU. `new --create-ou`
+controls Circle creation, `new --ou` controls initializer SQL, `upgrade --ou`
+controls the program-update transaction, and `upgrade --write-smoke --write-ou`
+controls only the optional post-upgrade smoke write.
 
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
@@ -268,8 +269,9 @@ On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
 transient `429`, `503`, timeout, and non-JSON gateway responses. It does not
 silently replay accepted write submissions.
 
-Owner-signed SQL writes default to `1000` OU. Operators can raise the signed
-budget without changing SQL:
+Owner-signed SQL writes default to `1000` OU. That includes `open` writes,
+shell/import writes, `new` initializer SQL, restore batches, and write-smoke
+helpers. Operators can raise the signed budget without changing SQL:
 
 ```sh
 export OCTRA_SQLITE_WRITE_OU=200000

@@ -312,13 +312,6 @@ fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-pub(super) fn submit_sql_script_no_wait(
-    session: &Session,
-    sql: &str,
-) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_progress(session, sql, true, |_| {})
-}
-
 pub(super) fn plan_sql_script(sql: &str) -> Result<SqlScriptPlan> {
     let statements = planned_statements(sql)?;
     let batches = script_batches(&statements)?;
@@ -338,15 +331,6 @@ pub(super) fn plan_sql_script(sql: &str) -> Result<SqlScriptPlan> {
             .unwrap_or(0),
         max_payload_bytes: batches.iter().map(|batch| batch.bytes).max().unwrap_or(0),
     })
-}
-
-pub(super) fn execute_sql_script_with_progress(
-    session: &Session,
-    sql: &str,
-    no_wait: bool,
-    mut progress: impl FnMut(SqlBatchProgress),
-) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_submitter(session, sql, no_wait, false, &mut progress)
 }
 
 pub(super) fn execute_sql_script_with_progress_ou(
@@ -397,16 +381,6 @@ pub(super) fn execute_sql_script_with_bootstrap_owner_progress(
         verbose_sql,
         &mut progress,
     )
-}
-
-fn execute_sql_script_with_submitter(
-    session: &Session,
-    sql: &str,
-    no_wait: bool,
-    verbose_sql: bool,
-    progress: &mut impl FnMut(SqlBatchProgress),
-) -> Result<SqlScriptExecution> {
-    execute_sql_script_with_submitter_ou(session, sql, no_wait, None, verbose_sql, progress)
 }
 
 fn execute_sql_script_with_submitter_ou(

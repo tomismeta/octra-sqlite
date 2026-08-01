@@ -223,9 +223,11 @@ live counters needed to prove that are available. The
 optional `--write-smoke` check performs a create/insert/drop write cycle
 against the new engine. It leaves no smoke table behind, but it still dirties
 the database and makes rollback require `--force-after-writes`.
-Normal SQL writes default to `1000` OU. Program upgrades default to `200000` OU;
-use `upgrade --ou` for the program-update transaction and `upgrade
---write-smoke --write-ou` only for the optional post-upgrade write smoke.
+Normal SQL writes, including `new` initializer SQL, default to `1000` OU.
+Circle creation and program upgrades default to `200000` OU. Use `new --ou` for
+initializer SQL, `upgrade --ou` for the program-update transaction, and
+`upgrade --write-smoke --write-ou` only for the optional post-upgrade write
+smoke.
 
 Rollback availability matters only when `from.code_hash` differs from
 `to.code_hash`. If `upgrade --dry-run` reports `status: "already_current"`,
@@ -244,6 +246,7 @@ URI.
 | `octra-sqlite setup` | Interactive wallet and network setup. |
 | `octra-sqlite new [DATABASE] [SQL]` | Create a Circle-backed SQLite database. |
 | `octra-sqlite new DATABASE --sample NAME` | Create a database from an explicit built-in sample. |
+| `octra-sqlite new DATABASE --ou OU` | Set the initializer SQL write budget. |
 | `octra-sqlite new DATABASE --read-mode public` | Create a public-read database; writes remain owner-signed. |
 | `octra-sqlite DATABASE "SQL"` | Run one SQL statement or script against a database; use `--ou` for owner-signed write budget. |
 | `octra-sqlite DATABASE --read-only "SQL"` | Run SQL while refusing state-changing statements. |

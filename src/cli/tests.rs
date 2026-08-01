@@ -958,6 +958,7 @@ fn test_new_args(name: &str) -> NewArgs {
         build: false,
         wasm: None,
         create_ou: "200000".to_string(),
+        ou: None,
         rpc: None,
         network: Some("devnet".to_string()),
         read_mode: ReadModeArg::Sealed,
@@ -1068,6 +1069,18 @@ fn new_accepts_builtin_sample() {
         Commands::New(args) => {
             assert_eq!(args.name.as_deref(), Some("my-db"));
             assert_eq!(args.sample.as_deref(), Some("artists"));
+        }
+        _ => panic!("expected new command"),
+    }
+}
+
+#[test]
+fn new_accepts_initializer_write_ou() {
+    let cli = Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--ou", "10000"]).unwrap();
+    match cli.command {
+        Commands::New(args) => {
+            assert_eq!(args.name.as_deref(), Some("my-db"));
+            assert_eq!(args.ou.as_deref(), Some("10000"));
         }
         _ => panic!("expected new command"),
     }
