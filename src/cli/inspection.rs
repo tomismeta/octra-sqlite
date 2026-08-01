@@ -10,9 +10,10 @@ pub(super) struct MatchedWasmArtifact {
 }
 
 pub(super) struct VerifyWriteSmoke {
-    create: Value,
-    rows: Value,
-    cleanup: Value,
+    pub(super) create: Value,
+    pub(super) insert: Value,
+    pub(super) rows: Value,
+    pub(super) cleanup: Value,
 }
 
 pub(super) struct VerifyIntegrity {
@@ -228,6 +229,8 @@ pub(super) struct StatusReport {
     json: bool,
     failures: usize,
     warnings: usize,
+    pub(super) sqlite_version: Option<String>,
+    pub(super) program_version: Option<String>,
     pub(super) engine_current: Option<bool>,
     items: Vec<Value>,
     readiness: Map<String, Value>,
@@ -240,6 +243,8 @@ impl StatusReport {
             json,
             failures: 0,
             warnings: 0,
+            sqlite_version: None,
+            program_version: None,
             engine_current: None,
             items: Vec::new(),
             readiness: Map::new(),
@@ -280,6 +285,14 @@ impl StatusReport {
         self.engine_current = Some(current);
     }
 
+    pub(super) fn program_version(&mut self, version: impl Into<String>) {
+        self.program_version = Some(version.into());
+    }
+
+    pub(super) fn sqlite_version(&mut self, version: impl Into<String>) {
+        self.sqlite_version = Some(version.into());
+    }
+
     pub(super) fn init_database_readiness(&mut self) {
         for key in DATABASE_READINESS_KEYS {
             self.readiness.insert(key.to_string(), Value::Null);
@@ -296,24 +309,8 @@ impl StatusReport {
         let ok = self.failures == 0 && (!require_ready || read_ready);
         let upgrade_needed = self.engine_current.map(|current| !current);
         if self.json {
-            let mut readiness = self.readiness;
-            readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
-            readiness.insert("write_ready".to_string(), Value::Bool(write_ready));
-            return print_json(&json!({
-                "ok": ok,
-                "type": self.label,
-                "schema": "octra-sqlite.cli.v1",
-                "ready": read_ready,
-                "read_ready": read_ready,
-                "write_ready": write_ready,
-                "engine_current": self.engine_current,
-                "upgrade_needed": upgrade_needed,
-                "failures": self.failures,
-                "warnings": self.warnings,
-                "readiness": readiness,
-                "items": self.items,
-            }))
-            .map(|_| if ok { 0 } else { 1 });
+            return print_json(&self.into_json_value(ok, read_ready, write_ready, upgrade_needed))
+                .map(|_| if ok { 0 } else { 1 });
         }
         if self.failures != 0 {
             bail!("{label} found {} issue(s)", self.failures)
@@ -334,6 +331,34 @@ impl StatusReport {
             );
             Ok(0)
         }
+    }
+
+    pub(super) fn into_json_value(
+        self,
+        ok: bool,
+        read_ready: bool,
+        write_ready: bool,
+        upgrade_needed: Option<bool>,
+    ) -> Value {
+        let mut readiness = self.readiness;
+        readiness.insert("read_ready".to_string(), Value::Bool(read_ready));
+        readiness.insert("write_ready".to_string(), Value::Bool(write_ready));
+        json!({
+            "ok": ok,
+            "type": self.label,
+            "schema": "octra-sqlite.cli.v1",
+            "ready": read_ready,
+            "read_ready": read_ready,
+            "write_ready": write_ready,
+            "sqlite_version": self.sqlite_version,
+            "program_version": self.program_version,
+            "engine_current": self.engine_current,
+            "upgrade_needed": upgrade_needed,
+            "failures": self.failures,
+            "warnings": self.warnings,
+            "readiness": readiness,
+            "items": self.items,
+        })
     }
 
     pub(super) fn read_ready(&self) -> bool {
@@ -463,10 +488,11 @@ pub(super) fn check_live_target(report: &mut StatusReport, session: &Session, ex
                 "circle",
                 linked_circle(&session.target().network, &session.target().circle),
             );
-            let version = info
-                .get("version")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown");
+            let program_version = program_version_string(&info);
+            if let Some(version) = program_version.clone() {
+                report.program_version(version);
+            }
+            let version = program_version.as_deref().unwrap_or("unknown");
             let code_hash = info
                 .get("code_hash")
                 .and_then(Value::as_str)
@@ -683,14 +709,22 @@ pub(super) fn check_live_target(report: &mut StatusReport, session: &Session, ex
         }
     }
     match query_typed(session, "select sqlite_version() as sqlite_version;") {
-        Ok(result) => {
-            report.ready("sqlite_ready", true);
-            report.ready("query_ready", true);
-            report.ok(
-                "sqlite version",
-                first_result_cell(&result).unwrap_or_else(|| value_to_string(&result)),
-            );
-        }
+        Ok(result) => match first_result_string(&result) {
+            Some(sqlite_version) => {
+                report.ready("sqlite_ready", true);
+                report.ready("query_ready", true);
+                report.sqlite_version(sqlite_version.clone());
+                report.ok("sqlite version", sqlite_version);
+            }
+            None => {
+                report.ready("sqlite_ready", false);
+                report.ready("query_ready", false);
+                report.fail(
+                    "sqlite version",
+                    "sqlite_version() returned no string value",
+                );
+            }
+        },
         Err(error) => {
             report.ready("sqlite_ready", false);
             report.ready("query_ready", false);
@@ -707,6 +741,23 @@ pub(super) fn first_result_cell(result: &Value) -> Option<String> {
         .as_array()?
         .first()
         .map(value_to_string)
+}
+
+pub(super) fn first_result_string(result: &Value) -> Option<String> {
+    result
+        .get("rows")?
+        .as_array()?
+        .first()?
+        .as_array()?
+        .first()?
+        .as_str()
+        .map(str::to_string)
+}
+
+pub(super) fn program_version_string(info: &Value) -> Option<String> {
+    info.get("version")
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 pub(super) fn program_owner(info: &Value) -> Option<&str> {
@@ -842,15 +893,114 @@ pub(super) fn render_historical_wasm_match(
     )
 }
 
+pub(super) fn cmd_receipt(args: ReceiptArgs) -> Result<i32> {
+    let session = build_session(&args.target)?;
+    let receipt = wait_for_receipt(&session, &args.tx_hash).map_err(|error| {
+        if error.kind() == ErrorKind::Timeout {
+            let database = canonical_database_uri(session.target());
+            let next_command = format!("octra-sqlite receipt {} {database} --json", args.tx_hash);
+            Error::with_code_and_details(
+                ErrorKind::Timeout,
+                "receipt_pending",
+                format!(
+                    "receipt is still pending; tx_hash={}; circle={}; next=\"{next_command}\"",
+                    args.tx_hash,
+                    session.target().circle
+                ),
+                [
+                    ("tx_hash", Value::String(args.tx_hash.clone())),
+                    ("circle", Value::String(session.target().circle.clone())),
+                    ("database", Value::String(database)),
+                    ("nonce", Value::Null),
+                    ("ou", Value::Null),
+                    ("next_command", Value::String(next_command)),
+                ],
+            )
+        } else {
+            error
+        }
+    })?;
+    ensure_receipt_matches_circle(&receipt, &session.target().circle)?;
+    let tx_hash = args.tx_hash;
+    let mut result = json!({
+        "circle": session.target().circle.clone(),
+        "tx_hash": tx_hash,
+        "result": {},
+        "receipt": receipt,
+    });
+    result = with_explorer(result, &session);
+    let success = receipt_result_success(&result);
+
+    if args.json {
+        print_json(&json!({
+            "ok": success,
+            "type": "receipt",
+            "schema": "octra-sqlite.cli.v1",
+            "database": database_identity(&session),
+            "status": if success { "confirmed" } else { "rejected" },
+            "tx_hash": result.get("tx_hash").cloned().unwrap_or(Value::Null),
+            "tx_url": result.get("tx_url").cloned().unwrap_or(Value::Null),
+            "receipt": result.get("receipt").cloned().unwrap_or(Value::Null),
+            "result": result,
+        }))?;
+    } else {
+        print_exec_result(&result)?;
+    }
+    Ok(if success { 0 } else { 1 })
+}
+
+pub(super) fn receipt_result_success(result: &Value) -> bool {
+    ExecuteResult::from_value(result.clone()).is_ok()
+}
+
+pub(super) fn ensure_receipt_matches_circle(receipt: &Value, expected_circle: &str) -> Result<()> {
+    let Some(actual_circle) = receipt_circle(receipt) else {
+        return Err(Error::with_code_and_details(
+            ErrorKind::Receipt,
+            "receipt_target_mismatch",
+            format!(
+                "receipt does not identify its Circle; refusing to confirm against {expected_circle}"
+            ),
+            [("circle", Value::String(expected_circle.to_string()))],
+        )
+        .into());
+    };
+    if actual_circle != expected_circle {
+        return Err(Error::with_code_and_details(
+            ErrorKind::Receipt,
+            "receipt_target_mismatch",
+            format!(
+                "receipt Circle {actual_circle} does not match selected database Circle {expected_circle}"
+            ),
+            [
+                ("circle", Value::String(expected_circle.to_string())),
+                ("receipt_circle", Value::String(actual_circle.to_string())),
+            ],
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn receipt_circle(receipt: &Value) -> Option<&str> {
+    receipt
+        .get("contract")
+        .or_else(|| receipt.get("circle"))
+        .or_else(|| receipt.get("to_"))
+        .or_else(|| receipt.get("to"))
+        .and_then(Value::as_str)
+}
+
 pub(super) fn verify(
     session: &Session,
     expected_hash: Option<&str>,
     write_smoke: bool,
+    write_ou: Option<&str>,
     integrity: bool,
     json_mode: bool,
 ) -> Result<()> {
     if json_mode {
-        return verify_json(session, expected_hash, write_smoke, integrity);
+        return verify_json(session, expected_hash, write_smoke, write_ou, integrity);
     }
     print_field("database", &session.target().raw);
     print_field(
@@ -947,8 +1097,10 @@ pub(super) fn verify(
     )?;
     print_result(&tables, OutputMode::Table, true)?;
     if write_smoke {
-        let smoke = run_verify_write_smoke(session)?;
+        let write_ou = resolve_verify_write_ou_arg(write_ou)?;
+        let smoke = run_verify_write_smoke(session, &write_ou)?;
         print_exec_result(&smoke.create)?;
+        print_exec_result(&smoke.insert)?;
         print_result(&smoke.rows, OutputMode::Table, true)?;
         print_exec_result(&smoke.cleanup)?;
     }
@@ -971,6 +1123,7 @@ pub(super) fn verify_json(
     session: &Session,
     expected_hash: Option<&str>,
     write_smoke: bool,
+    write_ou: Option<&str>,
     integrity: bool,
 ) -> Result<()> {
     let info = program_info(session)?;
@@ -1005,16 +1158,9 @@ pub(super) fn verify_json(
         "select name from sqlite_master where type='table' order by name;",
     )?;
     let write_smoke_result = if write_smoke {
-        let smoke = run_verify_write_smoke(session)?;
-        let mut envelope = write_envelope(session, smoke.create, Some(2));
-        if let Some(object) = envelope.as_object_mut() {
-            object.insert("rows".to_string(), smoke.rows);
-            object.insert(
-                "cleanup".to_string(),
-                write_envelope(session, smoke.cleanup, Some(1)),
-            );
-        }
-        Some(envelope)
+        let write_ou = resolve_verify_write_ou_arg(write_ou)?;
+        let smoke = run_verify_write_smoke(session, &write_ou)?;
+        Some(verify_write_smoke_envelope(session, smoke))
     } else {
         None
     };
@@ -1050,28 +1196,60 @@ pub(super) fn verify_json(
     }))
 }
 
-pub(super) fn run_verify_write_smoke(session: &Session) -> Result<VerifyWriteSmoke> {
+pub(super) fn run_verify_write_smoke(
+    session: &Session,
+    write_ou: &str,
+) -> Result<VerifyWriteSmoke> {
     let table = smoke_table_name("verify", session);
     let create = with_explorer(
-        exec_sql(
+        exec_sql_with_ou(
             session,
-            &format!(
-                "create table {table}(first_name text not null, last_name text not null);\n\
-                 insert into {table}(first_name,last_name) values ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
-            ),
+            &format!("create table {table}(first_name text not null, last_name text not null);"),
             false,
+            write_ou,
         )?,
         session,
     );
+    let insert = match exec_sql_with_ou(
+        session,
+        &format!(
+            "insert into {table}(first_name,last_name) values \
+             ('Ava','North'),('Cora','Moss'),('Drew','Vale');"
+        ),
+        false,
+        write_ou,
+    ) {
+        Ok(result) => with_explorer(result, session),
+        Err(insert) => {
+            let cleanup = exec_sql_with_ou(
+                session,
+                &format!("drop table if exists {table};"),
+                false,
+                write_ou,
+            );
+            return match cleanup {
+                Ok(_) => Err(insert.into()),
+                Err(cleanup) => Err(anyhow!(
+                    "write smoke insert failed: {insert}; cleanup also failed: {cleanup}"
+                )),
+            };
+        }
+    };
     let rows = query_typed(
         session,
         &format!("select first_name,last_name from {table} order by first_name;"),
     );
-    let cleanup = exec_sql(session, &format!("drop table {table};"), false)
-        .map(|result| with_explorer(result, session));
+    let cleanup = exec_sql_with_ou(
+        session,
+        &format!("drop table if exists {table};"),
+        false,
+        write_ou,
+    )
+    .map(|result| with_explorer(result, session));
     match (rows, cleanup) {
         (Ok(rows), Ok(cleanup)) => Ok(VerifyWriteSmoke {
             create,
+            insert,
             rows,
             cleanup,
         }),
@@ -1081,6 +1259,22 @@ pub(super) fn run_verify_write_smoke(session: &Session) -> Result<VerifyWriteSmo
             "write smoke query failed: {query}; cleanup also failed: {cleanup}"
         )),
     }
+}
+
+pub(super) fn verify_write_smoke_envelope(session: &Session, smoke: VerifyWriteSmoke) -> Value {
+    let mut envelope = write_envelope(session, smoke.insert, Some(1));
+    if let Some(object) = envelope.as_object_mut() {
+        object.insert(
+            "create".to_string(),
+            write_envelope(session, smoke.create, Some(1)),
+        );
+        object.insert("rows".to_string(), smoke.rows);
+        object.insert(
+            "cleanup".to_string(),
+            write_envelope(session, smoke.cleanup, Some(1)),
+        );
+    }
+    envelope
 }
 
 pub(super) fn run_verify_integrity(session: &Session) -> Result<VerifyIntegrity> {

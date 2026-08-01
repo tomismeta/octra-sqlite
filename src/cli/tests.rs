@@ -102,6 +102,8 @@ fn restore_check_and_limits_are_public_commands() {
         "art",
         "--file",
         "dump.sql",
+        "--ou",
+        "200000",
         "--json",
     ])
     .unwrap();
@@ -109,6 +111,7 @@ fn restore_check_and_limits_are_public_commands() {
         Commands::Restore(args) => {
             assert_eq!(args.target.target.as_deref(), Some("art"));
             assert_eq!(args.file.as_deref(), Some(Path::new("dump.sql")));
+            assert_eq!(args.ou.as_deref(), Some("200000"));
             assert!(args.json);
         }
         _ => panic!("expected restore command"),
@@ -138,6 +141,17 @@ fn restore_check_and_limits_are_public_commands() {
     match commands.command {
         Commands::CommandList(args) => assert!(args.json),
         _ => panic!("expected commands command"),
+    }
+
+    let receipt =
+        Cli::try_parse_from(["octra-sqlite", "receipt", "abc123", "art", "--json"]).unwrap();
+    match receipt.command {
+        Commands::Receipt(args) => {
+            assert_eq!(args.tx_hash, "abc123");
+            assert_eq!(args.target.target.as_deref(), Some("art"));
+            assert!(args.json);
+        }
+        _ => panic!("expected receipt command"),
     }
 }
 
@@ -423,6 +437,23 @@ fn upgrade_parses_apply_and_rollback_workflows() {
     let cli = Cli::try_parse_from([
         "octra-sqlite",
         "upgrade",
+        "art",
+        "--write-smoke",
+        "--write-ou",
+        "200000",
+    ])
+    .unwrap();
+    match cli.command {
+        Commands::Upgrade(args) => {
+            assert!(args.write_smoke);
+            assert_eq!(args.write_ou.as_deref(), Some("200000"));
+        }
+        _ => panic!("expected upgrade command"),
+    }
+
+    let cli = Cli::try_parse_from([
+        "octra-sqlite",
+        "upgrade",
         "rollback",
         "/tmp/octra-sqlite-upgrade",
         "--yes",
@@ -681,6 +712,7 @@ fn trace_mode_requires_trace_path() {
         trace_rpc_json_mode: TraceRpcJsonMode::Summary,
         sql_file: None,
         read_only: false,
+        ou: None,
         sql: vec!["select 1;".to_string()],
     };
     let error = cmd_open(args).unwrap_err().to_string();
@@ -725,6 +757,64 @@ fn restore_summary_envelope_omits_per_batch_receipts() {
     assert_eq!(envelope["writes"]["first_tx_hash"], "tx1");
     assert_eq!(envelope["writes"]["last_tx_hash"], "tx2");
     assert!(envelope.get("progress").is_none());
+}
+
+#[test]
+fn receipt_result_success_uses_sqlite_error_events() {
+    let ok = json!({
+        "circle": "octABC",
+        "wallet": "octCaller",
+        "tx_hash": "tx1",
+        "result": {},
+        "receipt": {"success": true, "error": null, "events": []}
+    });
+    assert!(receipt_result_success(&ok));
+
+    let failed = json!({
+        "circle": "octABC",
+        "wallet": "octCaller",
+        "tx_hash": "tx1",
+        "result": {},
+        "receipt": {
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["sqlite_exec_failed: near bad: syntax error"]
+            }]
+        }
+    });
+    assert!(!receipt_result_success(&failed));
+}
+
+#[test]
+fn receipt_target_validation_fails_closed() {
+    let ok = json!({"contract": "octABC", "success": true});
+    assert!(ensure_receipt_matches_circle(&ok, "octABC").is_ok());
+
+    let mismatch =
+        ensure_receipt_matches_circle(&json!({"contract": "octOTHER", "success": true}), "octABC")
+            .unwrap_err();
+    assert_eq!(error_code(&mismatch), "target_error");
+
+    let missing = ensure_receipt_matches_circle(&json!({"success": true}), "octABC").unwrap_err();
+    assert_eq!(error_code(&missing), "target_error");
+}
+
+#[test]
+fn write_summary_treats_sqlite_error_event_as_rejected() {
+    let summary = write_result_summary(&json!({
+        "tx_hash": "tx1",
+        "receipt": {
+            "success": true,
+            "error": null,
+            "events": [{
+                "event": "octra.sqlite.error",
+                "values": ["sqlite_exec_failed: no such table"]
+            }]
+        }
+    }));
+    assert_eq!(summary["status"], "rejected");
 }
 
 #[test]
@@ -868,6 +958,7 @@ fn test_new_args(name: &str) -> NewArgs {
         build: false,
         wasm: None,
         create_ou: "200000".to_string(),
+        ou: None,
         rpc: None,
         network: Some("devnet".to_string()),
         read_mode: ReadModeArg::Sealed,
@@ -981,6 +1072,48 @@ fn new_accepts_builtin_sample() {
         }
         _ => panic!("expected new command"),
     }
+}
+
+#[test]
+fn new_accepts_initializer_write_ou() {
+    let cli = Cli::try_parse_from(["octra-sqlite", "new", "my-db", "--ou", "10000"]).unwrap();
+    match cli.command {
+        Commands::New(args) => {
+            assert_eq!(args.name.as_deref(), Some("my-db"));
+            assert_eq!(args.ou.as_deref(), Some("10000"));
+            assert_eq!(
+                resolve_new_initializer_write_ou(&args, &["create table t(id);".to_string()])
+                    .unwrap()
+                    .as_deref(),
+                Some("10000")
+            );
+        }
+        _ => panic!("expected new command"),
+    }
+}
+
+#[test]
+fn new_rejects_invalid_initializer_write_ou_before_creation() {
+    let mut args = test_new_args("my-db");
+    args.ou = Some("nope".to_string());
+    let error =
+        resolve_new_initializer_write_ou(&args, &["create table t(id);".to_string()]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("--ou must be a positive decimal integer"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn new_without_initializer_does_not_need_write_ou() {
+    let args = test_new_args("my-db");
+    assert!(
+        resolve_new_initializer_write_ou(&args, &[])
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -1121,6 +1254,85 @@ fn status_tracks_upgrade_needed_separately_from_readiness() {
     assert!(report.read_ready());
     assert!(report.write_ready());
     assert_eq!(report.engine_current, Some(false));
+}
+
+#[test]
+fn status_json_promotes_stable_versions_and_upgrade_state() {
+    let mut report = StatusReport::new("status", true);
+    report.init_database_readiness();
+    for key in DATABASE_READINESS_KEYS {
+        report.ready(key, true);
+    }
+    report.sqlite_version("3.53.4");
+    report.program_version("5");
+    report.engine_current(true);
+
+    let value = report.into_json_value(true, true, true, Some(false));
+
+    assert_eq!(value["sqlite_version"], "3.53.4");
+    assert_eq!(value["program_version"], "5");
+    assert_eq!(value["engine_current"], true);
+    assert_eq!(value["upgrade_needed"], false);
+    assert_eq!(value["read_ready"], true);
+    assert_eq!(value["write_ready"], true);
+}
+
+#[test]
+fn status_version_fields_accept_only_strings() {
+    assert_eq!(
+        program_version_string(&json!({"version": "5"})),
+        Some("5".to_string())
+    );
+    assert_eq!(program_version_string(&json!({"version": 5})), None);
+    assert_eq!(program_version_string(&json!({"version": null})), None);
+
+    assert_eq!(
+        first_result_string(&json!({"rows": [["3.53.4"]]})),
+        Some("3.53.4".to_string())
+    );
+    assert_eq!(first_result_string(&json!({"rows": [[3.53]]})), None);
+    assert_eq!(first_result_string(&json!({"rows": []})), None);
+}
+
+#[test]
+fn verify_write_smoke_json_reports_each_write_step() {
+    let session = client_build_session(&ClientOptions {
+        target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+        rpc: Some("mock://rpc".to_string()),
+        caller: Some("octCurrent".to_string()),
+        ..ClientOptions::default()
+    })
+    .unwrap();
+    let confirmed = |hash: &str| {
+        json!({
+            "tx_hash": hash,
+            "receipt": {
+                "success": true,
+                "error": null
+            }
+        })
+    };
+    let smoke = VerifyWriteSmoke {
+        create: confirmed("create_tx"),
+        insert: confirmed("insert_tx"),
+        rows: json!({
+            "columns": ["first_name", "last_name"],
+            "rows": [["Ava", "North"]],
+            "row_count": 1
+        }),
+        cleanup: confirmed("cleanup_tx"),
+    };
+
+    let envelope = verify_write_smoke_envelope(&session, smoke);
+
+    assert_eq!(envelope["status"], "confirmed");
+    assert_eq!(envelope["tx_hash"], "insert_tx");
+    assert_eq!(envelope["statements"], 1);
+    assert_eq!(envelope["create"]["status"], "confirmed");
+    assert_eq!(envelope["create"]["tx_hash"], "create_tx");
+    assert_eq!(envelope["cleanup"]["status"], "confirmed");
+    assert_eq!(envelope["cleanup"]["tx_hash"], "cleanup_tx");
+    assert_eq!(envelope["rows"]["row_count"], 1);
 }
 
 #[test]

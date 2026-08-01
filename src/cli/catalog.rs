@@ -219,7 +219,7 @@ pub(super) fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite DATABASE \"SQL\"",
-                "purpose": "run one SQL statement or script against a database",
+                "purpose": "run one SQL statement or script against a database; use --ou for owner-signed write budget",
                 "writes": "depends_on_sql",
                 "json": true,
                 "envelopes": ["query", "write", "write_script"],
@@ -240,13 +240,13 @@ pub(super) fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite open DATABASE",
-                "purpose": "open the interactive sqlite> shell",
+                "purpose": "open the interactive sqlite> shell; use --ou for owner-signed write budget",
                 "writes": "depends_on_sql",
                 "json": false,
             },
             {
                 "command": "octra-sqlite restore DATABASE --file dump.sql",
-                "purpose": "restore large SQL text with chunked execution",
+                "purpose": "restore large SQL text with chunked execution; use --ou for per-batch write budget",
                 "writes": true,
                 "json": true,
                 "envelope": "restore",
@@ -288,10 +288,17 @@ pub(super) fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite verify [DATABASE]",
-                "purpose": "verify live Circle SQLite status and optional integrity/write checks",
+                "purpose": "verify live Circle SQLite status and optional integrity/write checks; use --write-ou for write-smoke budget",
                 "writes": "optional",
                 "json": true,
                 "envelope": "verify",
+            },
+            {
+                "command": "octra-sqlite receipt TX_HASH [DATABASE]",
+                "purpose": "wait for a submitted Circle transaction receipt without resubmitting the write",
+                "writes": false,
+                "json": true,
+                "envelope": "receipt",
             },
             {
                 "command": "octra-sqlite upgrade",
@@ -301,7 +308,7 @@ pub(super) fn commands_json() -> Value {
             },
             {
                 "command": "octra-sqlite upgrade DATABASE",
-                "purpose": "backup, upgrade, and verify an existing database Circle against the bundled SQLite engine",
+                "purpose": "backup, upgrade, and verify an existing database Circle against the bundled SQLite engine; use --write-ou with --write-smoke",
                 "writes": true,
                 "json": true,
                 "envelope": "upgrade",
@@ -394,6 +401,7 @@ pub(super) fn commands_json() -> Value {
             "wallet_attach",
             "wallet_import",
             "verify",
+            "receipt",
             "upgrade",
             "upgrade_rollback",
             "database_list",

@@ -101,6 +101,7 @@ pub(super) fn cmd_new(args: NewArgs) -> Result<()> {
     ensure_new_database_name_available(&args, &config, name)?;
     ensure_wallet_for_database_creation(&args, &mut config)?;
     let init_sql = collect_initializer_sql(&args)?;
+    let initializer_write_ou = resolve_new_initializer_write_ou(&args, &init_sql)?;
     let network = args
         .network
         .clone()
@@ -123,8 +124,9 @@ pub(super) fn cmd_new(args: NewArgs) -> Result<()> {
         )
     } else {
         format!(
-            "requires funded wallet; create budget {} OU plus initializer writes",
-            args.create_ou
+            "requires funded wallet; create budget {} OU plus initializer writes at {} OU",
+            args.create_ou,
+            initializer_write_ou.as_deref().unwrap_or(DEFAULT_WRITE_OU)
         )
     };
     if !args.json {
@@ -186,7 +188,10 @@ pub(super) fn cmd_new(args: NewArgs) -> Result<()> {
                 return Err(error.context("initializer session failed after Circle creation"));
             }
         };
-        initializer_results = match run_initializer_sql(&session, &args, &init_sql) {
+        let write_ou = initializer_write_ou
+            .as_deref()
+            .ok_or_else(|| anyhow!("initializer write OU was not resolved"))?;
+        initializer_results = match run_initializer_sql(&session, &args, &init_sql, write_ou) {
             Ok(results) => results,
             Err(error) => {
                 if !args.json {
@@ -404,17 +409,31 @@ pub(super) fn collect_initializer_sql(args: &NewArgs) -> Result<Vec<String>> {
     Ok(init_sql)
 }
 
+pub(super) fn resolve_new_initializer_write_ou(
+    args: &NewArgs,
+    init_sql: &[String],
+) -> Result<Option<String>> {
+    if args.ou.is_some() {
+        return resolve_write_ou_arg(args.ou.as_deref()).map(Some);
+    }
+    if init_sql.is_empty() {
+        return Ok(None);
+    }
+    resolve_write_ou_arg(args.ou.as_deref()).map(Some)
+}
+
 pub(super) fn run_initializer_sql(
     session: &Session,
     args: &NewArgs,
     init_sql: &[String],
+    write_ou: &str,
 ) -> Result<Vec<SqlScriptExecution>> {
     let mut executions = Vec::new();
     for sql in init_sql {
         let mut execution = if args.no_wait {
-            submit_sql_script_no_wait(session, sql)?
+            execute_sql_script_with_progress_ou(session, sql, true, write_ou, |_| {})?
         } else {
-            execute_sql_script_with_progress(session, sql, false, |_| {})?
+            execute_sql_script_with_progress_ou(session, sql, false, write_ou, |_| {})?
         };
         for result in &mut execution.results {
             let raw = std::mem::take(result);

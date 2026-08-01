@@ -37,6 +37,11 @@ signature_hex
 
 The owner public key must match the public key patched into the Circle WASM. The sequence must be greater than the last accepted owner sequence recorded in Circle key-value metadata.
 
+The reference client uses the signing wallet's next Octra account nonce as the
+OSW1 sequence for the write transaction. Do not derive the next sequence from
+`auth_info.owner_sequence + 1`; `owner_sequence` is the Circle's last accepted
+OSW1 watermark and is useful for status, rollback guards, and race detection.
+
 ## Security Notes
 
 `octra-sqlite` signs OSW1 frames with the configured Octra wallet key.

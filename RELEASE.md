@@ -1,5 +1,36 @@
 # Release Notes
 
+## 0.6.3
+
+This is a focused SQLite engine maintenance release over `0.6.2`. It rebuilds
+the bundled Circle WASM with SQLite 3.53.4 and preserves the product and
+automation surfaces.
+
+### Changed
+
+- Bundled SQLite engine: 3.53.3 -> 3.53.4.
+- Bundled Circle WASM hash and byte length changed because of the SQLite engine
+  rebuild.
+- Release metadata now includes the previous `0.6.1-0.6.2` 3.53.3 WASM epoch
+  in the metadata-only historical catalog.
+- README, toolchain docs, release manifest, and roadmap now identify the
+  current bundled engine as SQLite 3.53.4.
+
+### Unchanged
+
+- OSR1/OSW1, owner-write authorization, storage accounting, execution budgets,
+  top-level commands, CLI JSON envelopes, root Rust types, and runtime
+  dependencies are unchanged.
+- The optional `wasm-behavior` harness dependency is patched to `wasmtime`
+  36.0.13 to keep the release audit clean.
+
+### Proof Gate
+
+Satisfied before publish: Vitals rehearsed the engine upgrade on devnet, then
+upgraded the mainnet Lab DB Circle to SQLite 3.53.4 with read readiness, write
+readiness, current-engine status, gateway health, updater health, and mirror
+writes confirmed.
+
 ## 0.6.2
 
 This is a focused client architecture, automation, and documentation release
@@ -16,8 +47,9 @@ applications without adding commands or crate-root types.
   `cli::error_code()` owns the binary's stable JSON classification.
 - docs.rs now presents a deliberate start path, read/write model, API map,
   error contract, advanced boundaries, and build configuration.
-- GitHub releases can publish to crates.io through a dedicated release
-  environment and OIDC workflow with no long-lived registry token.
+- GitHub releases have a dedicated release environment and OIDC workflow for
+  crates.io trusted publishing once the crates.io-side publisher registration is
+  complete.
 - Pasted and stdin-imported private-key text is zeroized on parse failures, and
   the standalone `wasm-behavior` test feature now compiles independently.
 

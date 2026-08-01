@@ -103,21 +103,39 @@ octra-sqlite upgrade
 octra-sqlite upgrade DATABASE --dry-run
 octra-sqlite upgrade DATABASE --dry-run --previous-wasm ./old-octra_sqlite_circle.wasm
 octra-sqlite upgrade DATABASE
-octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707
+octra-sqlite upgrade rollback ~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801
 ```
 
 Strict runbook for mainnet or high-value Circles:
 
-1. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
-2. If `status` is `already_current`, stop; rollback is not relevant because no
+1. Install and run the current octra-sqlite client for upgrade/status checks.
+   Older clients may still query a Circle after an engine upgrade, but their
+   status and upgrade expectations can be stale.
+2. Run `octra-sqlite upgrade DATABASE --dry-run --json`.
+3. If `status` is `already_current`, stop; rollback is not relevant because no
    program update is pending.
-3. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
+4. If an upgrade is needed, review `from.code_hash`, `to.code_hash`,
    `from.sqlite_version`, and `to.sqlite_version`.
-4. Require `rollback.available: true` before applying. Do not use
+5. Require `rollback.available: true` before applying. Do not use
    `--unsafe-no-rollback` on mainnet; without rollback bytes, the upgrade
    bundle cannot restore the previous Circle program.
-5. Apply with `octra-sqlite upgrade DATABASE --yes --json`.
-6. Run `octra-sqlite status DATABASE --ready --json` and an application query.
+6. Pause external writers for the database while applying the program update.
+7. For service deployments, set `OCTRA_SQLITE_CONFIG` to a path writable by the
+   upgrade operator and pass `--backup-dir` to a writable app-data directory.
+8. Apply with `octra-sqlite upgrade DATABASE --yes --json --require-integrity`.
+9. Run `octra-sqlite status DATABASE --ready --json`, confirm `write_ready:
+   true`, `engine_current: true`, and `upgrade_needed: false`, then run an
+   application query.
+10. Resume writers and confirm a real application write lands. On busy or
+   production-like paths, set `OCTRA_SQLITE_WRITE_OU` before the write and
+   `OCTRA_SQLITE_VERIFY_WRITE_OU` before `verify --write-smoke`, or pass
+   `--ou` / `--write-ou` explicitly.
+
+Normal SQL writes, including `new` initializer SQL, default to `1000` OU. Circle
+creation and program upgrades default to `200000` OU. `new --create-ou`
+controls Circle creation, `new --ou` controls initializer SQL, `upgrade --ou`
+controls the program-update transaction, and `upgrade --write-smoke --write-ou`
+controls only the optional post-upgrade smoke write.
 
 `upgrade` without a database opens the guided terminal workflow. It uses the
 saved default database when available, shows the preflight, prints the planned
@@ -130,6 +148,8 @@ target-engine state without writing. A real upgrade:
 
 - verifies that the active wallet is the Circle owner and the OSW1 database
   owner;
+- verifies that the local config path is writable before submitting the program
+  update, so post-upgrade metadata finalization does not fail late;
 - patches the bundled WASM with the existing owner public key and database id;
 - recovers the currently deployed personalized WASM from local metadata, chain
   transaction history, local old release artifacts, or an explicit
@@ -192,8 +212,8 @@ Default bundle names use the environment, Circle ID, previous SQLite version,
 and date only:
 
 ```text
-~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/
-  devnet-oct...-sqlite-3.53.2-20260707.sqlite
+~/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/
+  devnet-oct...-sqlite-3.53.3-20260801.sqlite
   previous.wasm
   upgrade.json
 ```
@@ -248,6 +268,28 @@ the cause. There is no persisted resume checkpoint in the current release line.
 On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
 transient `429`, `503`, timeout, and non-JSON gateway responses. It does not
 silently replay accepted write submissions.
+
+Owner-signed SQL writes default to `1000` OU. That includes `open` writes,
+shell/import writes, `new` initializer SQL, restore batches, and write-smoke
+helpers. Operators can raise the signed budget without changing SQL:
+
+```sh
+export OCTRA_SQLITE_WRITE_OU=200000
+octra-sqlite DATABASE "insert into events(id, body) values (1, 'ok');"
+octra-sqlite restore DATABASE --file dump.sql --ou 200000
+octra-sqlite verify DATABASE --write-smoke --write-ou 200000
+octra-sqlite upgrade DATABASE --write-smoke --write-ou 200000
+```
+
+If a write was submitted but the receipt did not arrive before the wait
+deadline, the CLI returns `receipt_pending`. With `--json` or
+`--json-summary`, `error.details` includes the transaction hash, nonce, OU,
+Circle, and recovery command when known. Follow the submitted transaction; do
+not retry the write blindly:
+
+```sh
+octra-sqlite receipt TX_HASH DATABASE --json
+```
 
 ## Limits
 

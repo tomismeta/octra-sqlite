@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -84,5 +84,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 ureq = { version = "3.3", default-features = false, features = ["json", "rustls"], optional = true }
-wasmtime = { version = "36.0.8", optional = true }
+wasmtime = { version = "36.0.13", optional = true }
 zeroize = "1"

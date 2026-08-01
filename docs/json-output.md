@@ -29,6 +29,15 @@ Errors use the same schema on stderr:
 }
 ```
 
+Some recoverable errors add `error.details`. For `receipt_pending`, details can
+include `tx_hash`, `nonce`, `ou`, `circle`, `database`, and `next_command`.
+`nonce` and `ou` are present for writes submitted by the current command and may
+be `null` when polling an already-submitted transaction.
+
+Some errors also include `error.hint` for operator guidance. Budget errors keep
+their stable code and may add a hint to reduce query work, lower result limits,
+or use an index-backed access pattern.
+
 Process exit codes are intentionally small for now:
 
 | Exit | Meaning |
@@ -46,6 +55,7 @@ Stable error classifications:
 | `result_limit_exceeded` | Query exceeded the Circle row limit. |
 | `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
 | `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
+| `receipt_pending` | A write was submitted, but its Circle receipt was not available before the wait deadline. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
@@ -100,7 +110,7 @@ Produced by `new DATABASE --json`.
   "program": {
     "runtime": "wasm_v1",
     "wasm_hash": "hex...",
-    "wasm_bytes": 611456
+    "wasm_bytes": 611677
   },
   "initializer": {
     "present": true,
@@ -154,6 +164,8 @@ Produced by single-statement writes with `--json`.
   "schema": "octra-sqlite.cli.v1",
   "status": "confirmed",
   "tx_hash": "abc...",
+  "nonce": 42,
+  "ou": "200000",
   "statements": null,
   "cost": {},
   "receipt": {},
@@ -162,6 +174,34 @@ Produced by single-statement writes with `--json`.
 ```
 
 Writes do not include `columns` or `rows`.
+`nonce` and `ou` report the submitted Octra account nonce and signed write
+budget when known.
+
+If submission succeeds but the receipt is still pending, the command exits with
+`error.code: "receipt_pending"`. `error.message` identifies the submitted
+transaction, and `error.details.next_command` gives the
+`octra-sqlite receipt TX_HASH DATABASE --json` follow-up when the database is
+known.
+
+### `receipt`
+
+Produced by `receipt TX_HASH [DATABASE] --json`.
+
+```json
+{
+  "ok": true,
+  "type": "receipt",
+  "schema": "octra-sqlite.cli.v1",
+  "database": {},
+  "status": "confirmed",
+  "tx_hash": "abc...",
+  "tx_url": "https://...",
+  "receipt": {},
+  "result": {}
+}
+```
+
+`receipt` waits for an already-submitted transaction. It does not resubmit SQL.
 
 ### `write_script`
 
@@ -260,21 +300,21 @@ and `upgrade rollback BUNDLE --json`.
   "dry_run": false,
   "database": {},
   "from": {
-    "sqlite_version": "3.53.2",
+    "sqlite_version": "3.53.3",
     "code_hash": "hex..."
   },
   "to": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "code_hash": "hex..."
   },
   "target": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "code_hash": "hex...",
     "wasm": "embedded:circle/wasm/octra_sqlite_circle.wasm"
   },
   "backup": {
     "skipped": false,
-    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/devnet-oct...-sqlite-3.53.2-20260707.sqlite",
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/devnet-oct...-sqlite-3.53.3-20260801.sqlite",
     "sha256": "hex..."
   },
   "rollback": {
@@ -292,13 +332,13 @@ and `upgrade rollback BUNDLE --json`.
     "tx_url": "https://..."
   },
   "verification": {
-    "sqlite_version": "3.53.3",
+    "sqlite_version": "3.53.4",
     "storage_generation_unchanged": true,
     "owner_sequence_unchanged": true
   },
   "bundle": {
-    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707",
-    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.2-20260707/upgrade.json"
+    "path": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801",
+    "manifest": "/home/user/.octra/sqlite/upgrades/devnet-oct...-sqlite-3.53.3-20260801/upgrade.json"
   }
 }
 ```
@@ -354,26 +394,34 @@ Produced by `check DATABASE --sql-file dump.sql --json`.
 `check` plans and validates Octra SQLite script limits. SQLite syntax and
 semantics are enforced by SQLite inside the Circle when executed.
 
-### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`
+### `status`, `wallet_status`, `wallet_attach`, `wallet_import`, `verify`, `database_list`, `database_info`, `limits`, `commands`, `receipt`
 
 Inspection commands return `ok`, `type`, `schema`, and command-specific fields.
 They do not include SQL `columns` or `rows` unless they are returning an
 embedded typed SQLite query result.
 
-`status --json` includes `ready`, `read_ready`, `write_ready`, and readiness
-booleans for automation: `circle_reachable`, `auth_readable`,
-`owner_write_valid`, `storage_initialized`, `sqlite_ready`, and `query_ready`.
-Values are `null` when live checks are skipped or not reached.
+`status --json` includes top-level fields for automation: `ready`,
+`read_ready`, `write_ready`, `sqlite_version`, `program_version`,
+`engine_current`, and `upgrade_needed`. Version fields are `null` when the live
+check is skipped or cannot complete.
 
-It also reports `engine_current` and `upgrade_needed`. A known historical
-octra-sqlite engine can be read/write healthy while `engine_current` is `false`
-and `upgrade_needed` is `true`; that is an upgrade signal, not a generic
-readiness failure.
+The nested `readiness` object reports the underlying checks:
+`circle_reachable`, `auth_readable`, `owner_write_valid`,
+`storage_initialized`, `sqlite_ready`, and `query_ready`. Values are `null` when
+live checks are skipped or not reached.
+
+A known historical octra-sqlite engine can be read/write healthy while
+`engine_current` is `false` and `upgrade_needed` is `true`; that is an upgrade
+signal, not a generic readiness failure.
 
 Use `status DATABASE --ready` as the read/query operational gate. With `--json`,
 it prints the same single status envelope and exits nonzero when `read_ready` is
 not `true`. `write_ready` is separate so walletless public-read databases can be
 healthy for reads while still reporting that owner writes are unavailable.
+
+`verify --write-smoke --json` reports `write_smoke` as a write envelope for the
+insert step. The same object also includes `create`, `rows`, and `cleanup` so
+operators can see the full create/insert/query/drop cycle without retrying SQL.
 
 `wallet status --json` reports wallet path, file permissions, caller
 address, active target, and read/write relationship to the target Circle. It

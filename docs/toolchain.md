@@ -53,14 +53,14 @@ The current bundled Circle WASM artifact is:
 
 ```text
 compiler Homebrew clang version 22.1.8
-sqlite_sha256 d74178f9bcaee1605e019d8883e18bc2d68770ae84c6e8c14abaaf2d97898d86
-sqlite3_c_upstream_sha3_256 28e484abdaa43630e34040ef6ed92be973a1ad54107803d8af5145b889c23ed7
-code_bytes 611456
-code_hash c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef
+sqlite_sha256 ba6dbb8b81fe3f40bf45ff5b427137ae62ff4639838115be8dbc3c0866d18235
+sqlite3_c_upstream_sha3_256 67f423e9ebbbdc473cbc4772c872ee6b89f31fde4ed0279a5c25d5f65c043a16
+code_bytes 611677
+code_hash 8fe0dad1a4bb4fcfc7afab626a58eda45edeac3b25607f130b201997698d8bcf
 artifact circle/wasm/octra_sqlite_circle.wasm
 ```
 
-The same values are recorded in `release/octra-sqlite-0.6.2.json` and checked by
+The same values are recorded in `release/octra-sqlite-0.6.3.json` and checked by
 `octra-sqlite status`.
 
 The release manifest JSON is also the source of truth for the small historical

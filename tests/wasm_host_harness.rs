@@ -3,7 +3,7 @@ mod wasm_behavior {
     use anyhow::{Result, anyhow, bail};
     use base64::{Engine as _, engine::general_purpose};
     use ed25519_dalek::{Signer, SigningKey};
-    use serde_json::Value;
+    use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use std::cell::RefCell;
     use std::collections::BTreeMap;
@@ -502,6 +502,42 @@ select no_such_column from people;",
             &["select first_name,last_name from people order by first_name;"],
         )?;
         assert!(rows.starts_with("OSR1:"));
+        Ok(())
+    }
+
+    #[test]
+    fn sqlite_3534_engine_paths_remain_bounded_and_sqlite_native() -> Result<()> {
+        let mut contract = Contract::load()?;
+        let version = json_response(&contract.call_query("query", &["select sqlite_version();"])?);
+        assert_eq!(version["rows"], json!([["3.53.4"]]));
+
+        let setup = json_response(&contract.call_update(
+            "exec",
+            &[
+                "create table docs(id integer primary key, body text not null);
+create index docs_body_len on docs(length(body));
+insert into docs(body) values (json('{\"kind\":\"note\",\"tags\":[\"octra\",\"sqlite\"]}'));",
+            ],
+        )?);
+        assert_eq!(setup["ok"], true);
+
+        let expression_index = json_response(&contract.call_query(
+            "query",
+            &["select body from docs indexed by docs_body_len where length(body) > 10;"],
+        )?);
+        assert_eq!(expression_index["ok"], true);
+        assert_eq!(expression_index["row_count"], 1);
+
+        let json_path = json_response(&contract.call_query(
+            "query",
+            &["select json_extract(body, '$.tags[1]') from docs where id = 1;"],
+        )?);
+        assert_eq!(json_path["rows"], json!([["sqlite"]]));
+
+        let malformed_jsonb =
+            json_response(&contract.call_query("query", &["select json_extract(x'ff', '$.x');"])?);
+        assert_eq!(malformed_jsonb["ok"], false);
+        assert_eq!(malformed_jsonb["error"], "sqlite_step_failed");
         Ok(())
     }
 
