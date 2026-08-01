@@ -39,15 +39,16 @@ Themes: **Security**, **Operations**, **Developer Experience**
 - Add the 0.6.1-0.6.2 3.53.3 WASM epoch to the metadata-only historical catalog
   so normal upgrades can identify the previous engine without bundling old
   bytes.
-- Prove `3.53.3 -> 3.53.4` on devnet, then let Octra Vitals rehearse the same
-  path before crates.io publish.
+- Prove `3.53.3 -> 3.53.4` on devnet, then upgrade Octra Vitals mainnet before
+  crates.io publish.
 - Keep trusted publishing as a release hygiene item: use it only after the
   crates.io-side publisher is registered; otherwise document the manual publish
   honestly.
 
-Exit: full local gates, WASM harness/audit, devnet proof, Vitals upgrade
-rehearsal, and the review panel confirm a patch-compatible engine maintenance
-release; then `0.6.3` can publish without pulling in unrelated roadmap work.
+Exit: full local gates, WASM harness/audit, devnet rehearsal, Vitals mainnet
+upgrade proof, and the review panel confirm a patch-compatible engine
+maintenance release; then `0.6.3` can publish without pulling in unrelated
+roadmap work.
 
 ## Next: 0.7.0 Secret Ownership
 

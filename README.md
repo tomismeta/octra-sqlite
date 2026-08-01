@@ -150,7 +150,7 @@ manifest; source and operator overrides are explicit. `scripts/audit-wasm.sh`
 checks the Circle import/export surface,
 [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs, and
 release manifests publish the bundled WASM hash and record live devnet proofs
-when completed.
+and operator mainnet proofs when completed.
 
 The `0.6.3` crate bundles SQLite 3.53.4 in a rebuilt Circle WASM while keeping
 the CLI, Rust API, storage model, and wire formats unchanged. The current

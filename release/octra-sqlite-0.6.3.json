@@ -138,12 +138,44 @@
     "unbounded_exec_budget_proven": true,
     "upgrade_owner_sequence_fallback_proven": true,
     "wasm_audit": "passed",
-    "devnet": "pending_0.6.3_upgrade_proof"
+    "devnet": "vitals_rehearsal_confirmed_3.53.3_to_3.53.4_upgrade",
+    "mainnet": "vitals_mainnet_confirmed_3.53.3_to_3.53.4_upgrade"
   },
   "public_deployment": {
-    "status": "pending",
-    "deployment_kind": "pending_0.6.3_public_read_proof",
-    "note": "Record the live devnet proof after the 3.53.3 -> 3.53.4 upgrade rehearsal and before publishing to crates.io."
+    "status": "not_refreshed_for_0.6.3",
+    "deployment_kind": "inherited_public_read_proof",
+    "inherited_from_release": "0.6.1",
+    "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "circle": "oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "sqlite_version": "3.53.3",
+    "unpersonalized_sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef",
+    "personalized_sha256": "86b98d9d74d49ad4ab1fe04862e41542752fb8b58476dd7f72d2bb68ee5037af",
+    "note": "The 0.6.3 release was proven by devnet and Vitals mainnet engine upgrades. The public-read demo Circle remains the inherited 0.6.1/0.6.2 SQLite 3.53.3 proof until deliberately upgraded or replaced."
+  },
+  "mainnet_vitals_upgrade_proof": {
+    "status": "complete",
+    "network": "mainnet",
+    "operator": "octra-vitals",
+    "candidate_version": "0.6.3",
+    "from_sqlite_version": "3.53.3",
+    "to_sqlite_version": "3.53.4",
+    "program_version": "5",
+    "upgrade_tx": "8275695e2ba6c8e190d20d38940ef47c31418ade7fcd8dd713adc48db9b64ad9",
+    "explorer_url": "https://octrascan.io/tx.html?hash=8275695e2ba6c8e190d20d38940ef47c31418ade7fcd8dd713adc48db9b64ad9",
+    "read_ready": true,
+    "write_ready": true,
+    "engine_current": true,
+    "upgrade_needed": false,
+    "gateway_active": true,
+    "updater_timer_active": true,
+    "lab_mirror_trigger_active": true,
+    "thirty_day_history_served_from_sqlite_mirror": true,
+    "latest_mirror_watermark": "snapshot #3305",
+    "recurring_mirror_write_ou": 1000,
+    "candidate_promoted_to_shared_binary": false,
+    "note": "Verified by the Octra Vitals mainnet operator before publish. Recurring mirror writes remained normal 1000 OU circle_call transactions, not 200000 OU program updates."
   },
   "capacity_evidence": {
     "status": "measured_on_devnet",
@@ -158,7 +190,7 @@
     "note": "The Circle stable-storage limit is 33.55 MB key-plus-value bytes. The SQLite file limit is 33.05 MB because page keys, the generation manifest, and metadata also count. The 0.6.1 contract exposes and enforces the same accounting."
   },
   "engine_release": {
-    "notes": "Engine maintenance release. Rebuilds the bundled Circle WASM with SQLite 3.53.4, carrying upstream fixes for problems in 3.53.0 through 3.53.3. Adds configurable CLI OU budgets for ordinary owner-signed SQL writes, restore batches, verify write-smoke, and upgrade write-smoke; adds receipt follow-up for already-submitted transactions; and includes nonce/OU metadata in submitted write results. OSR1/OSW1, owner-write authorization, storage accounting, execution budgets, root Rust entry points, and runtime dependencies remain unchanged from 0.6.2. The optional wasm-behavior harness dependency is patched to wasmtime 36.0.13."
+    "notes": "Engine maintenance release. Rebuilds the bundled Circle WASM with SQLite 3.53.4, carrying upstream fixes for problems in 3.53.0 through 3.53.3. Adds configurable CLI OU budgets for ordinary owner-signed SQL writes, restore batches, verify write-smoke, and upgrade write-smoke; adds receipt follow-up for already-submitted transactions; and includes nonce/OU metadata in submitted write results. The upgrade path was rehearsed on devnet and applied to the Octra Vitals mainnet Lab DB Circle before publish. OSR1/OSW1, owner-write authorization, storage accounting, execution budgets, root Rust entry points, and runtime dependencies remain unchanged from 0.6.2. The optional wasm-behavior harness dependency is patched to wasmtime 36.0.13."
   },
-  "status": "0.6.3 SQLite 3.53.4 engine maintenance candidate; devnet and Vitals upgrade proof pending before crates.io publish"
+  "status": "0.6.3 SQLite 3.53.4 engine maintenance release; devnet rehearsal and Vitals mainnet upgrade proof complete before crates.io publish"
 }

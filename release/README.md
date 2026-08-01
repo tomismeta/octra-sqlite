@@ -28,6 +28,6 @@ artifact and devnet proof. It records CLI/client convergence, source-owned error
 codes, documentation curation, and trusted publishing without adding a new
 engine epoch.
 The `0.6.3` manifest records the SQLite 3.53.4 WASM rebuild, adds the
-`0.6.1-0.6.2` 3.53.3 WASM as a metadata-only historical epoch, and remains
-proof-pending until devnet and Octra Vitals upgrade rehearsal complete before
+`0.6.1-0.6.2` 3.53.3 WASM as a metadata-only historical epoch, and records the
+devnet rehearsal plus Octra Vitals mainnet upgrade proof completed before
 crates.io publish.

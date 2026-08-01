@@ -26,9 +26,10 @@ automation surfaces.
 
 ### Proof Gate
 
-Do not publish to crates.io until devnet proof and Octra Vitals upgrade
-rehearsal confirm `select sqlite_version()` returns `3.53.4`, status is ready,
-and the upgrade bundle/rollback preflight behavior is reviewed.
+Satisfied before publish: Vitals rehearsed the engine upgrade on devnet, then
+upgraded the mainnet Lab DB Circle to SQLite 3.53.4 with read readiness, write
+readiness, current-engine status, gateway health, updater health, and mirror
+writes confirmed.
 
 ## 0.6.2
 

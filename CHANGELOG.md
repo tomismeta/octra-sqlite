@@ -28,6 +28,7 @@
   permission problems fail before the Circle program update is submitted.
 - Updated the release manifest, toolchain record, README badge, and roadmap for
   the 3.53.4 engine epoch.
+- Recorded the Octra Vitals mainnet upgrade proof before crates.io publish.
 - Added a WASM harness smoke test for the 3.53.4 engine path: version reporting,
   expression-index reads, JSON extraction, and malformed JSONB failure.
 - Updated the optional `wasm-behavior` harness dependency to `wasmtime` 36.0.13
