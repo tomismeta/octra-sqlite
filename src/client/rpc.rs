@@ -230,6 +230,10 @@ fn wait_for_receipt_with_policy<T: Transport>(
         match result {
             Ok(receipt) if !receipt.is_null() => return Ok(receipt),
             Ok(_) => saw_pending = true,
+            Err(error) if receipt_not_found_is_pending(&error) => {
+                saw_pending = true;
+                last_error = Some(error);
+            }
             Err(error) => last_error = Some(error),
         }
         if !delay.is_zero() {
@@ -243,6 +247,14 @@ fn wait_for_receipt_with_policy<T: Transport>(
         ErrorKind::Timeout,
         format!("timed out waiting for receipt {tx_hash}"),
     ))
+}
+
+fn receipt_not_found_is_pending(error: &Error) -> bool {
+    if error.code() != Some("112") {
+        return false;
+    }
+    let message = error.to_string();
+    message.contains("receipt not found") || message.contains("not found")
 }
 
 #[cfg(feature = "http")]
@@ -363,6 +375,24 @@ mod tests {
         }
     }
 
+    struct ReceiptNotFoundTransport;
+
+    impl Transport for ReceiptNotFoundTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "contract_receipt" => Err(Error::with_code(
+                    ErrorKind::Rpc,
+                    "112",
+                    "not found: receipt not found",
+                )),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
     fn test_session() -> Session {
         build_session(&ClientOptions {
             target: Some("oct://devnet/octABC".to_string()),
@@ -421,6 +451,21 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::Rpc);
         assert_eq!(error.code(), Some("rpc_unavailable"));
         assert!(error.to_string().contains("waiting for receipt abc123"));
+    }
+
+    #[test]
+    fn receipt_wait_treats_not_found_receipt_as_pending() {
+        let error = wait_for_receipt_with_policy(
+            &ReceiptNotFoundTransport,
+            &test_session(),
+            "abc123",
+            2,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Timeout);
+        assert_eq!(error.code(), None);
+        assert!(error.to_string().contains("timed out waiting for receipt abc123"));
     }
 
     #[test]
