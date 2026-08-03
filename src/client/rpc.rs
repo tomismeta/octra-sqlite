@@ -229,10 +229,18 @@ fn wait_for_receipt_with_policy<T: Transport>(
         let result = rpc_call(transport, session, "contract_receipt", json!([tx_hash]));
         match result {
             Ok(receipt) if !receipt.is_null() => return Ok(receipt),
-            Ok(_) => saw_pending = true,
+            Ok(_) => {
+                saw_pending = true;
+                if let Some(error) = transaction_terminal_error(transport, session, tx_hash) {
+                    return Err(error);
+                }
+            }
             Err(error) if receipt_not_found_is_pending(&error) => {
                 saw_pending = true;
                 last_error = Some(error);
+                if let Some(error) = transaction_terminal_error(transport, session, tx_hash) {
+                    return Err(error);
+                }
             }
             Err(error) => last_error = Some(error),
         }
@@ -250,11 +258,63 @@ fn wait_for_receipt_with_policy<T: Transport>(
 }
 
 fn receipt_not_found_is_pending(error: &Error) -> bool {
-    if error.code() != Some("112") {
-        return false;
+    let message = error.to_string().to_ascii_lowercase();
+    if error.code() == Some("112") {
+        return message.contains("receipt not found") || message.contains("not found");
     }
-    let message = error.to_string();
-    message.contains("receipt not found") || message.contains("not found")
+    message.contains("receipt not found")
+        || (message.contains("\"code\":112") && message.contains("not found"))
+}
+
+fn transaction_terminal_error<T: Transport>(
+    transport: &T,
+    session: &Session,
+    tx_hash: &str,
+) -> Option<Error> {
+    let transaction = rpc_call(transport, session, "octra_transaction", json!([tx_hash])).ok()?;
+    let status = transaction.get("status").and_then(Value::as_str)?;
+    match status {
+        "rejected" | "failed" => Some(transaction_state_error(
+            "transaction_rejected",
+            tx_hash,
+            status,
+            &transaction,
+        )),
+        "dropped" => Some(transaction_state_error(
+            "transaction_dropped",
+            tx_hash,
+            status,
+            &transaction,
+        )),
+        _ => None,
+    }
+}
+
+fn transaction_state_error(code: &str, tx_hash: &str, status: &str, transaction: &Value) -> Error {
+    let reason = transaction
+        .pointer("/error/reason")
+        .or_else(|| transaction.get("reason"))
+        .and_then(Value::as_str);
+    let detail = transaction.get("detail").and_then(Value::as_str);
+    let mut message = format!("transaction {tx_hash} {status}");
+    if let Some(reason) = reason {
+        message.push_str(": ");
+        message.push_str(reason);
+    }
+    if let Some(detail) = detail {
+        message.push_str("; ");
+        message.push_str(detail);
+    }
+    Error::with_code_and_details(
+        ErrorKind::Receipt,
+        code,
+        message,
+        [
+            ("tx_hash", Value::String(tx_hash.to_string())),
+            ("status", Value::String(status.to_string())),
+            ("transaction", transaction.clone()),
+        ],
+    )
 }
 
 #[cfg(feature = "http")]
@@ -393,6 +453,55 @@ mod tests {
         }
     }
 
+    struct WrappedReceiptNotFoundThenRejectedTransport;
+
+    impl Transport for WrappedReceiptNotFoundThenRejectedTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "contract_receipt" => Err(Error::with_kind(
+                    ErrorKind::Rpc,
+                    "contract_receipt failed: {\"code\":112,\"data\":\"receipt not found\",\"message\":\"not found\"}",
+                )),
+                "octra_transaction" => Ok(json!({
+                    "status": "rejected",
+                    "tx_hash": "abc123",
+                    "error": {
+                        "type": "circle_call_failed",
+                        "reason": "wasm export trapped: all fuel consumed by WebAssembly"
+                    }
+                })),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
+    struct ReceiptNotFoundThenDroppedTransport;
+
+    impl Transport for ReceiptNotFoundThenDroppedTransport {
+        fn call(&self, _rpc: &str, method: &str, _params: Value) -> Result<Value> {
+            match method {
+                "contract_receipt" => Err(Error::with_code(
+                    ErrorKind::Rpc,
+                    "112",
+                    "not found: receipt not found",
+                )),
+                "octra_transaction" => Ok(json!({
+                    "status": "dropped",
+                    "tx_hash": "abc123",
+                    "reason": "expired",
+                    "detail": "TTL exceeded"
+                })),
+                _ => Err(Error::with_kind(
+                    ErrorKind::Other,
+                    format!("unexpected method {method}"),
+                )),
+            }
+        }
+    }
+
     fn test_session() -> Session {
         build_session(&ClientOptions {
             target: Some("oct://devnet/octABC".to_string()),
@@ -465,7 +574,53 @@ mod tests {
         .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Timeout);
         assert_eq!(error.code(), None);
-        assert!(error.to_string().contains("timed out waiting for receipt abc123"));
+        assert!(
+            error
+                .to_string()
+                .contains("timed out waiting for receipt abc123")
+        );
+    }
+
+    #[test]
+    fn receipt_wait_reports_rejected_transaction_while_receipt_is_missing() {
+        let error = wait_for_receipt_with_policy(
+            &WrappedReceiptNotFoundThenRejectedTransport,
+            &test_session(),
+            "abc123",
+            2,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Receipt);
+        assert_eq!(error.code(), Some("transaction_rejected"));
+        assert!(
+            error
+                .to_string()
+                .contains("wasm export trapped: all fuel consumed by WebAssembly")
+        );
+        assert_eq!(
+            error.details().unwrap().get("status").unwrap(),
+            &Value::String("rejected".to_string())
+        );
+    }
+
+    #[test]
+    fn receipt_wait_reports_dropped_transaction_while_receipt_is_missing() {
+        let error = wait_for_receipt_with_policy(
+            &ReceiptNotFoundThenDroppedTransport,
+            &test_session(),
+            "abc123",
+            2,
+            Duration::ZERO,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Receipt);
+        assert_eq!(error.code(), Some("transaction_dropped"));
+        assert!(error.to_string().contains("TTL exceeded"));
+        assert_eq!(
+            error.details().unwrap().get("status").unwrap(),
+            &Value::String("dropped".to_string())
+        );
     }
 
     #[test]

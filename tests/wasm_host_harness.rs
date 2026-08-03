@@ -11,7 +11,7 @@ mod wasm_behavior {
     use std::path::PathBuf;
     use std::process::Command as ProcessCommand;
     use std::rc::Rc;
-    use wasmtime::{Caller, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
+    use wasmtime::{Caller, Config, Engine, Instance, Linker, Memory, Module, Store, TypedFunc};
 
     const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
     const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
@@ -49,6 +49,16 @@ mod wasm_behavior {
             Self::instantiate(engine, module)
         }
 
+        fn load_fueled() -> Result<Self> {
+            let wasm = std::env::var("OCTRA_SQLITE_WASM")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("circle/wasm/octra_sqlite_circle.wasm"));
+            let engine = fueled_engine()?;
+            let module = Module::from_file(&engine, &wasm)
+                .map_err(|error| anyhow!("load {}: {error}", wasm.display()))?;
+            Self::instantiate(engine, module)
+        }
+
         fn load_patched(owner_pubkey: &[u8; 32], db_id: &[u8; 32]) -> Result<Self> {
             let wasm = std::env::var("OCTRA_SQLITE_WASM")
                 .map(PathBuf::from)
@@ -58,6 +68,19 @@ mod wasm_behavior {
             replace_placeholder(&mut bytes, OWNER_PUBKEY_PLACEHOLDER, owner_pubkey)?;
             replace_placeholder(&mut bytes, DB_ID_PLACEHOLDER, db_id)?;
             let engine = Engine::default();
+            let module = Module::new(&engine, bytes)?;
+            Self::instantiate(engine, module)
+        }
+
+        fn load_patched_fueled(owner_pubkey: &[u8; 32], db_id: &[u8; 32]) -> Result<Self> {
+            let wasm = std::env::var("OCTRA_SQLITE_WASM")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("circle/wasm/octra_sqlite_circle.wasm"));
+            let mut bytes =
+                fs::read(&wasm).map_err(|error| anyhow!("read {}: {error}", wasm.display()))?;
+            replace_placeholder(&mut bytes, OWNER_PUBKEY_PLACEHOLDER, owner_pubkey)?;
+            replace_placeholder(&mut bytes, DB_ID_PLACEHOLDER, db_id)?;
+            let engine = fueled_engine()?;
             let module = Module::new(&engine, bytes)?;
             Self::instantiate(engine, module)
         }
@@ -85,6 +108,7 @@ mod wasm_behavior {
             assert_eq!(imports, expected_imports);
             let host = Rc::new(RefCell::new(Host::default()));
             let mut store = Store::new(&engine, host.clone());
+            let _ = store.set_fuel(1_000_000_000_000);
             let mut linker = Linker::new(&engine);
             add_host_imports(&mut linker)?;
             let instance = linker.instantiate(&mut store, &module)?;
@@ -122,6 +146,17 @@ mod wasm_behavior {
         fn call_update(&mut self, method: &str, params: &[&str]) -> Result<String> {
             let frame = call_frame(method, params);
             self.call_raw_update(&frame)
+        }
+
+        fn call_update_with_fuel(
+            &mut self,
+            method: &str,
+            params: &[&str],
+        ) -> Result<(String, u64)> {
+            let before = self.store.get_fuel()?;
+            let result = self.call_update(method, params)?;
+            let after = self.store.get_fuel()?;
+            Ok((result, before - after))
         }
 
         fn call_raw_query(&mut self, frame: &[u8]) -> Result<(i32, Option<String>)> {
@@ -163,6 +198,12 @@ mod wasm_behavior {
         let start = positions[0];
         bytes[start..start + replacement.len()].copy_from_slice(replacement);
         Ok(())
+    }
+
+    fn fueled_engine() -> Result<Engine> {
+        let mut config = Config::new();
+        config.consume_fuel(true);
+        Ok(Engine::new(&config)?)
     }
 
     fn add_host_imports(linker: &mut Linker<Rc<RefCell<Host>>>) -> Result<()> {
@@ -448,6 +489,48 @@ mod wasm_behavior {
         assert_eq!(accepted["ok"], true);
         let storage = json_response(&contract.call_query("storage_info", &[])?);
         assert_eq!(storage["owner_sequence"], 42);
+        Ok(())
+    }
+
+    #[test]
+    fn owner_signed_exec_has_measurable_fuel_cost() -> Result<()> {
+        let sql = "select 1;";
+        let mut unsigned = Contract::load_fueled()?;
+        let (unsigned_response, unsigned_fuel) = unsigned.call_update_with_fuel("exec", &[sql])?;
+        assert_eq!(json_response(&unsigned_response)["ok"], true);
+
+        let (owner, owner_pubkey, db_id_bytes) = owner_fixture();
+        let mut signed = Contract::load_patched_fueled(&owner_pubkey, &db_id_bytes)?;
+        let pubkey = hex::encode(owner_pubkey);
+        let sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", sql);
+        let (signed_response, signed_fuel) =
+            signed.call_update_with_fuel("exec", &[sql, &pubkey, "1", &sig])?;
+        assert_eq!(json_response(&signed_response)["ok"], true);
+
+        let mut denied = Contract::load_patched_fueled(&owner_pubkey, &db_id_bytes)?;
+        let other_pubkey = hex::encode(
+            SigningKey::from_bytes(&[8u8; 32])
+                .verifying_key()
+                .to_bytes(),
+        );
+        let zero_sig = "00".repeat(64);
+        let (denied_response, denied_fuel) =
+            denied.call_update_with_fuel("exec", &[sql, &other_pubkey, "1", &zero_sig])?;
+        assert_eq!(json_response(&denied_response)["error"], "auth_denied");
+
+        let mut bad_sig = Contract::load_patched_fueled(&owner_pubkey, &db_id_bytes)?;
+        let (bad_sig_response, bad_sig_fuel) =
+            bad_sig.call_update_with_fuel("exec", &[sql, &pubkey, "1", &zero_sig])?;
+        assert_eq!(
+            json_response(&bad_sig_response)["error"],
+            "auth_bad_signature"
+        );
+
+        eprintln!(
+            "octra-sqlite fuel profile: unsigned_exec_select={unsigned_fuel} auth_denied_before_verify={denied_fuel} auth_bad_signature_verify={bad_sig_fuel} signed_exec_select={signed_fuel}"
+        );
+        assert!(signed_fuel > unsigned_fuel);
+        assert!(bad_sig_fuel > denied_fuel);
         Ok(())
     }
 
