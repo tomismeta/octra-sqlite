@@ -191,16 +191,17 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.6.3.json`: release manifest for the bundled Circle
+- `release/octra-sqlite-0.6.4.json`: release manifest for the bundled Circle
   WASM and network deployment metadata.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.
 - `scripts/install-cli.sh`: local installer for `cargo install --path .`.
 - `scripts/build-wasm.sh`: optional local WASM rebuild for contract changes.
 - `scripts/audit-wasm.sh`: import/export audit.
+- `scripts/measure-wasm.sh`: release-gate fuel and footprint measurement.
 
 ## Rule
 
-If a workflow is part of the reference experience, implement it in Rust and
-expose it through `octra-sqlite`. Do not grow the supported surface by adding
-new first-class scripts.
+If a user workflow is part of the reference experience, implement it in Rust and
+expose it through `octra-sqlite`. Shell scripts are limited to build, audit,
+install, and release measurement tooling.

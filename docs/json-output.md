@@ -35,8 +35,9 @@ include `tx_hash`, `nonce`, `ou`, `circle`, `database`, and `next_command`.
 be `null` when polling an already-submitted transaction.
 
 Some errors also include `error.hint` for operator guidance. Budget errors keep
-their stable code and may add a hint to reduce query work, lower result limits,
-or use an index-backed access pattern.
+their stable code and may add a hint to reduce query work, add indexes, lower
+result limits, batch writes deliberately, or use receipt/status commands before
+retrying submitted writes.
 
 Process exit codes are intentionally small for now:
 
@@ -54,7 +55,7 @@ Stable error classifications:
 | `read_only` | `--read-only` refused a write. |
 | `result_limit_exceeded` | Query exceeded the Circle row limit. |
 | `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
-| `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
+| `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit or the Circle runtime reported WASM fuel exhaustion. |
 | `receipt_pending` | A write was submitted, but its Circle receipt was not available before the wait deadline. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |

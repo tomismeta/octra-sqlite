@@ -56,7 +56,7 @@ pub fn error_code(error: &AnyError) -> &'static str {
 pub fn error_hint(error: &AnyError) -> Option<&'static str> {
     match error_code(error) {
         "query_budget_exceeded" | "exec_budget_exceeded" => Some(
-            "SQL exceeded Circle fuel; reduce joins, window-function work, or LIMIT size, or use an index-backed access pattern.",
+            "SQL exceeded Circle fuel; reduce joins or window-function work, add an index-backed access pattern, lower LIMIT/result size, batch writes deliberately, and use receipt/status commands before retrying submitted writes.",
         ),
         _ => None,
     }
@@ -101,6 +101,9 @@ fn classified_error_code(error: &AnyError) -> Option<&'static str> {
 }
 
 fn client_error_code(error: &ClientError) -> &'static str {
+    if client_error_indicates_wasm_fuel_exhaustion(error) {
+        return "exec_budget_exceeded";
+    }
     if let Some(code) = error.code() {
         return match code {
             "rpc_rate_limited" => "rpc_rate_limited",
@@ -138,6 +141,13 @@ fn default_client_error_code(kind: ErrorKind) -> &'static str {
     }
 }
 
+fn client_error_indicates_wasm_fuel_exhaustion(error: &ClientError) -> bool {
+    error
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("all fuel consumed by webassembly")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,9 +169,20 @@ mod tests {
         assert_eq!(
             error_hint(&error),
             Some(
-                "SQL exceeded Circle fuel; reduce joins, window-function work, or LIMIT size, or use an index-backed access pattern."
+                "SQL exceeded Circle fuel; reduce joins or window-function work, add an index-backed access pattern, lower LIMIT/result size, batch writes deliberately, and use receipt/status commands before retrying submitted writes."
             )
         );
+    }
+
+    #[test]
+    fn runtime_wasm_fuel_traps_get_budget_guidance() {
+        let error = AnyError::new(ClientError::with_code(
+            ErrorKind::Receipt,
+            "transaction_rejected",
+            "transaction abc rejected: wasm export trapped: all fuel consumed by WebAssembly",
+        ));
+        assert_eq!(error_code(&error), "exec_budget_exceeded");
+        assert!(error_hint(&error).unwrap().contains("receipt/status"));
     }
 
     #[test]

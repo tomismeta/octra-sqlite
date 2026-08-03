@@ -3,7 +3,7 @@
 This directory contains machine-readable release manifests for audited,
 network-specific artifacts.
 
-`octra-sqlite-0.6.3.json` is the current release manifest checked by
+`octra-sqlite-0.6.4.json` is the current release manifest checked by
 `octra-sqlite status`.
 
 `octra-sqlite-0.1.0.json`, `octra-sqlite-0.2.0.json`,
@@ -31,3 +31,7 @@ The `0.6.3` manifest records the SQLite 3.53.4 WASM rebuild, adds the
 `0.6.1-0.6.2` 3.53.3 WASM as a metadata-only historical epoch, and records the
 devnet rehearsal plus Octra Vitals mainnet upgrade proof completed before
 crates.io publish.
+The `0.6.4` manifest is a client/tooling diagnostics release over the identical
+`0.6.3` Circle WASM. It records receipt follow-up polish, repeatable fuel and
+size measurement, the measured OSW1 verification hotspot, CI footprint budgets,
+and runtime fuel-exhaustion guidance.

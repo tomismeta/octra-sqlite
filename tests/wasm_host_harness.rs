@@ -159,6 +159,13 @@ mod wasm_behavior {
             Ok((result, before - after))
         }
 
+        fn call_query_with_fuel(&mut self, method: &str, params: &[&str]) -> Result<(String, u64)> {
+            let before = self.store.get_fuel()?;
+            let result = self.call_query(method, params)?;
+            let after = self.store.get_fuel()?;
+            Ok((result, before - after))
+        }
+
         fn call_raw_query(&mut self, frame: &[u8]) -> Result<(i32, Option<String>)> {
             let ptr = self.alloc.call(&mut self.store, frame.len() as i32)?;
             memory(&mut self.store, &self.instance)?.write(&mut self.store, ptr as usize, frame)?;
@@ -495,6 +502,11 @@ mod wasm_behavior {
     #[test]
     fn owner_signed_exec_has_measurable_fuel_cost() -> Result<()> {
         let sql = "select 1;";
+        let mut public_read = Contract::load_fueled()?;
+        let (public_read_response, public_read_fuel) =
+            public_read.call_query_with_fuel("query_typed", &[sql])?;
+        assert!(public_read_response.starts_with("OSR1:"));
+
         let mut unsigned = Contract::load_fueled()?;
         let (unsigned_response, unsigned_fuel) = unsigned.call_update_with_fuel("exec", &[sql])?;
         assert_eq!(json_response(&unsigned_response)["ok"], true);
@@ -526,11 +538,37 @@ mod wasm_behavior {
             "auth_bad_signature"
         );
 
+        let mut write_workload = Contract::load_patched_fueled(&owner_pubkey, &db_id_bytes)?;
+        let tiny_write_sql = "create table fuel_probe(id integer primary key, note text);";
+        let tiny_sig = sign_osw1(&owner, &db_id_bytes, 1, "exec", tiny_write_sql);
+        let (tiny_write_response, signed_tiny_write_fuel) = write_workload
+            .call_update_with_fuel("exec", &[tiny_write_sql, &pubkey, "1", &tiny_sig])?;
+        assert_eq!(json_response(&tiny_write_response)["ok"], true);
+
+        let restore_batch_sql = "\
+create table vitals_history(metric text not null, snapshot integer not null, value integer not null, primary key(metric, snapshot));
+with recursive n(x) as (values(1) union all select x + 1 from n where x < 64)
+insert into vitals_history(metric, snapshot, value) select 'aml', x, x * 10 from n;
+create index vitals_history_recent on vitals_history(metric, snapshot desc);";
+        let restore_sig = sign_osw1(&owner, &db_id_bytes, 2, "exec", restore_batch_sql);
+        let (restore_response, signed_restore_batch_fuel) = write_workload
+            .call_update_with_fuel("exec", &[restore_batch_sql, &pubkey, "2", &restore_sig])?;
+        assert_eq!(json_response(&restore_response)["ok"], true);
+
+        let vitals_query_sql = "select snapshot, value from vitals_history where metric = 'aml' order by snapshot desc limit 30;";
+        let (vitals_query_response, representative_vitals_query_fuel) =
+            write_workload.call_query_with_fuel("query_typed", &[vitals_query_sql])?;
+        assert!(vitals_query_response.starts_with("OSR1:"));
+
         eprintln!(
-            "octra-sqlite fuel profile: unsigned_exec_select={unsigned_fuel} auth_denied_before_verify={denied_fuel} auth_bad_signature_verify={bad_sig_fuel} signed_exec_select={signed_fuel}"
+            "octra-sqlite fuel baseline: public_read_query_typed={public_read_fuel} sealed_read_auth_wasm_delta=0 unsigned_exec_select={unsigned_fuel} auth_denied_before_verify={denied_fuel} auth_bad_signature_verify={bad_sig_fuel} signed_exec_select={signed_fuel} signed_tiny_write={signed_tiny_write_fuel} signed_restore_batch={signed_restore_batch_fuel} representative_vitals_query={representative_vitals_query_fuel}"
         );
+        assert!(public_read_fuel > 0);
         assert!(signed_fuel > unsigned_fuel);
         assert!(bad_sig_fuel > denied_fuel);
+        assert!(signed_tiny_write_fuel > bad_sig_fuel);
+        assert!(signed_restore_batch_fuel > signed_tiny_write_fuel);
+        assert!(representative_vitals_query_fuel > 0);
         Ok(())
     }
 

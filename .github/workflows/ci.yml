@@ -47,5 +47,7 @@ jobs:
           test "$(wc -c < circle/wasm/octra_sqlite_circle.wasm | tr -d ' ')" = "$EXPECTED_WASM_BYTES"
           test "$(sha256sum circle/wasm/octra_sqlite_circle.wasm | awk '{print $1}')" = "$EXPECTED_WASM_SHA256"
           bash scripts/audit-wasm.sh circle/wasm/octra_sqlite_circle.wasm
+      - name: Check WASM and crate footprint
+        run: bash scripts/measure-wasm.sh --skip-fuel --json --max-wasm-bytes 700000 --max-package-bytes 2500000
       - name: WASM behavior harness
         run: OCTRA_SQLITE_WASM=circle/wasm/octra_sqlite_circle.wasm cargo test --locked --features wasm-behavior --test wasm_host_harness

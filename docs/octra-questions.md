@@ -43,6 +43,38 @@ exhaustion result and no committed update state. Once Octra provides that,
 octra-sqlite should keep its narrower SQLite budgets as product limits while
 relying on protocol fuel as the outer consensus boundary.
 
+## Host Signature Verification
+
+OSW1 currently verifies Ed25519 signatures inside the Circle WASM. The measured
+`0.6.4` harness baseline shows this dominates owner-signed write fuel: bad
+signature verification and successful signed writes both cost over 100 million
+Wasmtime fuel, while bounded reads are much cheaper.
+
+The preferred Octra-native capability is deterministic host Ed25519
+verification, for example:
+
+```c
+int32_t host_ed25519_verify(
+  const uint8_t *pubkey,
+  uint32_t pubkey_len,
+  const uint8_t *message,
+  uint32_t message_len,
+  const uint8_t *signature,
+  uint32_t signature_len
+);
+```
+
+Required properties:
+
+- validators compute the same result for the same inputs
+- the import verifies the exact OSW1 frame bytes signed today
+- private key material is never exposed to the Circle
+- verification failure is deterministic and commits no state
+- the import is available before `exec` or `reset` invokes SQLite
+
+This would preserve OSW1's trust model while moving the expensive cryptographic
+primitive into the Octra host runtime.
+
 ## Wallet Roles And Write Policy
 
 Implemented go-live baseline: a Circle created by `octra-sqlite new NAME`

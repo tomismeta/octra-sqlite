@@ -1,6 +1,6 @@
 [package]
 name = "octra-sqlite"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -17,11 +17,11 @@ include = [
     "/CONTRIBUTING.md",
     "/LICENSE",
     "/README.md",
-    "/RELEASE.md",
     "/SECURITY.md",
     "/circle/source/octra_sqlite_circle.c",
     "/circle/wasm/octra_sqlite_circle.wasm",
     "/config/defaults.json",
+    "/docs/fuel-and-size.md",
     "/docs/headless.md",
     "/docs/json-output.md",
     "/docs/library-boundary.md",
@@ -41,6 +41,7 @@ include = [
     "/scripts/audit-wasm.sh",
     "/scripts/build-wasm.sh",
     "/scripts/install-cli.sh",
+    "/scripts/measure-wasm.sh",
     "/src/**",
     "/tests/**",
 ]

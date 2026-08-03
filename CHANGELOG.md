@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.4
+
+- Added `scripts/measure-wasm.sh` for repeatable WASM size, packaged crate
+  size, and Wasmtime fuel baseline reporting.
+- Added [docs/fuel-and-size.md](./docs/fuel-and-size.md) with the current
+  baseline, release-gate guidance, optimization policy, and the measured OSW1
+  signature-verification hotspot.
+- Extended the optional `wasm-behavior` harness to report public read, unsigned
+  bootstrap exec, owner-signed read/write auth, tiny write, restore-like batch,
+  and representative Vitals-style query fuel.
+- Added a CI footprint gate for bundled WASM and packaged crate size.
+- Reduced the packaged crate from about 509000 to about 501000 bytes by keeping the
+  maintainer release runbook in the repository while excluding it from the
+  published crate artifact.
+- Improved receipt polling so missing receipts are treated as pending and
+  terminal rejected/dropped transactions are reported with transaction context.
+- Classified runtime `all fuel consumed by WebAssembly` write failures as
+  `exec_budget_exceeded` and expanded the CLI hint with bounded-query,
+  indexing, batching, and receipt/status follow-up guidance.
+- Documented host-native deterministic Ed25519 verification as the main Octra
+  protocol ask for reducing owner-signed write fuel without weakening OSW1.
+- Kept SQLite 3.53.4, the bundled Circle WASM bytes, OSR1/OSW1, storage
+  format, owner-write authorization, root Rust API, command names, and runtime
+  dependencies unchanged from `0.6.3`.
+
 ## 0.6.3
 
 - Rebuilt the bundled Circle WASM with SQLite 3.53.4, taking SQLite's

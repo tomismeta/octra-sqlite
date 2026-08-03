@@ -27,28 +27,26 @@ work, and do not cut releases for documentation polish alone.
 - **Octra**: adopting native host capabilities without recreating them in the
   Circle program.
 
-## Now: 0.6.3 Engine Currency
+## Now: 0.6.4 Measured Operations
 
 Themes: **Security**, **Operations**, **Developer Experience**
 
-- Rebuild the bundled Circle WASM with SQLite 3.53.4, taking upstream fixes for
-  problems in 3.53.0 through 3.53.3.
 - Keep the top-level command set, JSON envelopes, root Rust types, OSR1/OSW1,
-  storage accounting, execution budgets, and runtime dependency graph
-  unchanged.
-- Add the 0.6.1-0.6.2 3.53.3 WASM epoch to the metadata-only historical catalog
-  so normal upgrades can identify the previous engine without bundling old
-  bytes.
-- Prove `3.53.3 -> 3.53.4` on devnet, then upgrade Octra Vitals mainnet before
-  crates.io publish.
-- Keep trusted publishing as a release hygiene item: use it only after the
-  crates.io-side publisher is registered; otherwise document the manual publish
-  honestly.
+  storage accounting, execution budgets, bundled SQLite 3.53.4 engine, and
+  runtime dependency graph unchanged.
+- Establish fuel and footprint measurement with a documented baseline, local
+  measurement script, and CI size budgets.
+- Improve receipt follow-up diagnostics for missing receipts and terminal
+  rejected/dropped transactions.
+- Classify runtime WASM fuel exhaustion as `exec_budget_exceeded` and give
+  operator guidance around bounded queries, indexes, batching, and receipt
+  follow-up.
+- Record host-native deterministic Ed25519 verification as the main Octra
+  protocol ask for reducing owner-signed write fuel without weakening OSW1.
 
-Exit: full local gates, WASM harness/audit, devnet rehearsal, Vitals mainnet
-upgrade proof, and the review panel confirm a patch-compatible engine
-maintenance release; then `0.6.3` can publish without pulling in unrelated
-roadmap work.
+Exit: full local gates, WASM harness/audit, package dry run, clean branch/PR
+hygiene, and the review panel confirm a patch-compatible client/tooling release;
+then `0.6.4` can publish without pulling in unrelated roadmap work.
 
 ## Next: 0.7.0 Secret Ownership
 
@@ -79,6 +77,9 @@ Themes: **Scalability**, **Operations**, **Octra**
 - Add restore checkpoints only if real multi-batch workloads justify them.
 - Tune page, dirty-page, and execution budgets only from measured workloads and
   with WASM harness plus devnet proof.
+- Prefer host-native deterministic Ed25519 verification when Octra exposes it;
+  OSW1 should stay intact, but the expensive primitive does not need to live in
+  WASM forever.
 - Adopt protocol-enforced WASM fuel, authenticated caller identity, and method
   policy when Octra exposes documented consensus-safe capabilities.
 - Consider a separate read-only client crate only after the core library

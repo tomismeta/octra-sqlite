@@ -147,15 +147,16 @@ official `wallet.json`, attach plaintext wallet JSON, or import the private key.
 The crate ships `circle/wasm/octra_sqlite_circle.wasm` so users do not need a
 local WASM toolchain. Released binaries embed the bundled WASM and release
 manifest; source and operator overrides are explicit. `scripts/audit-wasm.sh`
-checks the Circle import/export surface,
+checks the Circle import/export surface, `scripts/measure-wasm.sh` reports the
+WASM/package footprint and fuel baseline,
 [docs/toolchain.md](./docs/toolchain.md) records the rebuild inputs, and
 release manifests publish the bundled WASM hash and record live devnet proofs
 and operator mainnet proofs when completed.
 
-The `0.6.3` crate bundles SQLite 3.53.4 in a rebuilt Circle WASM while keeping
-the CLI, Rust API, storage model, and wire formats unchanged. The current
+The `0.6.4` crate bundles the same SQLite 3.53.4 Circle WASM as `0.6.3` while
+adding fuel/size measurement and clearer runtime fuel diagnostics. The current
 release manifest is
-[release/octra-sqlite-0.6.3.json](./release/octra-sqlite-0.6.3.json).
+[release/octra-sqlite-0.6.4.json](./release/octra-sqlite-0.6.4.json).
 Existing Circles keep the engine they were deployed with until their owner runs
 `upgrade`; historical release manifests retain the prior deployment proofs.
 
@@ -346,6 +347,7 @@ and local snapshot rendering commands such as `.dump` and `.fullschema`. The
 - [JSON output](./docs/json-output.md)
 - [Operations](./docs/operations.md)
 - [Roadmap](./docs/roadmap.md)
+- [Fuel and size](./docs/fuel-and-size.md)
 - [Storage model](./docs/storage-model.md)
 - [Toolchain and builds](./docs/toolchain.md)
 - [OSR1 typed results](./docs/spec/osr1.md)
