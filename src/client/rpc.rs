@@ -18,7 +18,9 @@ pub(super) fn view_with<T: Transport>(
 ) -> Result<Value> {
     match session.target().read_mode {
         ReadMode::Public => return public_view_with(transport, session, method, params),
-        ReadMode::Auto if circle_is_public_read(&circle_info_with(transport, session)?) => {
+        ReadMode::Auto
+            if circle_info_allows_unsigned_read(&circle_info_with(transport, session)?) =>
+        {
             return public_view_with(transport, session, method, params);
         }
         _ => {}
@@ -90,10 +92,8 @@ pub(super) fn circle_info_with<T: Transport>(transport: &T, session: &Session) -
     )
 }
 
-fn circle_is_public_read(info: &Value) -> bool {
+pub(crate) fn circle_info_allows_unsigned_read(info: &Value) -> bool {
     info.get("privacy_class").and_then(Value::as_str) == Some("public")
-        && info.get("browser_mode").and_then(Value::as_str) == Some("gateway_allowed")
-        && info.get("resource_mode").and_then(Value::as_str) == Some("public_resources")
 }
 
 pub(super) fn query_typed_with<T: Transport>(
@@ -136,7 +136,9 @@ pub(super) fn auth_info_with<T: Transport>(transport: &T, session: &Session) -> 
 pub(super) fn program_info_with<T: Transport>(transport: &T, session: &Session) -> Result<Value> {
     match session.target().read_mode {
         ReadMode::Public => return public_program_info_with(transport, session),
-        ReadMode::Auto if circle_is_public_read(&circle_info_with(transport, session)?) => {
+        ReadMode::Auto
+            if circle_info_allows_unsigned_read(&circle_info_with(transport, session)?) =>
+        {
             return public_program_info_with(transport, session);
         }
         _ => {}

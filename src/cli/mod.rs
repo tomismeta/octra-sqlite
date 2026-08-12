@@ -20,7 +20,7 @@ mod upgrade;
 use crate::{
     client::{
         AuthInfo, ClientOptions, Config, Database, DatabaseMetadata, Error, ErrorKind,
-        ExecuteResult, RpcTraceMode, config_path, load_config,
+        ExecuteResult, RpcTraceMode, circle_info_allows_unsigned_read, config_path, load_config,
         raw::{
             Session, WalletMaterial, auth_info,
             build_control_session as client_build_control_session,
@@ -770,12 +770,6 @@ fn explicit_target_allows_unsigned_read(args: &TargetArgs, config: &Config) -> b
             .is_some_and(|info| circle_info_allows_unsigned_read(&info)),
         ReadMode::Sealed => false,
     }
-}
-
-fn circle_info_allows_unsigned_read(info: &Value) -> bool {
-    info.get("privacy_class").and_then(Value::as_str) == Some("public")
-        && info.get("browser_mode").and_then(Value::as_str) == Some("gateway_allowed")
-        && info.get("resource_mode").and_then(Value::as_str) == Some("public_resources")
 }
 
 fn build_session(args: &TargetArgs) -> Result<Session> {

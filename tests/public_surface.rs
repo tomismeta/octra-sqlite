@@ -3,7 +3,7 @@
 
 use octra_sqlite::{
     AuthInfo, Client, ClientOptions, Database, Error, ErrorKind, ExecuteResult, ProgramInfo,
-    QueryResult, ReadMode, Result, SubmittedTransaction, Value,
+    QueryResult, ReadMode, Result, StorageInfo, SubmittedTransaction, Value,
 };
 
 use octra_sqlite::client::{
@@ -35,6 +35,10 @@ fn public_surface_imports_compile() {
     assert_eq!(ReadMode::Public.as_str(), "public");
     assert!(Operation::Execute.safety().submits_transaction);
     assert_eq!(Error::new("surface").code(), None);
+    let _: fn(&ExecuteResult) -> Option<u64> = ExecuteResult::effort;
     #[cfg(feature = "http")]
-    let _: Client = Client::default();
+    {
+        let _: Client = Client::default();
+        let _: fn(&Database) -> Result<StorageInfo> = Database::storage_info;
+    }
 }

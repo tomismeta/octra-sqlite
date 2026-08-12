@@ -18,7 +18,7 @@ Root exports are intentionally small:
 
 - `Client`, `ClientOptions`, and `Database`
 - `QueryResult`, `ExecuteResult`, and `SubmittedTransaction`
-- `AuthInfo`, `ProgramInfo`, and `ReadMode`
+- `AuthInfo`, `ProgramInfo`, `StorageInfo`, and `ReadMode`
 - `Value`, `Error`, `ErrorKind`, and `Result`
 
 `Client` is the control plane: configuration, transport ownership, and database
@@ -34,6 +34,8 @@ operator concerns.
 `Database::execute(sql)` is the confirmed write path.
 `Database::execute_no_wait(sql)` returns `SubmittedTransaction`; pass it to
 `Database::wait(&submitted)` to complete the lifecycle.
+`Database::storage_info()` returns typed VFS state and effective Circle storage
+limits. `ExecuteResult::effort()` exposes receipt effort when Octra reports it.
 
 `Error::kind()` supplies a stable broad category. `Error::code()` preserves a
 precise machine-readable code supplied by a remote source or assigned at a

@@ -62,8 +62,9 @@
 //!   SQL data plane.
 //! - [`QueryResult`], [`ExecuteResult`], and [`SubmittedTransaction`] model the
 //!   query, confirmed-write, and submitted-write lifecycles.
-//! - [`AuthInfo`], [`ProgramInfo`], and [`ReadMode`] expose database and Circle
-//!   state without leaking raw RPC details into the first story.
+//! - [`AuthInfo`], [`ProgramInfo`], [`StorageInfo`], and [`ReadMode`] expose
+//!   database and Circle state without leaking raw RPC details into the first
+//!   story.
 //! - [`client`] contains advanced transport, config, and signing types.
 //! - [`client::raw`] contains lower-level Octra RPC plumbing for adapters and
 //!   operational tooling.
@@ -98,7 +99,7 @@ pub mod protocol;
 
 pub use client::{
     AuthInfo, Client, ClientOptions, Database, Error, ErrorKind, ExecuteResult, ProgramInfo,
-    QueryResult, Result, SubmittedTransaction,
+    QueryResult, Result, StorageInfo, SubmittedTransaction,
 };
 pub use protocol::target::ReadMode;
 pub use serde_json::Value;
