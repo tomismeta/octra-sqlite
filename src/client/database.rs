@@ -2,8 +2,10 @@
 use super::transport::HttpTransport;
 use super::{
     error::{Error, ErrorKind, Result},
-    results::{AuthInfo, ExecuteResult, ProgramInfo, QueryResult, SubmittedTransaction},
-    rpc::{auth_info_with, program_info_with, query_typed_with, wait_for_receipt_with},
+    results::{
+        AuthInfo, ExecuteResult, ProgramInfo, QueryResult, StorageInfo, SubmittedTransaction,
+    },
+    rpc::{auth_info_with, program_info_with, query_typed_with, view_with, wait_for_receipt_with},
     safety::Operation,
     session::{ClientOptions, Session, build_session},
     transport::Transport,
@@ -273,6 +275,16 @@ impl<T: Transport> Database<T> {
     pub fn program_info(&self) -> Result<ProgramInfo> {
         ProgramInfo::from_value(program_info_with(self.transport.as_ref(), &self.session)?)
     }
+
+    /// Read Circle-backed SQLite storage state and effective limits.
+    pub fn storage_info(&self) -> Result<StorageInfo> {
+        StorageInfo::from_value(view_with(
+            self.transport.as_ref(),
+            &self.session,
+            "storage_info",
+            vec![],
+        )?)
+    }
 }
 
 #[cfg(test)]
@@ -288,7 +300,7 @@ mod tests {
     struct MockTransport {
         calls: Arc<Mutex<Vec<String>>>,
         receipt: Arc<Mutex<Value>>,
-        public_info: bool,
+        public_modes: Option<(&'static str, &'static str)>,
     }
 
     impl Default for MockTransport {
@@ -300,7 +312,7 @@ mod tests {
                     "error": null,
                     "method": "exec",
                 }))),
-                public_info: false,
+                public_modes: None,
             }
         }
     }
@@ -315,7 +327,14 @@ mod tests {
 
         fn public_read_circle() -> Self {
             Self {
-                public_info: true,
+                public_modes: Some(("gateway_allowed", "public_resources")),
+                ..Self::default()
+            }
+        }
+
+        fn public_native_read_circle() -> Self {
+            Self {
+                public_modes: Some(("native_sealed", "public_resources")),
                 ..Self::default()
             }
         }
@@ -326,11 +345,11 @@ mod tests {
             self.calls.lock().unwrap().push(method.to_string());
             match method {
                 "octra_circleInfo" => {
-                    if self.public_info {
+                    if let Some((browser_mode, resource_mode)) = self.public_modes {
                         Ok(json!({
                             "privacy_class": "public",
-                            "browser_mode": "gateway_allowed",
-                            "resource_mode": "public_resources",
+                            "browser_mode": browser_mode,
+                            "resource_mode": resource_mode,
                         }))
                     } else {
                         Ok(json!({
@@ -352,6 +371,9 @@ mod tests {
                             "db_id": "1111111111111111111111111111111111111111111111111111111111111111",
                         }));
                     }
+                    if circle_method == "storage_info" {
+                        return Ok(storage_info_fixture());
+                    }
                     let vector: Value =
                         serde_json::from_str(include_str!("../../tests/fixtures/osr1/basic.json"))
                             .unwrap();
@@ -361,6 +383,14 @@ mod tests {
                     )))
                 }
                 "octra_circleView" => {
+                    let circle_method = params
+                        .as_array()
+                        .and_then(|params| params.get(1))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    if circle_method == "storage_info" {
+                        return Ok(storage_info_fixture());
+                    }
                     let vector: Value =
                         serde_json::from_str(include_str!("../../tests/fixtures/osr1/basic.json"))
                             .unwrap();
@@ -420,6 +450,28 @@ mod tests {
         }
     }
 
+    fn storage_info_fixture() -> Value {
+        json!({
+            "ok": true,
+            "storage": "circle_key_value_page_vfs",
+            "meta_key": "octra.sqlite.vfs.v1.meta",
+            "exists": true,
+            "page_size": 4096,
+            "file_bytes": 8192,
+            "page_count": 2,
+            "generation": 7,
+            "commit_protocol": "generation_manifest_v4",
+            "meta_version": 4,
+            "owner_sequence": 9,
+            "max_dirty_pages": 1024,
+            "max_db_pages": 8069,
+            "max_db_file_bytes": 33_050_624,
+            "stable_storage_limit_bytes": 33_554_432,
+            "query_vdbe_steps": 5_000_000,
+            "exec_vdbe_steps": 25_000_000,
+        })
+    }
+
     #[test]
     fn database_query_uses_transport_and_returns_typed_rows() {
         let transport = MockTransport::default();
@@ -471,6 +523,26 @@ mod tests {
     }
 
     #[test]
+    fn auto_database_query_uses_octra_privacy_class_for_native_public_circle() {
+        let transport = MockTransport::public_native_read_circle();
+        let calls = transport.calls.clone();
+        let db = Database::open_with_transport(
+            ClientOptions {
+                target: Some("oct://devnet/octABC".to_string()),
+                rpc: Some("mock://rpc".to_string()),
+                ..ClientOptions::default()
+            },
+            transport,
+        )
+        .unwrap();
+        assert_eq!(db.query("select 1").unwrap().row_count, 1);
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            ["octra_circleInfo", "octra_circleView"]
+        );
+    }
+
+    #[test]
     fn public_program_info_uses_unsigned_rpc_without_wallet() {
         let transport = MockTransport::default();
         let calls = transport.calls.clone();
@@ -509,6 +581,18 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             ["octra_circleInfo", "octra_circleProgramInfo"]
         );
+    }
+
+    #[test]
+    fn database_storage_info_returns_typed_state_and_limits() {
+        let db = Database::open_with_transport(test_options(), MockTransport::default()).unwrap();
+        let info = db.storage_info().unwrap();
+        assert_eq!(info.page_size, 4096);
+        assert_eq!(info.file_bytes, 8192);
+        assert_eq!(info.owner_sequence, Some(9));
+        assert_eq!(info.max_db_file_bytes, Some(33_050_624));
+        assert_eq!(info.query_vdbe_steps, Some(5_000_000));
+        assert_eq!(info.raw()["generation"], 7);
     }
 
     #[test]

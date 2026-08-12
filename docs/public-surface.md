@@ -79,9 +79,11 @@ defaults.
 (`public / gateway_allowed / public_resources`). Public-read SQL queries use
 `octra_circleView`; sealed databases keep `octra_circleViewAuth`. Saved public
 database metadata preserves that read mode. Raw `oct://` targets detect the
-Octra read surface from Circle metadata unless the URI explicitly includes
-`?read_mode=sealed` or `?read_mode=public`. Writes stay owner-signed through
-OSW1 in both modes.
+Octra read surface from `privacy_class`: `public` uses unsigned views and all
+other classes stay signed. Browser and resource policy govern different Octra
+capabilities and do not redefine program-view authentication. The URI may
+explicitly include `?read_mode=sealed` or `?read_mode=public`. Writes stay
+owner-signed through OSW1 in both modes.
 Sealed reads are authenticated, not encrypted or owner-only. Write SQL and
 values remain visible in Octra transaction history.
 Public reads include `backup_chunk`, so public access permits reconstruction of
@@ -172,6 +174,8 @@ requiring callers to parse human help text.
 - `src/client/raw.rs`: raw session and Octra RPC helpers for CLI/audit plumbing.
 - `src/client/rpc.rs`: signed RPC/view/query plumbing.
 - `src/client/results.rs`: typed client result wrappers and receipt validation.
+  `StorageInfo` models the stable VFS state and keeps newer engine limits
+  optional so old Circles remain inspectable.
 - `src/client/safety.rs`: operation safety metadata.
 - `src/client/write.rs`: owner-write prepare, sign, and submit lifecycle.
 - `src/client/transport.rs`: the client transport seam. The default is HTTP

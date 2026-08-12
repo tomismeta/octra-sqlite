@@ -33,10 +33,29 @@ but new writes cannot grow beyond the current 8069-page stable layout. This
 capacity assumes the Circle's stable storage is dedicated to this VFS; unrelated
 keys reduce the space available to SQLite.
 
-The live devnet capacity probe recorded in `docs/proofs/devnet.md` reached
-exactly this page/file limit. The larger 33.55 MB figure is the Octra
+The [live devnet capacity probe](https://github.com/tomismeta/octra-sqlite/blob/main/docs/proofs/devnet.md)
+reached exactly this page/file limit. The larger 33.55 MB figure is the Octra
 stable-storage envelope, not the SQLite file payload available inside the
 current VFS layout.
+
+## Application Data Plane
+
+SQLite stable storage owns relational state: rows, indexes, constraints,
+metadata, and references. Large documents and media may instead live as Octra
+Circle assets, with their canonical path, digest, content type, and application
+metadata indexed in SQLite. This keeps binary payloads from consuming database
+pages while preserving SQL discovery and integrity checks.
+
+Asset access follows the Circle's independent resource policy. Asset writes
+are outside SQLite transactions, backups, restores, and engine rollback; an
+indexed digest proves payload integrity, not atomic referential integrity.
+
+That is an application architecture, not a second octra-sqlite storage API.
+The crate will not hide Circle assets behind a key-value facade or teach SQLite
+to fetch pages from another Circle. A database remains a complete SQLite file
+inside one Circle. Workloads that outgrow one database should partition by
+complete application-owned databases, such as tenant or bounded time range,
+with routing outside SQLite.
 
 The file-size and dirty-page limits are independent. A single statement that
 changes more than 1024 distinct pages fails even when the database is well below
@@ -135,9 +154,12 @@ The contract should stay small around that seam:
   imports or change semantics silently.
 - Audit final WASM imports and exports after every build.
 - Keep client rendering and convenience tooling outside the contract.
-- Keep policy separate from the VFS until the host exposes caller identity or
-  method access control.
+- Keep policy separate from the VFS until caller identity is documented as
+  stable across supported networks and the migration and security design is
+  approved.
 
 SQLite progress handling bounds engine work inside this contract. General WASM
-fuel or time metering remains an Octra runtime responsibility because the
-contract cannot meter host or runtime work outside SQLite.
+fuel remains an Octra runtime responsibility because the contract cannot meter
+host or runtime work outside SQLite. Current LiteNode source enforces an outer
+WASM fuel ceiling; the narrower SQLite budgets remain useful, stable product
+limits.

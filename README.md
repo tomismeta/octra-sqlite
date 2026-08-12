@@ -93,8 +93,8 @@ adapter plumbing that needs to reproduce CLI-style signed Octra RPC flows.
 
 The crate root exports the first-story API:
 `Client`, `ClientOptions`, `Database`, `QueryResult`, `ExecuteResult`,
-`SubmittedTransaction`, `AuthInfo`, `ProgramInfo`, `ReadMode`, `Value`,
-`Error`, `ErrorKind`, and `Result`.
+`SubmittedTransaction`, `AuthInfo`, `ProgramInfo`, `StorageInfo`, `ReadMode`,
+`Value`, `Error`, `ErrorKind`, and `Result`.
 
 Use `Client::default()` for config-free public reads,
 `Client::from_default_config()` for local CLI config, and
@@ -347,6 +347,7 @@ and local snapshot rendering commands such as `.dump` and `.fullschema`. The
 - [Operations](./docs/operations.md)
 - [Roadmap](./docs/roadmap.md)
 - [Storage model](./docs/storage-model.md)
+- [Authorization policy](./docs/policy.md)
 - [Toolchain and builds](./docs/toolchain.md)
 - [OSR1 typed results](./docs/spec/osr1.md)
 - [OSW1 owner write intent](./docs/spec/osw1.md)

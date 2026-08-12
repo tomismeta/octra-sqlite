@@ -155,6 +155,10 @@ pub(super) fn limits_json(target: Option<Value>) -> Value {
         },
         "auth": {
             "read_model": "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view",
+            "auto_read_policy": {
+                "field": "privacy_class",
+                "public_value": "public",
+            },
             "read_modes": ["sealed", "public"],
             "read_mode_overrides": ["auto", "sealed", "public"],
             "sealed_reads": "octra_circleViewAuth",

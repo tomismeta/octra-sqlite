@@ -2,6 +2,34 @@ use super::*;
 use std::collections::BTreeSet;
 
 #[test]
+fn octra_public_privacy_class_allows_unsigned_reads_across_browser_modes() {
+    for (browser_mode, resource_mode) in [
+        ("gateway_allowed", "public_resources"),
+        ("native_sealed", "public_resources"),
+    ] {
+        assert!(circle_info_allows_unsigned_read(&serde_json::json!({
+            "privacy_class": "public",
+            "browser_mode": browser_mode,
+            "resource_mode": resource_mode,
+        })));
+    }
+}
+
+#[test]
+fn sealed_privacy_class_never_allows_unsigned_reads() {
+    for (browser_mode, resource_mode) in [
+        ("gateway_allowed", "public_resources"),
+        ("native_sealed", "sealed_read"),
+    ] {
+        assert!(!circle_info_allows_unsigned_read(&serde_json::json!({
+            "privacy_class": "sealed",
+            "browser_mode": browser_mode,
+            "resource_mode": resource_mode,
+        })));
+    }
+}
+
+#[test]
 fn parses_oct_target() {
     let target = parse_target_uri("oct://devnet/octABC", &Config::default()).unwrap();
     assert_eq!(target.network, "devnet");
@@ -843,6 +871,13 @@ fn limits_json_exposes_automation_contract_facts() {
         "octra_protocol_dependency"
     );
     assert_eq!(limits["result"]["limit_error"], "result_limit_exceeded");
+    assert_eq!(
+        limits["auth"]["auto_read_policy"],
+        serde_json::json!({
+            "field": "privacy_class",
+            "public_value": "public",
+        })
+    );
     assert_eq!(
         limits["auth"]["read_model"],
         "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view"

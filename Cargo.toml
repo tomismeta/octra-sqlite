@@ -26,6 +26,7 @@ include = [
     "/docs/json-output.md",
     "/docs/library-boundary.md",
     "/docs/operations.md",
+    "/docs/policy.md",
     "/docs/public-surface.md",
     "/docs/roadmap.md",
     "/docs/spec/**",

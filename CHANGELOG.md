@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Aligned walletless public reads with Octra's `privacy_class: public`
+  program-view policy across historical and current browser/resource modes.
+- Added typed `Database::storage_info()` inspection while preserving the raw
+  response and compatibility with previously deployed SQLite Circles.
+- Added `ExecuteResult::effort()` for confirmed runtime effort reported by
+  Octra receipts, without changing the CLI command language or Circle WASM.
+
 ## 0.6.3
 
 - Rebuilt the bundled Circle WASM with SQLite 3.53.4, taking SQLite's

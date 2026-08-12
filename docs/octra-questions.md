@@ -1,9 +1,15 @@
 # Octra Native Requirements
 
+This is a repository-internal protocol research ledger, not packaged product
+documentation. Public protocol documentation remains authoritative.
+
 These are the protocol-level requirements that decide how far `octra-sqlite`
 can move policy into native Octra enforcement.
 
-Checked public docs on 2026-06-25:
+Checked public docs on 2026-06-25 and current LiteNode/WebCLI source on
+2026-08-11. The source review used LiteNode commit `786ff3d` and WebCLI commit
+`b4ae091`; public protocol documentation remains the authority for stable host
+contracts.
 
 - https://docs.octra.org/
 - https://docs.octra.org/user-docs/circles
@@ -31,17 +37,17 @@ documented all-or-nothing guarantee would let us simplify that design later.
 
 ## WASM Execution Metering
 
-The current Octra node checkout constructs the Circle WASM engine with its
-default configuration and does not expose a fuel budget to the program. The
-`0.6.1` Circle program therefore adds deterministic SQLite progress-handler
-budgets for query and exec work. That closes unbounded SQL execution inside
-SQLite, but it cannot meter host imports or arbitrary non-SQL WASM work.
+Current LiteNode source enables Wasmi fuel consumption and caps ordinary Circle
+WASM execution at 20,000,000 fuel. Receipts report the resulting effort, and
+live devnet failures have returned `all fuel consumed by WebAssembly`. This is
+the outer runtime boundary. The Circle program's deterministic SQLite
+progress-handler budgets remain narrower product limits for query and exec
+work, with stable SQLite-specific errors before runtime exhaustion.
 
-The protocol-level requirement is a deterministic per-invocation fuel or
-equivalent execution budget enforced by every validator, with a stable
-exhaustion result and no committed update state. Once Octra provides that,
-octra-sqlite should keep its narrower SQLite budgets as product limits while
-relying on protocol fuel as the outer consensus boundary.
+Before treating the host ceiling as a frozen public contract, Octra should
+document the fuel schedule, per-invocation limit selection, exhaustion state
+semantics, and compatibility policy. octra-sqlite exposes receipt effort when
+reported but does not reinterpret it as SQL rows, bytes, or billing.
 
 ## Wallet Roles And Write Policy
 
@@ -91,11 +97,13 @@ The public RPC docs checked on 2026-06-25 do not document `program_exec` as the
 Circle WASM write path. For this repo, writes remain native signed transactions
 with `op_type: "circle_call"` and the Circle method name in `encrypted_data`.
 
-If method access control does not exist, the second acceptable shape is an authenticated
-`wasm_v1` caller import, for example:
+Current LiteNode source provides authenticated `wasm_v1` identity imports:
 
 ```c
-int32_t host_caller_addr(uint8_t *out, uint32_t cap);
+int32_t host_caller_len(void);
+int32_t host_caller_read(uint8_t *out, int32_t cap);
+int32_t host_self_len(void);
+int32_t host_self_read(uint8_t *out, int32_t cap);
 ```
 
 The required properties for that import:
@@ -105,8 +113,11 @@ The required properties for that import:
 - the value is deterministic across validators
 - the import is available before `exec` or `reset` invokes SQLite
 
-With that import, `octra-sqlite` can store a tiny role table in Circle key-value
-storage outside SQLite and gate `exec`/`reset` before SQL runs.
+LiteNode passes the authenticated transaction caller into Circle execution;
+public unsigned views use the zero address. These properties make native owner
+authorization plausible, but not yet production-ready for octra-sqlite. A
+prototype must prove live devnet behavior for owner and non-owner calls, older
+host behavior, rollback, and existing-Circle migration before OSW1 changes.
 
 ## Are Circle Key Routes Enough?
 
