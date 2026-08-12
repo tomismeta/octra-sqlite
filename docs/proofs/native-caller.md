@@ -31,9 +31,20 @@ ABI evidence only. The source inspection above establishes authentication; the
 live owner/non-owner devnet transactions below remain the required network
 proof.
 
-Devnet deployment transaction
-`4a48a8c798361cfb7cf15b13a864edf920d196f414ccd5ea16d60ecf31002c51`
-targets Circle `oct4VmsqxromHqET7WQQxMFd6bzdRq4XG1i1axABg3nioM6`. It remained pending
-while devnet finality was stalled on 2026-08-11, so it is not network proof.
-Do not promote native-caller authorization until owner and non-owner devnet
-transactions confirm and the gates in `docs/policy.md` pass.
+Two isolated deployments were submitted while devnet remained at epoch
+`1331406`:
+
+```text
+first tx: 4a48a8c798361cfb7cf15b13a864edf920d196f414ccd5ea16d60ecf31002c51
+first circle: oct4VmsqxromHqET7WQQxMFd6bzdRq4XG1i1axABg3nioM6
+result: expired from staging; transaction and Circle are not found
+
+current tx: 58076f016b4ee2db4d07317924db0070344015b0948570b57e7636175a89436d
+current circle: octHukWDgn7zYaHjt8HxETE7wD1UFNDNo1D8N3XXcNJGJ37
+result at 2026-08-11 review close: pending; no Circle committed
+```
+
+Neither attempt is network proof or a partial deployment. Do not resubmit while
+the current transaction is pending. Do not promote native-caller authorization
+until owner and non-owner devnet transactions confirm and the gates in
+`docs/policy.md` pass.
