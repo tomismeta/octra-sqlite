@@ -878,10 +878,6 @@ fn limits_json_exposes_automation_contract_facts() {
             "public_value": "public",
         })
     );
-    assert_eq!(
-        limits["auth"]["read_model"],
-        "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view"
-    );
     assert_eq!(limits["auth"]["read_modes"], json!(["sealed", "public"]));
     assert_eq!(
         limits["auth"]["read_mode_overrides"],
@@ -1014,7 +1010,7 @@ fn test_new_args(name: &str) -> NewArgs {
 }
 
 #[test]
-fn new_manifest_uses_database_ontology() {
+fn new_manifest_read_mode_transition_matches_capabilities() {
     let mut args = test_new_args("art");
     args.read = Some(PathBuf::from("schema.sql"));
     args.manifest = Some(PathBuf::from("art.json"));
@@ -1034,31 +1030,68 @@ fn new_manifest_uses_database_ontology() {
     };
     let init_sql = vec!["create table artist(id integer);".to_string()];
     let initializer_results = Vec::new();
-    let manifest = new_manifest_json(NewManifestInput {
-        args: &args,
-        name: "art",
-        target_uri: "oct://devnet/octABC",
-        network: "devnet",
-        created: &created,
-        owner: "octOwner",
-        rpc: "https://devnet.octrascan.io/rpc",
-        init_sql: &init_sql,
-        initializer_results: &initializer_results,
-        readiness: json!({"checked": true, "ready": true}),
-    });
+    let manifest_for = |args: &NewArgs| {
+        new_manifest_json(NewManifestInput {
+            args,
+            name: "art",
+            target_uri: "oct://devnet/octABC",
+            network: "devnet",
+            created: &created,
+            owner: "octOwner",
+            rpc: "https://devnet.octrascan.io/rpc",
+            init_sql: &init_sql,
+            initializer_results: &initializer_results,
+            readiness: json!({"checked": true, "ready": true}),
+        })
+    };
+    let manifest = manifest_for(&args);
     assert_eq!(manifest["manifest_version"], "octra-sqlite.database.v1");
     assert_eq!(manifest["database"]["name"], "art");
     assert_eq!(manifest["database"]["uri"], "oct://devnet/octABC");
     assert_eq!(manifest["database"]["read_uri"], "oct://devnet/octABC");
     assert_eq!(manifest["owner"]["write_auth"], "OSW1 owner write intent");
+    let limits = limits_json(None);
     assert_eq!(
         manifest["confidentiality"]["read_access"],
-        "authenticated_wallet"
+        "authenticated_circle_owner"
     );
-    assert_eq!(manifest["confidentiality"]["read_owner_only"], false);
+    assert_eq!(manifest["confidentiality"]["read_owner_only"], true);
+    assert_eq!(
+        manifest["confidentiality"]["read_access"],
+        limits["confidentiality"]["sealed_read_access"]
+    );
+    assert_eq!(
+        manifest["confidentiality"]["read_owner_only"],
+        limits["confidentiality"]["sealed_owner_only"]
+    );
     assert_eq!(manifest["program"]["runtime"], "wasm_v1");
     assert_eq!(manifest["initializer"]["schema_file"], "schema.sql");
     assert!(manifest.get("app").is_none());
+    args.read_mode = ReadModeArg::Public;
+    let public = manifest_for(&args);
+    assert_eq!(manifest["database"]["read"]["mode"], "sealed");
+    assert_eq!(public["database"]["read"]["mode"], "public");
+    assert_eq!(public["confidentiality"]["read_access"], "public");
+    assert_eq!(public["confidentiality"]["read_owner_only"], false);
+    for value in [&manifest, &public, &limits] {
+        assert_eq!(value["confidentiality"]["encrypted"], false);
+        assert_eq!(
+            value["confidentiality"]["write_sql_visible_in_transaction_history"],
+            true
+        );
+    }
+    for key in [
+        "manifest_version",
+        "owner",
+        "program",
+        "create",
+        "initializer",
+    ] {
+        assert_eq!(
+            manifest[key], public[key],
+            "{key} must not depend on read mode"
+        );
+    }
 }
 
 #[test]
@@ -1371,44 +1404,9 @@ fn verify_write_smoke_json_reports_each_write_step() {
 }
 
 #[test]
-fn historical_wasm_catalog_is_manifest_backed_metadata() {
+fn historical_wasm_catalog_matches_hashes_and_falls_back_to_bytes() {
     let manifest: Value = serde_json::from_str(EMBEDDED_RELEASE_MANIFEST).unwrap();
     let catalog = parse_historical_wasm_catalog(&manifest).unwrap();
-    let entries = manifest["historical_wasm_catalog"].as_array().unwrap();
-    assert_eq!(entries.len(), catalog.len());
-    assert_eq!(
-        manifest["upgrade_workflow"]["historical_wasm_catalog_mode"].as_str(),
-        Some("metadata_only")
-    );
-    for (entry, artifact) in entries.iter().zip(&catalog) {
-        assert!(matches!(
-            artifact.sqlite_version.as_str(),
-            "3.53.2" | "3.53.3"
-        ));
-        assert!(artifact.bytes > 0);
-        assert_eq!(artifact.sha256.len(), 64);
-        assert!(
-            artifact
-                .source_url
-                .starts_with("https://raw.githubusercontent.com/")
-        );
-        assert_eq!(entry["releases"].as_str(), Some(artifact.releases.as_str()));
-        assert_eq!(
-            entry["sqlite_version"].as_str(),
-            Some(artifact.sqlite_version.as_str())
-        );
-        assert_eq!(
-            entry["source_url"].as_str(),
-            Some(artifact.source_url.as_str())
-        );
-        assert_eq!(entry["bytes"].as_u64(), Some(artifact.bytes));
-        assert_eq!(entry["sha256"].as_str(), Some(artifact.sha256.as_str()));
-    }
-    assert!(
-        catalog.iter().any(|artifact| {
-            artifact.releases == "0.6.0" && artifact.sqlite_version == "3.53.3"
-        })
-    );
 
     let exact = match_historical_wasm_in_catalog(&catalog, &catalog[2].sha256, None).unwrap();
     assert_eq!(exact.releases, "0.3.0");

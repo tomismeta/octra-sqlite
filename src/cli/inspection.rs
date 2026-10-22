@@ -895,31 +895,8 @@ pub(super) fn render_historical_wasm_match(
 
 pub(super) fn cmd_receipt(args: ReceiptArgs) -> Result<i32> {
     let session = build_session(&args.target)?;
-    let receipt = wait_for_receipt(&session, &args.tx_hash).map_err(|error| {
-        if error.kind() == ErrorKind::Timeout {
-            let database = canonical_database_uri(session.target());
-            let next_command = format!("octra-sqlite receipt {} {database} --json", args.tx_hash);
-            Error::with_code_and_details(
-                ErrorKind::Timeout,
-                "receipt_pending",
-                format!(
-                    "receipt is still pending; tx_hash={}; circle={}; next=\"{next_command}\"",
-                    args.tx_hash,
-                    session.target().circle
-                ),
-                [
-                    ("tx_hash", Value::String(args.tx_hash.clone())),
-                    ("circle", Value::String(session.target().circle.clone())),
-                    ("database", Value::String(database)),
-                    ("nonce", Value::Null),
-                    ("ou", Value::Null),
-                    ("next_command", Value::String(next_command)),
-                ],
-            )
-        } else {
-            error
-        }
-    })?;
+    let receipt = wait_for_receipt(&session, &args.tx_hash)
+        .map_err(|error| receipt_wait_error(error, &session, &args.tx_hash))?;
     ensure_receipt_matches_circle(&receipt, &session.target().circle)?;
     let tx_hash = args.tx_hash;
     let mut result = json!({
@@ -947,6 +924,30 @@ pub(super) fn cmd_receipt(args: ReceiptArgs) -> Result<i32> {
         print_exec_result(&result)?;
     }
     Ok(if success { 0 } else { 1 })
+}
+
+fn receipt_wait_error(error: Error, session: &Session, tx_hash: &str) -> Error {
+    if error.kind() != ErrorKind::Timeout {
+        return error;
+    }
+    let database = canonical_database_uri(session.target());
+    let next_command = format!("octra-sqlite receipt {tx_hash} {database} --json");
+    Error::with_code_and_details(
+        ErrorKind::Timeout,
+        "receipt_pending",
+        format!(
+            "receipt is still pending; tx_hash={tx_hash}; circle={}; next=\"{next_command}\"",
+            session.target().circle
+        ),
+        [
+            ("tx_hash", Value::String(tx_hash.to_string())),
+            ("circle", Value::String(session.target().circle.clone())),
+            ("database", Value::String(database)),
+            ("nonce", Value::Null),
+            ("ou", Value::Null),
+            ("next_command", Value::String(next_command)),
+        ],
+    )
 }
 
 pub(super) fn receipt_result_success(result: &Value) -> bool {
@@ -1311,4 +1312,54 @@ pub(super) fn smoke_table_name(scope: &str, session: &Session) -> String {
         ],
     );
     format!("octra_sqlite_{scope}_{}", hex::encode(&digest[..12]))
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+
+    #[test]
+    fn receipt_command_preserves_terminal_dispositions_and_real_failures() {
+        let session = client_build_session(&ClientOptions {
+            target: Some("oct://devnet/octABC?read_mode=public".to_string()),
+            rpc: Some("mock://rpc".to_string()),
+            caller: Some("octCurrent".to_string()),
+            ..ClientOptions::default()
+        })
+        .unwrap();
+        for status in ["rejected", "failed", "dropped"] {
+            let error = Error::with_code_and_details(
+                ErrorKind::Receipt,
+                format!("transaction_{status}"),
+                format!("transaction abc123 {status}: expired"),
+                [
+                    ("tx_hash", json!("abc123")),
+                    ("status", json!(status)),
+                    (
+                        "transaction",
+                        json!({"status": status, "reason": "expired"}),
+                    ),
+                ],
+            );
+            assert_eq!(receipt_wait_error(error.clone(), &session, "abc123"), error);
+        }
+        let error = Error::with_kind(ErrorKind::Transport, "connection lost");
+        assert_eq!(receipt_wait_error(error.clone(), &session, "abc123"), error);
+
+        let pending = receipt_wait_error(
+            Error::with_kind(ErrorKind::Timeout, "wait exhausted"),
+            &session,
+            "abc123",
+        );
+        assert_eq!(pending.code(), Some("receipt_pending"));
+        let details = pending.details().unwrap();
+        assert_eq!(details["tx_hash"], "abc123");
+        assert_eq!(details["circle"], "octABC");
+        assert_eq!(details["nonce"], Value::Null);
+        assert_eq!(details["ou"], Value::Null);
+        assert_eq!(
+            details["next_command"],
+            "octra-sqlite receipt abc123 oct://devnet/octABC --json"
+        );
+    }
 }

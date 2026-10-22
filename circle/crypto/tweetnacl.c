@@ -355,7 +355,13 @@ sv M(gf o,const gf a,const gf b)
 {
   i64 i,j,t[31];
   FOR(i,31) t[i]=0;
-  FOR(i,16) FOR(j,16) t[i+j]+=a[i]*b[j];
+  /* Fixed loop bounds: unroll without changing field arithmetic. This avoids
+     dynamic array indexing exhausting the Octra WASM instruction budget. */
+  #pragma clang loop unroll(full)
+  FOR(i,16) {
+    #pragma clang loop unroll(full)
+    FOR(j,16) t[i+j]+=a[i]*b[j];
+  }
   FOR(i,15) t[i]+=38*t[i+16];
   FOR(i,16) o[i]=t[i];
   car25519(o);

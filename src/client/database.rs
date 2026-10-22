@@ -10,8 +10,8 @@ use super::{
     session::{ClientOptions, Session, build_session},
     transport::Transport,
     write::{
-        PreparedWrite, SignedWrite, ensure_submit_mode, prepare_write_with, sign_write,
-        submit_signed_write_with,
+        DEFAULT_WRITE_OU, PreparedWrite, SignedWrite, ensure_submit_mode, prepare_write_with,
+        sign_write, submit_signed_write_with,
     },
 };
 #[cfg(feature = "http")]
@@ -141,27 +141,36 @@ impl<T: Transport> Database<T> {
         query_typed_with(self.transport.as_ref(), &self.session, sql)
     }
 
-    /// Submit a write and wait for its receipt.
+    /// Submit a write with the default 1000 OU budget and wait for its receipt.
     pub fn execute(&self, sql: &str) -> Result<ExecuteResult> {
         ExecuteResult::from_value(self.execute_value(sql, false)?)
     }
 
-    /// Submit a write without waiting for confirmation.
+    /// Submit a write with an explicit OU budget and wait for its receipt.
+    ///
+    /// `ou` must be a positive decimal integer fitting in `u64`; surrounding
+    /// whitespace is ignored. The budget is signed into the transaction and is
+    /// never increased automatically.
+    pub fn execute_with_ou(&self, sql: &str, ou: &str) -> Result<ExecuteResult> {
+        ExecuteResult::from_value(self.execute_value_with_ou(sql, false, ou)?)
+    }
+
+    /// Submit a write with the default 1000 OU budget without waiting for confirmation.
     pub fn execute_no_wait(&self, sql: &str) -> Result<SubmittedTransaction> {
         SubmittedTransaction::from_value(self.execute_value(sql, true)?)
     }
 
-    pub(crate) fn execute_value(&self, sql: &str, no_wait: bool) -> Result<serde_json::Value> {
-        let prepared = if no_wait {
-            self.prepare_write_no_wait(sql)?
-        } else {
-            self.prepare_write(sql)?
-        };
-        let signed = self.sign_write(&prepared)?;
-        submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
+    /// Submit a write with an explicit OU budget without waiting for confirmation.
+    ///
+    /// Budget validation and signing follow [`Self::execute_with_ou`].
+    pub fn execute_no_wait_with_ou(&self, sql: &str, ou: &str) -> Result<SubmittedTransaction> {
+        SubmittedTransaction::from_value(self.execute_value_with_ou(sql, true, ou)?)
     }
 
-    #[cfg(feature = "cli")]
+    pub(crate) fn execute_value(&self, sql: &str, no_wait: bool) -> Result<serde_json::Value> {
+        self.execute_value_with_ou(sql, no_wait, DEFAULT_WRITE_OU)
+    }
+
     pub(crate) fn execute_value_with_ou(
         &self,
         sql: &str,
@@ -178,21 +187,36 @@ impl<T: Transport> Database<T> {
         submit_signed_write_with(self.transport.as_ref(), &self.session, signed, no_wait)
     }
 
-    /// Prepare a write for later signing and no-wait submission.
+    /// Prepare a write with the default 1000 OU budget for later signing and no-wait submission.
     pub fn prepare_write_no_wait(&self, sql: &str) -> Result<PreparedWrite> {
         self.prepare_write_for(sql, Operation::ExecuteNoWait)
     }
 
-    /// Prepare a write for later signing and confirmed execution.
+    /// Prepare a write with an explicit OU budget for later signing and no-wait submission.
+    ///
+    /// Budget validation follows [`Self::execute_with_ou`]. The returned intent
+    /// exposes the budget through [`PreparedWrite::ou`] before signing.
+    pub fn prepare_write_no_wait_with_ou(&self, sql: &str, ou: &str) -> Result<PreparedWrite> {
+        self.prepare_write_for_with_ou(sql, Operation::ExecuteNoWait, ou)
+    }
+
+    /// Prepare a write with the default 1000 OU budget for later signing and confirmed execution.
     pub fn prepare_write(&self, sql: &str) -> Result<PreparedWrite> {
         self.prepare_write_for(sql, Operation::Execute)
+    }
+
+    /// Prepare a write with an explicit OU budget for later signing and confirmed execution.
+    ///
+    /// Budget validation follows [`Self::execute_with_ou`]. The returned intent
+    /// exposes the budget through [`PreparedWrite::ou`] before signing.
+    pub fn prepare_write_with_ou(&self, sql: &str, ou: &str) -> Result<PreparedWrite> {
+        self.prepare_write_for_with_ou(sql, Operation::Execute, ou)
     }
 
     fn prepare_write_for(&self, sql: &str, operation: Operation) -> Result<PreparedWrite> {
         prepare_write_with(self.transport.as_ref(), &self.session, sql, operation)
     }
 
-    #[cfg(feature = "cli")]
     fn prepare_write_for_with_ou(
         &self,
         sql: &str,

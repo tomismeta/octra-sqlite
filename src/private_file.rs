@@ -71,21 +71,10 @@ pub(crate) fn atomic_replace(path: &Path, contents: &[u8]) -> io::Result<()> {
     result
 }
 
-#[cfg(not(windows))]
 fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    // Rust 1.96 already replaces files on Windows via MoveFileExW or
+    // FileRenameInfoEx. Never delete the destination to retry a failed rename.
     fs::rename(source, destination)
-}
-
-#[cfg(windows)]
-fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
-    match fs::rename(source, destination) {
-        Ok(()) => Ok(()),
-        Err(_) if destination.exists() => {
-            fs::remove_file(destination)?;
-            fs::rename(source, destination)
-        }
-        Err(error) => Err(error),
-    }
 }
 
 pub(crate) fn sync_parent(path: &Path) {
@@ -124,6 +113,88 @@ mod tests {
                 0o600
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn replacement_with_missing_source_preserves_destination() {
+        let root = std::env::temp_dir().join(format!(
+            "octra-sqlite-private-missing-source-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("missing");
+        let destination = root.join("state.json");
+        fs::write(&destination, b"old").unwrap();
+
+        let error = replace_file(&source, &destination).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(fs::read(&destination).unwrap(), b"old");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn atomic_replacement_failure_preserves_destination_and_removes_temporary() {
+        let root = std::env::temp_dir().join(format!(
+            "octra-sqlite-private-failed-replacement-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let destination = root.join("state");
+        fs::create_dir_all(&destination).unwrap();
+        let existing = destination.join("keep");
+        fs::write(&existing, b"old").unwrap();
+
+        assert!(atomic_replace(&destination, b"new").is_err());
+
+        assert_eq!(fs::read(&existing).unwrap(), b"old");
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replacement_with_locked_source_preserves_both_files() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let root = std::env::temp_dir().join(format!(
+            "octra-sqlite-private-locked-source-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("replacement");
+        let destination = root.join("state.json");
+        fs::write(&source, b"new").unwrap();
+        fs::write(&destination, b"old").unwrap();
+        // Deny delete sharing on the source only: removing the destination
+        // would succeed, but cannot make the source renamable.
+        let locked_source = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&source)
+            .unwrap();
+
+        let result = replace_file(&source, &destination);
+        drop(locked_source);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"new");
+        assert_eq!(fs::read(&destination).unwrap(), b"old");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
         fs::remove_dir_all(root).unwrap();
     }
 

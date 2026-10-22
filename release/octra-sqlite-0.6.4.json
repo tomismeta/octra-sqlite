@@ -1,0 +1,234 @@
+{
+  "name": "octra-sqlite",
+  "release": "0.6.4",
+  "circle_program_version": "5",
+  "network": "devnet",
+  "wasm": {
+    "path": "circle/wasm/octra_sqlite_circle.wasm",
+    "bytes": 633864,
+    "sha256": "69b9a16e7d92084b7383cb8564d757784f249a24ca54ce49bb01a158a3a3fa2d"
+  },
+  "personalization": {
+    "owner_pubkey_offset": 627600,
+    "owner_pubkey_bytes": 32,
+    "db_id_offset": 627632,
+    "db_id_bytes": 32
+  },
+  "historical_wasm_catalog": [
+    {
+      "releases": "0.1.0-0.2.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607640,
+      "sha256": "f6df77206d82bcfdb07cbd7f2d6eaebc21636add7f41c114d78b15eb16bdc7cf"
+    },
+    {
+      "releases": "0.2.1",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.2.1/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 607800,
+      "sha256": "29861d38ddad25f5cd2b153bb70cfa6b1b54ebd2532fe931fa1f012b7f39ca9c"
+    },
+    {
+      "releases": "0.3.0",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609475,
+      "sha256": "8158f507a349cec2a97993d513ca2d3b275d9aaf4e39ea1edee414ce55d415ea"
+    },
+    {
+      "releases": "0.3.1-0.3.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.3.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609404,
+      "sha256": "39635962bffb470daced92396ee27e206e6b3ea000b4ec7a954d3bcd05ba662b"
+    },
+    {
+      "releases": "0.3.3-0.5.2",
+      "sqlite_version": "3.53.2",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.5.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 609354,
+      "sha256": "36664d04fd0457c4c7da200328c753984746769cec479fd93f799665c66f8c5d"
+    },
+    {
+      "releases": "0.6.0",
+      "sqlite_version": "3.53.3",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.6.0/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 610218,
+      "sha256": "3f10f47719a68d710b0324e5513320f9235a203f314f2bacba59d7528a329051"
+    },
+    {
+      "releases": "0.6.1-0.6.2",
+      "sqlite_version": "3.53.3",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.6.2/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 611456,
+      "sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef"
+    },
+    {
+      "releases": "0.6.3",
+      "sqlite_version": "3.53.4",
+      "source_url": "https://raw.githubusercontent.com/tomismeta/octra-sqlite/v0.6.3/circle/wasm/octra_sqlite_circle.wasm",
+      "bytes": 611677,
+      "sha256": "8fe0dad1a4bb4fcfc7afab626a58eda45edeac3b25607f130b201997698d8bcf"
+    }
+  ],
+  "sqlite": {
+    "version": "3.54.1",
+    "source_path": "vendor/sqlite/3.54.1/sqlite3.c",
+    "upstream_amalgamation": "sqlite-amalgamation-3540100",
+    "source_sha256": "bdff0606a02956191b3b13452120a2e94c33c479a29681e16269cf8e78c9271f",
+    "upstream_sqlite3_c_sha3_256": "e2b869d3003b33c942b7dd7063604fbc53553e1b66609570df39b9b7b558ee81"
+  },
+  "toolchain": {
+    "compiler": "Homebrew clang version 22.1.8",
+    "crypto_optimization": "TweetNaCl compiled separately at -O3 without LTO; fixed field-multiplication loops fully unrolled",
+    "build_script": "scripts/build-wasm.sh",
+    "audit_script": "scripts/audit-wasm.sh"
+  },
+  "wasm_imports": [
+    "host_emit_event",
+    "host_kv_del",
+    "host_kv_get",
+    "host_kv_get_len",
+    "host_kv_put",
+    "host_response_finish",
+    "host_response_reset",
+    "host_response_write"
+  ],
+  "wasm_exports": [
+    "memory",
+    "octra_alloc",
+    "octra_manifest",
+    "octra_query",
+    "octra_update"
+  ],
+  "storage": {
+    "protocol": "generation_manifest_v4",
+    "meta_version": 4,
+    "page_size": 4096,
+    "max_pages": 8069,
+    "max_file_bytes": 33050624,
+    "circle_stable_storage_limit_bytes": 33554432,
+    "accounting": "Circle stable storage counts key and value bytes",
+    "assumes_dedicated_circle_storage": true,
+    "legacy_vfs_page_slots": 8192,
+    "max_dirty_pages_per_exec": 1024,
+    "backup_chunk_pages": 8
+  },
+  "execution": {
+    "sqlite_progress_interval_vdbe_steps": 1000,
+    "max_query_vdbe_steps": 5000000,
+    "max_exec_vdbe_steps": 25000000,
+    "query_limit_error": "query_budget_exceeded",
+    "exec_limit_error": "exec_budget_exceeded",
+    "octra_host_fuel": "protocol_dependency"
+  },
+  "confidentiality": {
+    "encrypted": false,
+    "sealed_read_access": "authenticated_circle_owner",
+    "sealed_owner_only": true,
+    "write_sql_visible_in_transaction_history": true
+  },
+  "upgrade_workflow": {
+    "command": "octra-sqlite upgrade",
+    "bundle_schema": "octra-sqlite.upgrade.bundle.v1",
+    "manifest_states": [
+      "prepared",
+      "applied",
+      "complete"
+    ],
+    "target_wasm_source": "embedded release artifact unless --wasm is explicitly supported by the selected command",
+    "historical_wasm_catalog_mode": "metadata_only",
+    "previous_wasm_override": "octra-sqlite upgrade DATABASE --previous-wasm PATH",
+    "no_rollback_escape_hatch": "octra-sqlite upgrade DATABASE --unsafe-no-rollback",
+    "rollback_refuses_post_upgrade_writes_by_default": true,
+    "owner_sequence_source": "auth_info when available with storage_info fallback"
+  },
+  "verification": {
+    "local_wasm_behavior_tests": 19,
+    "unbounded_query_budget_proven": true,
+    "unbounded_exec_budget_proven": true,
+    "upgrade_owner_sequence_fallback_proven": true,
+    "wasm_audit": "passed",
+    "devnet": "passed",
+    "mainnet": "not_run"
+  },
+  "public_deployment": {
+    "status": "deployed",
+    "deployment_kind": "inherited_public_read_proof",
+    "inherited_from_release": "0.6.1",
+    "database_uri": "oct://devnet/oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "circle": "oct3mZCqnNpQLi3TaogPA6prcunUcNNjDMhAB3j6byLg52x",
+    "read_mode": "public",
+    "privacy_class": "public",
+    "sqlite_version": "3.53.3",
+    "unpersonalized_sha256": "c3f738fdc84ed5db13eddbe04758b2dd9cbbd75b9acf6dd3bfdf9514ed0182ef",
+    "personalized_sha256": "86b98d9d74d49ad4ab1fe04862e41542752fb8b58476dd7f72d2bb68ee5037af",
+    "note": "Inherited 0.6.1/0.6.2 SQLite 3.53.3 public-read proof, not a 3.54.1 deployment."
+  },
+  "devnet_deployment_proof": {
+    "status": "complete",
+    "network": "devnet",
+    "candidate_version": "0.6.4",
+    "sqlite_version": "3.54.1",
+    "circle": "octE9289yQX3TKphA3bQ8qvsKseUogyUGbp9aSrUaP4ZJMn",
+    "read_mode": "sealed",
+    "personalized_sha256": "b7cd6c4fba7467c58b0b4e9d429a5d8203b77b5f66dbd0084072ef8fd17638e5",
+    "creation_tx": "22ba086d2f4df066265d606e1343313cec9b76977958c7b49847247fcd95f1f4",
+    "creation_epoch": 1728401,
+    "write_tx": "28341d67daab639506ba8e26b2f99a751a32c4d5099ef76b5235935067965bce",
+    "write_epoch": 1728500,
+    "write_ou": 15000000,
+    "owner_authenticated_reads": "passed",
+    "persisted_default_and_unicode_rows": "passed",
+    "nonowner_signed_read": "rejected; circle owner authorization required",
+    "backup_integrity": "ok",
+    "backup_bytes": 8192,
+    "backup_sha256": "828c84b66afd5c15461f4465161961239c3a24d44b3c849016313e9ed0122961",
+    "note": "Current-artifact fresh deployment proof recorded before the separate isolated upgrade/rollback rehearsal. Explicit write budget is fixture-specific, not a changed default. This is not mainnet or upgrade/rollback proof."
+  },
+  "devnet_upgrade_proof": {
+    "status": "complete",
+    "network": "devnet",
+    "candidate_version": "0.6.4",
+    "circle": "octE9289yQX3TKphA3bQ8qvsKseUogyUGbp9aSrUaP4ZJMn",
+    "from_sqlite_version": "3.53.4",
+    "to_sqlite_version": "3.54.1",
+    "previous_personalized_sha256": "3520b473ee47ba8301723b64887ba2262bfbd46bbdf7a943c8d4055a878a4647",
+    "current_personalized_sha256": "b7cd6c4fba7467c58b0b4e9d429a5d8203b77b5f66dbd0084072ef8fd17638e5",
+    "upgrade_tx": "918c3fe6e4a1dcbc36166c2ea375e32efbbaabc34aa3c731217f0586490c5a68",
+    "upgrade_epoch": 1729013,
+    "rollback_tx": "6e6490d8fdcc48a3da222dc11f6002860c675601e3e6a3e39d940f729acd4642",
+    "rollback_epoch": 1729018,
+    "final_upgrade_tx": "79aae5fa9e656ca32d5e09000c97d612935ea93dd21eb2e0169e249d9b9b8e22",
+    "final_upgrade_epoch": 1729021,
+    "post_upgrade_write_tx": "ab138a39d5d35922bda9739be328627ffa264b046edc319722bb73a3111238ff",
+    "post_upgrade_write_epoch": 1729022,
+    "post_upgrade_write_ou": 15000000,
+    "post_upgrade_write_effort": 11070077,
+    "original_rows_preserved": true,
+    "rollback_backup_sha256_unchanged": true,
+    "post_upgrade_row_persisted": true,
+    "rollback_after_writes_refused": true,
+    "final_backup_integrity": "ok",
+    "final_backup_bytes": 8192,
+    "final_backup_sha256": "e2851baf21b144a96263cbb1a2794f3cfec0bf858679c415d3cbc446e2d60e51",
+    "note": "Isolated test Circle exercised normal upgrade, clean rollback without force, and re-upgrade with the same owner and database identity. Exact default/Unicode rows survived every transition; a new write and backup integrity passed afterward. No mainnet deployment or shared CLI replacement."
+  },
+  "capacity_evidence": {
+    "status": "measured_on_devnet",
+    "circle": "oct2ZE59sSkPABWnozCk1VHeC7MGzVTBvc8sjktMmxGx4oz",
+    "sqlite_version": "3.53.2",
+    "storage_protocol": "generation_manifest_v4",
+    "max_observed_pages": 8069,
+    "max_observed_file_bytes": 33050624,
+    "stable_storage_limit_bytes": 33554432,
+    "last_growth_tx": "65fa83b15051b6058aa3b04e9ed08767974f5cfb0ceee22a90d07f04e853a7b1",
+    "no_growth_tx": "6c95192a66ee85b890bab7dd789eedd829728a9883724b61c9a5f6e565fcf9ad",
+    "note": "Inherited SQLite 3.53.2 devnet capacity evidence, not a 3.54.1 deployment. Stable storage counts keys and values; the SQLite file limit reserves VFS metadata and manifest overhead."
+  },
+  "engine_release": {
+    "notes": "SQLite 3.54.1 maintenance release with upstream v2 authenticated RPC framing and corrected owner-only sealed-read capability facts. OSW1 verification is fuel-optimized without changing its arithmetic or authorization, with output capacity sized for the complete signed input. Preserves public read routing, typed storage information, receipt effort, OSR1/OSW1, VFS, execution budgets, imports/exports and Circle program version 5. Current-artifact fresh deployment, persisted writes, read authorization, backup integrity, and isolated network upgrade/rollback were verified on devnet."
+  },
+  "status": "0.6.4 SQLite 3.54.1 maintenance release; local compatibility and current-artifact devnet deployment, write/read, authorization, integrity, and upgrade/rollback proof complete"
+}

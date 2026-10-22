@@ -138,7 +138,12 @@ pub(super) fn cmd_new(args: NewArgs) -> Result<()> {
         if read_mode == ReadMode::Sealed {
             print_field(
                 "sealed reads",
-                "authenticated wallet access; not encrypted or owner-only",
+                "Circle owner-authenticated; SQL and stored data are not encrypted",
+            );
+        } else {
+            print_field(
+                "public reads",
+                "walletless views and complete-file export; SQL and stored data are not encrypted",
             );
         }
         print_field(
@@ -650,8 +655,8 @@ pub(super) fn new_manifest_json(input: NewManifestInput<'_>) -> Value {
         },
         "confidentiality": {
             "encrypted": false,
-            "read_access": if read_mode == ReadMode::Sealed { "authenticated_wallet" } else { "public" },
-            "read_owner_only": false,
+            "read_access": if read_mode == ReadMode::Sealed { "authenticated_circle_owner" } else { "public" },
+            "read_owner_only": read_mode == ReadMode::Sealed,
             "write_sql_visible_in_transaction_history": true,
         },
         "program": {
@@ -893,7 +898,7 @@ pub(super) fn prompt_wallet_onboarding(config: &mut Config) -> Result<WalletOnbo
             "4" => {
                 print_field(
                     "wallet",
-                    "skipped; sealed reads and writes require a wallet",
+                    "skipped; sealed reads and writes require the Circle owner's wallet",
                 );
                 println!();
                 return Ok(WalletOnboarding::Walletless);

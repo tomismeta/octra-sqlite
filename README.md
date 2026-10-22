@@ -6,7 +6,7 @@
 [![docs.rs](https://docs.rs/octra-sqlite/badge.svg)](https://docs.rs/octra-sqlite)
 [![ci](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/tomismeta/octra-sqlite/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-6f42c1)](./LICENSE)
-[![sqlite](https://img.shields.io/badge/sqlite-3.53.4-0f766e)](https://sqlite.org/)
+[![sqlite](https://img.shields.io/badge/sqlite-3.54.1-0f766e)](https://sqlite.org/)
 
 `octra-sqlite` runs the SQLite C engine inside an Octra `wasm_v1` Circle.
 It gives you a SQLite-shaped CLI and a small Rust client for live Circle state:
@@ -89,6 +89,12 @@ The high-level Rust path is deliberately small:
 `Client -> Database -> query/execute`. Use `client::raw` only for lower-level
 adapter plumbing that needs to reproduce CLI-style signed Octra RPC flows.
 
+For explicit signed budgets, use `Database::execute_with_ou(sql, ou)` or
+`execute_no_wait_with_ou(sql, ou)`. The staged signer lifecycle also exposes
+`prepare_write_with_ou` and `prepare_write_no_wait_with_ou`. Existing methods
+retain `1000` OU; no automatic increase or universal 15-million-OU budget is
+implied. See [budget and receipt semantics](docs/library-boundary.md).
+
 ## Rust API Surface
 
 The crate root exports the first-story API:
@@ -106,10 +112,14 @@ reference.
 
 ## Writes And Read Modes
 
-Databases are `sealed` by default. Sealed databases use signed Octra view auth
-for reads and owner-signed OSW1 calls for writes. Sealed authenticates the
-reader; it does not encrypt the database or make reads owner-only. SQL and
-values submitted in writes are visible in Octra transaction history.
+Databases are `sealed` by default. Under the current upstream RPC contract,
+sealed reads require signed Octra view auth from the Circle owner; writes use
+owner-signed OSW1 calls. Neither sealed nor public mode encrypts SQL or stored
+data. SQL and values submitted in writes are visible in Octra transaction history.
+The general read restriction is established by upstream source. Isolated
+devnet non-owner rejection was observed separately on the preceding
+`6108d174…` and current `69b9a16e…` artifacts; this is not proof for every
+network. See [the policy evidence](docs/policy.md#current-model).
 
 Public-read databases are explicit:
 
@@ -117,17 +127,21 @@ Public-read databases are explicit:
 octra-sqlite new public_art --read-mode public --schema examples/artists.sql
 ```
 
-Public-read SQL queries use unsigned `octra_circleView`; anyone can query the
-public data. Writes remain owner-signed OSW1 calls in both read modes. Raw
+Public-read SQL queries use unsigned `octra_circleView`; anyone can query without
+a wallet and export the complete SQLite file through `backup_chunk`.
+Writes remain owner-signed OSW1 calls in both read modes. Raw
 Circle targets detect the Octra read surface automatically; use
 `?read_mode=sealed` or `?read_mode=public` only when you need an explicit
 override.
 
+`--read-only` is a client-side write guard, not an authentication mode:
+public reads remain unsigned, while sealed reads require owner authentication.
+
 ## Wallets
 
-Public-read queries do not need a wallet. Sealed reads and all writes require a
-configured Octra wallet because reads use signed Octra view auth and writes are
-owner-signed.
+Public-read queries do not need a wallet. Sealed reads require the Circle owner's
+wallet under the current upstream RPC contract. Writes require the wallet whose
+key matches the program's personalized OSW1 owner key.
 
 ```sh
 octra-sqlite setup
@@ -152,10 +166,21 @@ checks the Circle import/export surface,
 release manifests publish the bundled WASM hash and record live devnet proofs
 and operator mainnet proofs when completed.
 
-The `0.6.3` crate bundles SQLite 3.53.4 in a rebuilt Circle WASM while keeping
-the CLI, Rust API, storage model, and wire formats unchanged. The current
-release manifest is
-[release/octra-sqlite-0.6.3.json](./release/octra-sqlite-0.6.3.json).
+The `0.6.4` maintenance release bundles SQLite 3.54.1 and uses upstream v2
+authenticated-read frames, preserving the storage model and OSR1/OSW1.
+The release manifest is
+[release/octra-sqlite-0.6.4.json](./release/octra-sqlite-0.6.4.json).
+Local compatibility and isolated devnet upgrade/rollback are verified;
+no mainnet rollout was performed.
+Inherited public demo evidence describes SQLite 3.53.3, not this engine.
+The current verifier-capacity-corrected artifact (`69b9a16e…`, 633,864 bytes)
+has a confirmed fresh devnet deployment with verified personalized program
+identity, owner-signed sealed reads, confirmed default/Unicode persisted rows,
+backup integrity, and signed non-owner sealed-read rejection. Historical
+`6108d174…` evidence remains separate. Normal devnet upgrade from 3.53.4,
+clean rollback, and re-upgrade preserved the exact rows. A new post-upgrade
+write, independent three-row read, and backup integrity passed; rollback
+dry-run refused to cross the new write.
 Existing Circles keep the engine they were deployed with until their owner runs
 `upgrade`; historical release manifests retain the prior deployment proofs.
 
@@ -223,6 +248,10 @@ live counters needed to prove that are available. The
 optional `--write-smoke` check performs a create/insert/drop write cycle
 against the new engine. It leaves no smoke table behind, but it still dirties
 the database and makes rollback require `--force-after-writes`.
+Immediately before rollback submission, the client rechecks the reviewed
+program hash, storage generation, and owner sequence. A change aborts the
+operation for review and replan, even with `--force-after-writes`. Pause
+external writers: a residual check-to-submit race remains on the chain.
 Normal SQL writes, including `new` initializer SQL, default to `1000` OU.
 Circle creation and program upgrades default to `200000` OU. Use `new --ou` for
 initializer SQL, `upgrade --ou` for the program-update transaction, and

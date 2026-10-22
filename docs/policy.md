@@ -18,12 +18,29 @@ Each new database deploys an owner-personalized copy of the bundled audited WASM
 - the accepted sequence is committed with the same metadata promotion as the
   SQLite pages
 
-Authenticated non-owner wallets can still use the signed view path for reads,
-but their writes are denied before SQLite execution.
+Under the current upstream RPC contract, ordinary sealed views require
+authentication as the Circle owner; authenticating a non-owner wallet is not
+sufficient. This is a source-level contract: pinned LiteNode commit
+`7f9be4489870645cfcc95439638cde40f5da9f50`, `circle_auth.ml::view_gate`,
+selects `Private_owner`, and `private_owner` rejects non-owner access to
+non-public views. Separately, isolated devnet tests rejected non-owners on the
+preceding `6108d174…` and current `69b9a16e…` artifacts. On the current
+artifact, a correctly addressed, signed non-owner read returned RPC `-32000`,
+`circle owner authorization required`. This does not establish enforcement on
+every network. The current artifact also has a confirmed fresh devnet
+deployment, owner-signed sealed reads, confirmed default/Unicode persisted
+rows, and backup integrity. Normal devnet upgrade from 3.53.4 to 3.54.1,
+clean rollback, and re-upgrade preserved the rows; post-upgrade write/read
+and integrity checks passed, and rollback dry-run refused to cross that write.
 
-`sealed` therefore means authenticated, not confidential or owner-only. It
-does not encrypt SQLite data or results. Write SQL and values are included in
-the Octra transaction message and remain visible in transaction history.
+Public mode permits walletless SQL reads and complete SQLite file export through
+`backup_chunk`. Neither mode encrypts SQL, SQLite data, or query results. Write
+SQL and values are included in the Octra transaction message and remain visible
+in transaction history. These access facts describe the upstream RPC gate, not a
+new ACL in the bundled program; OSW1 continues to govern writes.
+
+`--read-only` is only a client-side write guard: it neither makes public reads
+signed nor bypasses owner authentication for sealed reads.
 
 OSW1 currently verifies owner-signed intent, not native caller-bound role
 membership. Current LiteNode source exposes authenticated caller and Circle
@@ -78,9 +95,9 @@ write transaction still carries the full SQL text and values.
 
 ## Native Policy Roadmap
 
-The current OSW1 model is intentionally small and self-contained.
-It solves the default go-live requirement: creator can write, other wallets can
-read but not write.
+The current OSW1 model is intentionally small and self-contained: the owner
+can write. Other wallets can read only public databases; the upstream RPC
+contract restricts sealed reads to the Circle owner as well.
 
 The next policy layer should be Octra-native if the runtime caller imports pass
 live network, migration, rollback, and security review:

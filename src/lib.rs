@@ -48,13 +48,17 @@
 //!
 //! # Read and write model
 //!
-//! Sealed databases use signed Octra view auth for reads. Public-read
-//! databases use unsigned Octra Circle views for SQL reads while keeping writes
-//! owner-signed through OSW1 owner write intent. Pass a saved database name or a
+//! Under the current upstream RPC contract, sealed databases require signed Octra
+//! view auth from the Circle owner. Public-read databases allow walletless SQL
+//! reads and complete SQLite file export through `backup_chunk`. Writes remain
+//! owner-signed through OSW1 owner write intent in both modes.
+//! Pass a saved database name or a
 //! full `oct://NETWORK/<circle>` URI to [`Client::database`]. The client
 //! detects the Circle's Octra read surface unless `read_mode` is explicitly set.
-//! Sealed authenticates reads; it does not encrypt data or make reads owner-only.
-//! Write SQL and values are visible in Octra transaction history.
+//! Neither mode encrypts SQL or stored data. Write SQL and values are visible in
+//! Octra transaction history. The sealed-owner restriction is an upstream-source
+//! contract, not proof of enforcement on every supported network; see the
+//! repository's `docs/policy.md` for the pinned source evidence.
 //!
 //! # API map
 //!

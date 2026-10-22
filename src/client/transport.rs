@@ -331,6 +331,9 @@ fn rpc_error_is_rate_limited(error: &Value) -> bool {
 
 #[cfg(feature = "http")]
 fn rpc_error_source_code(error: &Value) -> Option<&'static str> {
+    if error.get("code").and_then(Value::as_i64) == Some(112) {
+        return Some("rpc_not_found");
+    }
     match error.get("code").and_then(Value::as_str) {
         Some("storage_uninitialized") => return Some("storage_uninitialized"),
         Some("auth_uninitialized") => return Some("auth_uninitialized"),
@@ -458,6 +461,27 @@ mod tests {
             Some("storage_uninitialized")
         );
         assert_eq!(rpc_error_source_code(&json!({"message": "other"})), None);
+    }
+
+    #[test]
+    fn not_found_is_classified_by_upstream_code_not_incidental_text() {
+        for resource in ["receipt", "transaction"] {
+            assert_eq!(
+                rpc_error_source_code(&json!({
+                    "code": 112,
+                    "message": "not found",
+                    "data": format!("{resource} not found")
+                })),
+                Some("rpc_not_found")
+            );
+        }
+        for error in [
+            json!({"code": 111, "message": "receipt not found"}),
+            json!({"message": "transaction not found"}),
+            json!({"code": 401, "message": "unauthorized"}),
+        ] {
+            assert_eq!(rpc_error_source_code(&error), None);
+        }
     }
 
     #[test]

@@ -56,6 +56,9 @@ Stable error classifications:
 | `query_budget_exceeded` | Query exceeded the deterministic SQLite work limit. |
 | `exec_budget_exceeded` | Write execution exceeded the deterministic SQLite work limit. |
 | `receipt_pending` | A write was submitted, but its Circle receipt was not available before the wait deadline. |
+| `transaction_rejected` | Transaction status reports rejection, even if no Circle receipt exists. |
+| `transaction_failed` | Transaction status reports failure. |
+| `transaction_dropped` | Transaction status reports removal from staging, including TTL expiry. |
 | `result_too_large` | Query response exceeded the Circle response buffer. |
 | `sql_rejected` | SQLite rejected the SQL, such as syntax or missing table. |
 | `auth_failed` | Wallet/signature/owner authorization failed. |
@@ -103,8 +106,8 @@ Produced by `new DATABASE --json`.
   },
   "confidentiality": {
     "encrypted": false,
-    "read_access": "authenticated_wallet",
-    "read_owner_only": false,
+    "read_access": "authenticated_circle_owner",
+    "read_owner_only": true,
     "write_sql_visible_in_transaction_history": true
   },
   "program": {
@@ -202,6 +205,16 @@ Produced by `receipt TX_HASH [DATABASE] --json`.
 ```
 
 `receipt` waits for an already-submitted transaction. It does not resubmit SQL.
+
+Polling is bounded to 45 receipt attempts, separated by two-second pauses;
+transport retries and latency are additional. Numeric RPC code 112 means
+receipt absence. After exhaustion, one `octra_transaction` lookup resolves
+terminal `rejected`, `failed`, or `dropped` dispositions into the error codes
+above, with `error.details.tx_hash`, `status`, and the full returned
+`transaction`. These are errors, not successful receipt envelopes or
+`receipt_pending`. Unresolved absence remains pending; a confirmed transaction
+without a Circle receipt is not a successful SQL result. Other RPC failures
+retain their errors. Do not resubmit SQL solely because a receipt is missing.
 
 ### `write_script`
 
@@ -375,6 +388,17 @@ are available but clean rollback could not be proven from live counters;
 rollback remains fail-closed unless the operator explicitly reviews and uses
 `--force-after-writes`.
 
+Rollback refreshes the reviewed program hash, storage generation, and owner
+sequence immediately before submission. Changes abort for review and replan,
+including when `--force-after-writes` is set; no applied envelope is emitted
+for that aborted submission. This client check is not atomic with the chain
+update, so external writers must stay paused through confirmation.
+
+Bundle-manifest replacement uses a synced temporary sibling and native rename,
+including on Windows, without deleting the destination first. Native Windows
+runtime verification remains outstanding; parent-directory syncing is
+best-effort, not a portable crash-durability guarantee.
+
 ### `check`
 
 Produced by `check DATABASE --sql-file dump.sql --json`.
@@ -435,8 +459,16 @@ wallet JSON.
 CLI/SQLite/schema versions, SQL byte and VDBE work limits, result row/response
 limits, exact VFS capacity, restore behavior, read/write auth facts,
 confidentiality facts, and available trace modes. In particular,
-`confidentiality.encrypted` and `confidentiality.sealed_owner_only` are `false`,
-write SQL is marked visible in transaction history, and
+`confidentiality.encrypted` is `false`,
+`confidentiality.sealed_read_access` is `authenticated_circle_owner`, and
+`confidentiality.sealed_owner_only` is `true`. These describe the current
+[upstream RPC source contract](policy.md#current-model), not network proof or a
+new program ACL. A sealed `new` manifest uses
+`read_access: "authenticated_circle_owner"` and `read_owner_only: true`; a public
+manifest uses `read_access: "public"` and `read_owner_only: false`. Public mode
+permits walletless complete SQLite file export. Neither mode encrypts SQL or
+stored data (`encrypted: false` in both manifests). Write SQL and values are
+marked visible in transaction history, and
 `storage.max_dirty_pages_per_exec` distinguishes per-write capacity from total
 database capacity. Contract `response_too_large` errors are reported to CLI
 automation as `result_too_large`.
