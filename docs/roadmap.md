@@ -27,28 +27,25 @@ work, and do not cut releases for documentation polish alone.
 - **Octra**: adopting native host capabilities without recreating them in the
   Circle program.
 
-## Now: 0.6.3 Engine Currency
+## Now: Runtime Alignment
 
-Themes: **Security**, **Operations**, **Developer Experience**
+Themes: **Octra**, **Architecture**, **Security**, **Developer Experience**,
+**Scalability**
 
-- Rebuild the bundled Circle WASM with SQLite 3.53.4, taking upstream fixes for
-  problems in 3.53.0 through 3.53.3.
-- Keep the top-level command set, JSON envelopes, root Rust types, OSR1/OSW1,
-  storage accounting, execution budgets, and runtime dependency graph
-  unchanged.
-- Add the 0.6.1-0.6.2 3.53.3 WASM epoch to the metadata-only historical catalog
-  so normal upgrades can identify the previous engine without bundling old
-  bytes.
-- Prove `3.53.3 -> 3.53.4` on devnet, then upgrade Octra Vitals mainnet before
-  crates.io publish.
-- Keep trusted publishing as a release hygiene item: use it only after the
-  crates.io-side publisher is registered; otherwise document the manual publish
-  honestly.
+- Detect walletless program reads from Octra's `privacy_class: public`
+  semantics instead of coupling them to browser or resource policy.
+- Expose typed `Database::storage_info()` and confirmed-write receipt effort
+  without changing the CLI command language or hiding the raw response.
+- Validate current LiteNode behavior for authenticated caller identity,
+  self identity, fuel, and public views with source review and live probes.
+- Keep OSW1 unchanged while a native-caller prototype receives migration,
+  rollback, older-host, and security review.
+- Document Circle assets as an optional application payload plane beside
+  SQLite, never as remote database pages or a hidden storage abstraction.
 
-Exit: full local gates, WASM harness/audit, devnet rehearsal, Vitals mainnet
-upgrade proof, and the review panel confirm a patch-compatible engine
-maintenance release; then `0.6.3` can publish without pulling in unrelated
-roadmap work.
+Exit: compatibility tests, live protocol evidence, full gates, footprint
+measurement, and panel approval. Release scope is chosen only after those
+facts are complete.
 
 ## Next: 0.7.0 Secret Ownership
 
@@ -79,10 +76,27 @@ Themes: **Scalability**, **Operations**, **Octra**
 - Add restore checkpoints only if real multi-batch workloads justify them.
 - Tune page, dirty-page, and execution budgets only from measured workloads and
   with WASM harness plus devnet proof.
-- Adopt protocol-enforced WASM fuel, authenticated caller identity, and method
-  policy when Octra exposes documented consensus-safe capabilities.
+- Adopt native caller authorization only after network support, migration, and
+  rollback are proven; keep OSW1 until the replacement is strictly stronger and
+  smaller.
 - Consider a separate read-only client crate only after the core library
   boundary proves stable and the split removes meaningful dependency weight.
+
+### Selective SQLite API Backlog
+
+Cloudflare Durable Objects is a useful product reference, not a parity target.
+Consider bound query parameters, portable backups, protocol-native
+checkpoints/PITR, and query-plan ergonomics when Octra and real workloads make
+them honest. `Database::storage_info()` and receipt effort establish the small
+observability core now. Existing SQL can already run `EXPLAIN QUERY PLAN`; a
+dedicated `.eqp` surface must earn its command weight.
+
+Do not add a hidden key-value API, alarms or schedulers, fake cursor semantics,
+remote transaction callbacks, cross-Circle SQLite pages, or extensions chosen
+for feature-count parity. Circle assets and WebCLI hosting remain separate
+Octra capabilities that applications may compose with the database. WebCLI is
+a GPL-licensed behavioral reference; octra-sqlite implementations remain
+independent and do not copy its code.
 
 Exit: long-lived databases are routine to operate, and host-native security can
 be adopted without expanding the Circle into a policy engine.

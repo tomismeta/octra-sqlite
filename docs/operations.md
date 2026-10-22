@@ -21,10 +21,16 @@ octra-sqlite status oct://devnet/oct... --json
 
 ## Read Modes
 
-Databases are sealed by default. Sealed reads use `octra_circleViewAuth`, so a
-wallet signs view requests. This authenticates reads; it does not encrypt data
-or limit reads to the database owner. Writes use owner-signed OSW1 calls, and
-their SQL and values remain visible in Octra transaction history.
+Databases are sealed by default. Under the current upstream RPC contract, sealed
+reads use `octra_circleViewAuth` and require the Circle owner's signature, not
+merely any authenticated wallet. The general contract is established by
+[upstream source](policy.md#current-model); isolated devnet non-owner rejection
+was also observed separately on the preceding `6108d174…` and current
+`69b9a16e…` artifacts, not every network. The current artifact also has
+confirmed devnet owner-signed sealed reads.
+Neither read mode encrypts SQL or stored data. Writes use
+owner-signed OSW1 calls, and their SQL and values remain visible in Octra
+transaction history.
 
 Public-read databases are explicit:
 
@@ -187,6 +193,13 @@ prove clean rollback, `rollback.clean` is `null`; rollback remains fail-closed.
 Rollback availability matters only when `from.code_hash` differs from
 `to.code_hash`; for `status: "already_current"`, rollback is irrelevant.
 
+After backup and operator confirmation, rollback refreshes the program hash,
+storage generation, and owner sequence immediately before submission. Any
+change from the reviewed snapshot aborts; rerun rollback to review and replan.
+`--force-after-writes` does not bypass this guard. Pause external writers
+through confirmation: the check and chain update are not atomic, so a residual
+TOCTOU window remains even after the recheck.
+
 For the `upgrade` command, `rollback` is reserved for `upgrade rollback
 BUNDLE`. If a saved database is literally named `rollback`, pass its raw
 `oct://` URI instead.
@@ -269,23 +282,36 @@ On slower or rate-limited RPCs, the CLI retries read/view/receipt polling for
 transient `429`, `503`, timeout, and non-JSON gateway responses. It does not
 silently replay accepted write submissions.
 
-Owner-signed SQL writes default to `1000` OU. That includes `open` writes,
-shell/import writes, `new` initializer SQL, restore batches, and write-smoke
-helpers. Operators can raise the signed budget without changing SQL:
+Owner-signed SQL writes retain the compatibility default of `1000` OU; this
+is not a sufficient native-runtime fuel allowance for OSW1 verification.
+The current upstream standard lane grants `max(1000000, OU)` total effort.
+Key/public-read effort is deducted before the remaining WASM budget is capped
+at 20,000,000, so usable fuel can be lower. Raising a write from 1,000 to
+200,000 OU therefore does not increase execution fuel. Creation/update
+budgets are separate.
+
+The preceding `6108d174…` artifact's default/Unicode fixture used about 11.9
+million receipt effort. A current `69b9a16e…` post-upgrade insert used
+11,070,077 receipt effort with an explicit 15-million OU budget. These
+measurements are not bounds for arbitrary SQL or restores. Larger budgets
+can authorize substantially higher fees; choose the budget explicitly rather
+than assuming the client raises it:
 
 ```sh
-export OCTRA_SQLITE_WRITE_OU=200000
-octra-sqlite DATABASE "insert into events(id, body) values (1, 'ok');"
-octra-sqlite restore DATABASE --file dump.sql --ou 200000
-octra-sqlite verify DATABASE --write-smoke --write-ou 200000
-octra-sqlite upgrade DATABASE --write-smoke --write-ou 200000
+octra-sqlite DATABASE --ou 15000000 "insert into events(id, body) values (1, 'ok');"
 ```
 
-If a write was submitted but the receipt did not arrive before the wait
-deadline, the CLI returns `receipt_pending`. With `--json` or
-`--json-summary`, `error.details` includes the transaction hash, nonce, OU,
-Circle, and recovery command when known. Follow the submitted transaction; do
-not retry the write blindly:
+If a submitted write returns `receipt_pending`, follow its transaction hash
+instead of resubmitting SQL. Receipt polling is bounded (45 attempts, with
+two-second pauses between attempts, plus transport latency/retries).
+`contract_receipt` numeric error 112 is treated as receipt absence. After
+receipt exhaustion the client consults `octra_transaction` once, not on every
+poll. `rejected`, `failed`, and `dropped` (including TTL expiry) produce
+`transaction_rejected`, `transaction_failed`, and `transaction_dropped`;
+the CLI preserves these terminal errors and underlying transaction details.
+Pending, unknown, or confirmed-without-receipt states do not establish a
+successful SQL result. Real RPC errors remain errors, not pending success.
+Follow the submitted transaction; do not retry the write blindly:
 
 ```sh
 octra-sqlite receipt TX_HASH DATABASE --json

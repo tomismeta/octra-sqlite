@@ -56,7 +56,7 @@ extern int host_emit_event(const u8 *topic_ptr, int topic_len, const u8 *data_pt
 #define TYPED_TEXT_PREFIX "OSR1:"
 #define FIXED_JULIAN_DAY 2460486.5
 #define FIXED_JULIAN_MS 212586033600000ll
-#define ENGINE_ID "sqlite-3.53.4-in-octra-wasm-v1"
+#define ENGINE_ID "sqlite-" SQLITE_VERSION "-in-octra-wasm-v1"
 #define STORAGE_ID "circle_key_value_page_vfs"
 #define OWNER_PUBKEY_PLACEHOLDER_TEXT "OSQL_OWNER_PUBKEY_V1_PLACEHOLDER"
 #define DB_ID_PLACEHOLDER_TEXT "OSQL_DATABASE_ID_V1_PLACEHOLDER0"
@@ -2130,7 +2130,8 @@ static int verify_signed_exec_params(const u8 *params, u32 param_count, int tota
     return 1;
   }
   static u8 signed_msg[64 + MAX_OWNER_WRITE_INTENT_BYTES];
-  static u8 opened[MAX_OWNER_WRITE_INTENT_BYTES];
+  /* TweetNaCl copies the signature and message here before verifying. */
+  static u8 opened[sizeof(signed_msg)];
   memcpy(signed_msg, sig, 64);
   memcpy(signed_msg + 64, msg, msg_len);
   u64 opened_len = 0;

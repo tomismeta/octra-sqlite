@@ -535,7 +535,11 @@ fn cmd_upgrade_rollback(args: UpgradeArgs) -> Result<()> {
         }
     }
 
-    let update = submit_program_update(&session, &previous_wasm, &args.ou, &previous_hash)?;
+    let update = submit_rollback_if_unchanged(
+        &before,
+        || upgrade_snapshot(&session),
+        || submit_program_update(&session, &previous_wasm, &args.ou, &previous_hash),
+    )?;
     let after = upgrade_snapshot(&session).context("reading database state after rollback")?;
     save_database_metadata(
         &session,
@@ -585,6 +589,25 @@ fn cmd_upgrade_rollback(args: UpgradeArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn submit_rollback_if_unchanged<T>(
+    reviewed: &UpgradeSnapshot,
+    read_snapshot: impl FnOnce() -> Result<UpgradeSnapshot>,
+    submit: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let current = read_snapshot().context("reading database state immediately before rollback")?;
+    if reviewed.code_hash != current.code_hash {
+        bail!(
+            "pre-rollback program hash changed from {} to {}; re-run rollback to review the changed state",
+            reviewed.code_hash,
+            current.code_hash
+        );
+    }
+    ensure_upgrade_guard_unchanged(reviewed, &current, "pre-rollback").context(
+        "database changed after rollback review; re-run rollback to review the changed state",
+    )?;
+    submit()
 }
 
 fn upgrade_target_args(args: &UpgradeArgs, target: Option<String>) -> TargetArgs {
@@ -1622,6 +1645,70 @@ fn civil_from_unix_days(days: i64) -> (i32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rollback_rechecks_reviewed_state_before_submitting() {
+        let snapshot = |code_hash: &str, storage_generation, owner_sequence| UpgradeSnapshot {
+            program_info: json!({}),
+            storage: json!({}),
+            auth: AuthInfo {
+                configured: true,
+                db_id: "00".repeat(32),
+                owner_pubkey: Some("00".repeat(32)),
+                owner_sequence,
+            },
+            sqlite_version: "3.53.2".to_string(),
+            code_hash: code_hash.to_string(),
+            code_bytes: Some(1),
+            storage_generation,
+            owner_sequence,
+        };
+        // The reviewed counters may already cross the bundle baseline in force mode.
+        // Only stability since that review permits submission, regardless of force.
+        let reviewed = snapshot("upgraded", Some(8), Some(12));
+        for (hash, generation, sequence, allowed) in [
+            ("upgraded", Some(8), Some(12), true),
+            ("replacement", Some(8), Some(12), false),
+            ("upgraded", Some(9), Some(12), false),
+            ("upgraded", Some(8), Some(13), false),
+            ("upgraded", None, Some(12), false),
+            ("upgraded", Some(8), None, false),
+        ] {
+            let read = std::cell::Cell::new(false);
+            let submitted = std::cell::Cell::new(false);
+            let result = submit_rollback_if_unchanged(
+                &reviewed,
+                || {
+                    read.set(true);
+                    Ok(snapshot(hash, generation, sequence))
+                },
+                || {
+                    assert!(read.get(), "snapshot must be refreshed before submission");
+                    submitted.set(true);
+                    Ok("transaction")
+                },
+            );
+            assert!(read.get());
+            assert_eq!(submitted.get(), allowed);
+            if allowed {
+                assert_eq!(result.unwrap(), "transaction");
+            } else {
+                assert!(result.unwrap_err().to_string().contains("re-run rollback"));
+            }
+        }
+
+        let submitted = std::cell::Cell::new(false);
+        let result = submit_rollback_if_unchanged(
+            &reviewed,
+            || bail!("snapshot unavailable"),
+            || {
+                submitted.set(true);
+                Ok(())
+            },
+        );
+        assert!(!submitted.get());
+        assert!(format!("{:#}", result.unwrap_err()).contains("snapshot unavailable"));
+    }
 
     #[test]
     fn upgrade_owner_mismatch_keeps_auth_failed_code() {

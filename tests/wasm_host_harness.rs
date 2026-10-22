@@ -50,6 +50,14 @@ mod wasm_behavior {
         }
 
         fn load_patched(owner_pubkey: &[u8; 32], db_id: &[u8; 32]) -> Result<Self> {
+            Self::load_patched_with_fuel(owner_pubkey, db_id, None)
+        }
+
+        fn load_patched_with_fuel(
+            owner_pubkey: &[u8; 32],
+            db_id: &[u8; 32],
+            fuel: Option<u64>,
+        ) -> Result<Self> {
             let wasm = std::env::var("OCTRA_SQLITE_WASM")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("circle/wasm/octra_sqlite_circle.wasm"));
@@ -57,9 +65,15 @@ mod wasm_behavior {
                 fs::read(&wasm).map_err(|error| anyhow!("read {}: {error}", wasm.display()))?;
             replace_placeholder(&mut bytes, OWNER_PUBKEY_PLACEHOLDER, owner_pubkey)?;
             replace_placeholder(&mut bytes, DB_ID_PLACEHOLDER, db_id)?;
-            let engine = Engine::default();
+            let mut config = wasmtime::Config::new();
+            config.consume_fuel(fuel.is_some());
+            let engine = Engine::new(&config)?;
             let module = Module::new(&engine, bytes)?;
-            Self::instantiate(engine, module)
+            let mut contract = Self::instantiate(engine, module)?;
+            if let Some(fuel) = fuel {
+                contract.store.set_fuel(fuel)?;
+            }
+            Ok(contract)
         }
 
         fn instantiate(engine: Engine, module: Module) -> Result<Self> {
@@ -506,10 +520,32 @@ select no_such_column from people;",
     }
 
     #[test]
-    fn sqlite_3534_engine_paths_remain_bounded_and_sqlite_native() -> Result<()> {
+    fn sqlite_3541_engine_paths_remain_bounded_and_sqlite_native() -> Result<()> {
         let mut contract = Contract::load()?;
         let version = json_response(&contract.call_query("query", &["select sqlite_version();"])?);
-        assert_eq!(version["rows"], json!([["3.53.4"]]));
+        assert_eq!(version["rows"], json!([["3.54.1"]]));
+        let health = json_response(&contract.call_query("health", &[])?);
+        assert_eq!(health["engine"], "sqlite-3.54.1-in-octra-wasm-v1");
+        let defaults = json_response(&contract.call_update("exec", &[
+            "create table defaults(a text default (lower('HELLO'))); insert into defaults default values;"
+        ])?);
+        assert_eq!(defaults["ok"], true);
+        let before = json_response(&contract.call_query("query", &["select * from defaults;"])?);
+        assert_eq!(before["rows"], json!([["hello"]]));
+        let schema_before = json_response(&contract.call_query("schema", &[])?);
+        let rejected = json_response(
+            &contract.call_update("exec", &["ALTER TABLE defaults ADD COLUMN rowid integer"])?,
+        );
+        assert_eq!(rejected["ok"], false);
+        assert_eq!(rejected["error"], "sqlite_exec_failed");
+        assert_eq!(
+            json_response(&contract.call_query("query", &["select * from defaults;"])?),
+            before
+        );
+        assert_eq!(
+            json_response(&contract.call_query("schema", &[])?),
+            schema_before
+        );
 
         let setup = json_response(&contract.call_update(
             "exec",
@@ -538,6 +574,82 @@ insert into docs(body) values (json('{\"kind\":\"note\",\"tags\":[\"octra\",\"sq
             json_response(&contract.call_query("query", &["select json_extract(x'ff', '$.x');"])?);
         assert_eq!(malformed_jsonb["ok"], false);
         assert_eq!(malformed_jsonb["error"], "sqlite_step_failed");
+        Ok(())
+    }
+
+    #[test]
+    fn owner_write_fits_metered_wasm_budget() -> Result<()> {
+        let (owner, owner_pubkey, db_id) = owner_fixture();
+        // Wasmtime's counter is a regression guard, not Octra's native meter.
+        // Release proof also replays this journey in the pinned native host.
+        let mut contract =
+            Contract::load_patched_with_fuel(&owner_pubkey, &db_id, Some(20_000_000))?;
+        let sql = "create table compat(id integer primary key, body text default (lower('HELLO')));\
+                   insert into compat default values;\
+                   insert into compat(body) values ('héllo ✓');";
+        let signature = sign_osw1(&owner, &db_id, 1, "exec", sql);
+        let result = json_response(
+            &contract.call_update("exec", &[sql, &hex::encode(owner_pubkey), "1", &signature])?,
+        );
+        assert_eq!(result["ok"], true);
+        contract.store.set_fuel(20_000_000)?;
+        let rows = json_response(
+            &contract.call_query("query", &["select id, body from compat order by id;"])?,
+        );
+        assert_eq!(rows["rows"], json!([[1, "hello"], [2, "héllo ✓"]]));
+        Ok(())
+    }
+
+    #[test]
+    fn maximum_length_owner_writes_preserve_auth_and_storage() -> Result<()> {
+        let (owner, owner_pubkey, db_id) = owner_fixture();
+        let pubkey = hex::encode(owner_pubkey);
+        for method in ["exec", "exec_trace"] {
+            let mut contract = Contract::load_patched(&owner_pubkey, &db_id)?;
+            let mut sql = "create table boundary(id integer primary key, body text);\
+                 insert into boundary values(1, 'héllo ✓');"
+                .to_string();
+            sql.push_str(&" ".repeat(8191 - sql.len()));
+            let signature = sign_osw1(&owner, &db_id, 1, method, &sql);
+            let written =
+                json_response(&contract.call_update(method, &[&sql, &pubkey, "1", &signature])?);
+            assert_eq!(written["ok"], true, "{method}: {written}");
+            let committed = contract.host.borrow().kv.clone();
+
+            let mut rejected_sql = "insert into boundary values(2, 'rejected');".to_string();
+            rejected_sql.push_str(&" ".repeat(8191 - rejected_sql.len()));
+            let mut signature = hex::decode(sign_osw1(&owner, &db_id, 2, method, &rejected_sql))?;
+            signature[0] ^= 1;
+            let denied = json_response(&contract.call_update(
+                method,
+                &[&rejected_sql, &pubkey, "2", &hex::encode(signature)],
+            )?);
+            assert_eq!(denied["error"], "auth_bad_signature", "{method}: {denied}");
+            assert_eq!(contract.host.borrow().kv, committed);
+            let rows = json_response(
+                &contract.call_query("query", &["select id, body from boundary order by id;"])?,
+            );
+            assert_eq!(rows["rows"], json!([[1, "héllo ✓"]]));
+
+            rejected_sql.push(' ');
+            let signature = sign_osw1(&owner, &db_id, 2, method, &rejected_sql);
+            let frame = call_frame(method, &[&rejected_sql, &pubkey, "2", &signature]);
+            let ptr = contract
+                .alloc
+                .call(&mut contract.store, frame.len() as i32)?;
+            memory(&mut contract.store, &contract.instance)?.write(
+                &mut contract.store,
+                ptr as usize,
+                &frame,
+            )?;
+            assert_ne!(
+                contract
+                    .update
+                    .call(&mut contract.store, (ptr, frame.len() as i32))?,
+                0
+            );
+            assert_eq!(contract.host.borrow().kv, committed);
+        }
         Ok(())
     }
 

@@ -18,17 +18,37 @@ Each new database deploys an owner-personalized copy of the bundled audited WASM
 - the accepted sequence is committed with the same metadata promotion as the
   SQLite pages
 
-Authenticated non-owner wallets can still use the signed view path for reads,
-but their writes are denied before SQLite execution.
+Under the current upstream RPC contract, ordinary sealed views require
+authentication as the Circle owner; authenticating a non-owner wallet is not
+sufficient. This is a source-level contract: pinned LiteNode commit
+`7f9be4489870645cfcc95439638cde40f5da9f50`, `circle_auth.ml::view_gate`,
+selects `Private_owner`, and `private_owner` rejects non-owner access to
+non-public views. Separately, isolated devnet tests rejected non-owners on the
+preceding `6108d174…` and current `69b9a16e…` artifacts. On the current
+artifact, a correctly addressed, signed non-owner read returned RPC `-32000`,
+`circle owner authorization required`. This does not establish enforcement on
+every network. The current artifact also has a confirmed fresh devnet
+deployment, owner-signed sealed reads, confirmed default/Unicode persisted
+rows, and backup integrity. Normal devnet upgrade from 3.53.4 to 3.54.1,
+clean rollback, and re-upgrade preserved the rows; post-upgrade write/read
+and integrity checks passed, and rollback dry-run refused to cross that write.
 
-`sealed` therefore means authenticated, not confidential or owner-only. It
-does not encrypt SQLite data or results. Write SQL and values are included in
-the Octra transaction message and remain visible in transaction history.
+Public mode permits walletless SQL reads and complete SQLite file export through
+`backup_chunk`. Neither mode encrypts SQL, SQLite data, or query results. Write
+SQL and values are included in the Octra transaction message and remain visible
+in transaction history. These access facts describe the upstream RPC gate, not a
+new ACL in the bundled program; OSW1 continues to govern writes.
 
-OSW1 currently verifies owner-signed intent, not native
-caller-bound role membership. Until Octra exposes native method access control
-or trusted caller identity inside `wasm_v1`, OSW1 should be treated as a
-single-use write capability for its database id, method, sequence, and SQL.
+`--read-only` is only a client-side write guard: it neither makes public reads
+signed nor bypasses owner authentication for sealed reads.
+
+OSW1 currently verifies owner-signed intent, not native caller-bound role
+membership. Current LiteNode source exposes authenticated caller and Circle
+identity through `host_caller_*` and `host_self_*`, but octra-sqlite has not yet
+proven their availability and semantics across supported networks or designed
+the migration and rollback path for existing Circles. OSW1 therefore remains
+the production authorization boundary and a single-use write capability for
+its database id, method, sequence, and SQL.
 
 ## Denied Writes
 
@@ -75,20 +95,60 @@ write transaction still carries the full SQL text and values.
 
 ## Native Policy Roadmap
 
-The current OSW1 model is intentionally small and self-contained.
-It solves the default go-live requirement: creator can write, other wallets can
-read but not write.
+The current OSW1 model is intentionally small and self-contained: the owner
+can write. Other wallets can read only public databases; the upstream RPC
+contract restricts sealed reads to the Circle owner as well.
 
-The next policy layer should be Octra-native when the runtime exposes
-documented method access control or an authenticated caller import:
+The next policy layer should be Octra-native if the runtime caller imports pass
+live network, migration, rollback, and security review:
 
 - `admin`: deploy, reset, migrations, policy changes
 - `writer`: `exec` for application tables under SQLite authorizer limits
 - `reader`: `query`, `query_typed`, `schema`, and `storage_info`
 - `auditor`: metadata, storage info, and proofs only
 
-Until that native surface exists, do not trust wallet strings passed through SQL
-or client parameters. Wallet authorization must happen before SQLite runs.
+Do not trust wallet strings passed through SQL or client parameters. Wallet
+authorization must happen before SQLite runs. Do not remove OSW1 merely because
+the imports exist in source; a native transition must preserve owner-only
+writes for already-deployed Circles and fail closed on older hosts.
+
+### Native Caller Decision
+
+Decision for the 2026-08-11 runtime-alignment pass: **hold OSW1; continue the
+native-caller design as a future breaking security simplification.**
+
+An isolated 1.6 KB probe executed successfully in a local host-harness test
+against the current LiteNode WASM runtime source. `host_caller_*` returned the
+authenticated owner and non-owner addresses, `host_self_*` returned the target
+Circle, an owner update persisted one key-value entry, and a non-owner update
+returned `403` without storage effects. A devnet deployment probe remains
+required before this is network proof. The source, hashes, and reproduction
+record live in the repository's
+[native-caller proof](https://github.com/tomismeta/octra-sqlite/blob/main/docs/proofs/native-caller.md).
+The probe did not modify the octra-sqlite Circle program.
+
+The remaining design issue is expected-owner identity. The host exposes caller
+and self, but not the Circle owner. A production contract must either derive the
+owner address from the already-personalized public key or add an owner-address
+personalization field. The former adds deterministic address code to WASM; the
+latter expands deployment and upgrade metadata. The transition also changes
+the write method contract, old-host compatibility, rollback behavior, and the
+meaning of `auth_info`.
+
+Proceed only when all of these are true:
+
+- Octra documents caller/self as stable consensus host imports on every
+  supported network.
+- Each supported network exposes a protocol activation signal for those
+  imports, and a preflight proves unsupported hosts reject the program update
+  before commitment.
+- Live owner and non-owner transactions reproduce the host test on devnet and
+  mainnet preflight.
+- The expected-owner representation is smaller and easier to audit than OSW1.
+- Existing Circles have a hash-verified upgrade and rollback path.
+- Older clients fail clearly rather than weakening or bypassing authorization.
+- The security and C/WASM panel approves removal of in-contract signatures and
+  replay sequencing.
 
 ## Current Limitations
 

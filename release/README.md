@@ -1,10 +1,24 @@
 # Release Manifests
 
-This directory contains machine-readable release manifests for audited,
-network-specific artifacts.
+This directory contains machine-readable manifests for audited artifacts,
+with local verification and network-specific proof status kept separate.
 
-`octra-sqlite-0.6.3.json` is the current release manifest checked by
-`octra-sqlite status`.
+`octra-sqlite-0.6.4.json` is the current release manifest checked by
+`octra-sqlite status`. Local compatibility and isolated devnet
+upgrade/rollback are verified.
+`octra-sqlite-0.6.3.json` retains the preceding release's historical proof.
+
+The current artifact is the verifier-capacity-corrected 633,864-byte WASM,
+SHA-256 `69b9a16e7d92084b7383cb8564d757784f249a24ca54ce49bb01a158a3a3fa2d`.
+Fresh devnet deployment, personalized program identity, owner-signed sealed
+reads, confirmed default/Unicode persisted rows, and backup integrity passed
+for this artifact, along with signed non-owner sealed-read rejection. The
+preceding `6108d174…` artifact's write, backup integrity, and sealed-read
+rejection evidence remains scoped to that artifact. Normal devnet upgrade
+from 3.53.4 to 3.54.1, clean rollback, and re-upgrade preserved the exact rows.
+A new post-upgrade write, independent three-row read, and backup integrity
+passed; rollback dry-run refused to cross the new write. No mainnet rollout
+was performed.
 
 `octra-sqlite-0.1.0.json`, `octra-sqlite-0.2.0.json`,
 `octra-sqlite-0.2.1.json`, `octra-sqlite-0.3.0.json`, and

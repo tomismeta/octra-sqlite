@@ -79,13 +79,21 @@ defaults.
 (`public / gateway_allowed / public_resources`). Public-read SQL queries use
 `octra_circleView`; sealed databases keep `octra_circleViewAuth`. Saved public
 database metadata preserves that read mode. Raw `oct://` targets detect the
-Octra read surface from Circle metadata unless the URI explicitly includes
-`?read_mode=sealed` or `?read_mode=public`. Writes stay owner-signed through
-OSW1 in both modes.
-Sealed reads are authenticated, not encrypted or owner-only. Write SQL and
-values remain visible in Octra transaction history.
-Public reads include `backup_chunk`, so public access permits reconstruction of
-the complete SQLite file rather than only selected queries.
+Octra read surface from `privacy_class`: `public` uses unsigned views and all
+other classes stay signed. Browser and resource policy govern different Octra
+capabilities and do not redefine program-view authentication. The URI may
+explicitly include `?read_mode=sealed` or `?read_mode=public`. Writes stay
+owner-signed through OSW1 in both modes.
+Under the current upstream RPC contract, sealed reads require Circle-owner
+authentication. The general contract is [upstream-source evidence](policy.md#current-model).
+Isolated devnet non-owner rejection was also observed separately on preceding
+artifact `6108d174…` and current artifact `69b9a16e…`, not all networks.
+The current artifact also has confirmed devnet owner-signed sealed reads.
+Neither mode encrypts SQL or stored data. Write SQL and values remain visible
+in Octra transaction history. `--read-only` is a client write guard; public
+reads remain unsigned and sealed reads owner-authenticated.
+Public reads include walletless `backup_chunk` access, permitting reconstruction
+of the complete SQLite file rather than only selected queries.
 
 Wallet discovery is conservative: explicit `--wallet`, `OCTRA_WALLET`, config,
 then local `wallet.json` candidates. Wallet JSON may use the official Octra
@@ -119,6 +127,10 @@ passes `--force-after-writes`. `deploy` remains the lower level program-update
 tool; `upgrade` is the safe workflow. Within `upgrade`, `rollback` is reserved
 for rollback bundles; use a raw `oct://` URI if a saved database is literally
 named `rollback`.
+Before rollback submission, the client rechecks the reviewed program hash,
+storage generation, and owner sequence; changes abort for replan even when
+forced. This is not an atomic chain guard, so external writers must remain
+paused through confirmation.
 
 State-changing SQL uses the Circle `exec` method through a signed `circle_call`.
 For owner-personalized databases, the CLI also includes an OSW1 owner write
@@ -141,6 +153,9 @@ Owner-signed SQL writes use `--ou` or `OCTRA_SQLITE_WRITE_OU`; this includes
 `new` initializer SQL. Verify write-smoke uses `--write-ou` or
 `OCTRA_SQLITE_VERIFY_WRITE_OU`. If receipt polling times out after a successful
 submit, use `receipt TX_HASH [DATABASE] --json` instead of resubmitting SQL.
+Bounded receipt exhaustion triggers one transaction-status lookup. Terminal
+`transaction_rejected`, `transaction_failed`, and `transaction_dropped` errors
+are preserved rather than reported as `receipt_pending`; no SQL is replayed.
 Use `--trace-rpc-json FILE` on one-shot read SQL when an app or agent needs the
 Octra JSON-RPC request/response envelope for proof or debugging. Use
 `--trace-rpc-json-mode summary` when hashes and sizes are enough.
@@ -172,6 +187,8 @@ requiring callers to parse human help text.
 - `src/client/raw.rs`: raw session and Octra RPC helpers for CLI/audit plumbing.
 - `src/client/rpc.rs`: signed RPC/view/query plumbing.
 - `src/client/results.rs`: typed client result wrappers and receipt validation.
+  `StorageInfo` models the stable VFS state and keeps newer engine limits
+  optional so old Circles remain inspectable.
 - `src/client/safety.rs`: operation safety metadata.
 - `src/client/write.rs`: owner-write prepare, sign, and submit lifecycle.
 - `src/client/transport.rs`: the client transport seam. The default is HTTP
@@ -191,8 +208,9 @@ requiring callers to parse human help text.
 - `docs/operations.md`: large restore, limits, atomicity, and migration
   guidance.
 - `docs/json-output.md`: stable CLI JSON envelopes and read RPC trace format.
-- `release/octra-sqlite-0.6.3.json`: release manifest for the bundled Circle
-  WASM and network deployment metadata.
+- `release/octra-sqlite-0.6.4.json`: release manifest for the bundled Circle
+  WASM, local verification, and current-artifact devnet deployment and
+  upgrade/rollback evidence.
 - `examples/`: concrete runnable walkthroughs kept out of the README, including
   a tiny read-only Remilia API example.
 - `scripts/install-cli.sh`: local installer for `cargo install --path .`.

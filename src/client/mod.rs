@@ -20,7 +20,11 @@ mod write;
 pub use config::{Config, DatabaseMetadata, NetworkConfig, config_path, load_config, write_config};
 pub use database::{Client, Database};
 pub use error::{Error, ErrorKind, Result};
-pub use results::{AuthInfo, ExecuteResult, ProgramInfo, QueryResult, SubmittedTransaction};
+pub use results::{
+    AuthInfo, ExecuteResult, ProgramInfo, QueryResult, StorageInfo, SubmittedTransaction,
+};
+#[cfg(feature = "cli")]
+pub(crate) use rpc::circle_info_allows_unsigned_read;
 pub use safety::{Operation, OperationSafety};
 pub use session::ClientOptions;
 pub use transport::Transport;

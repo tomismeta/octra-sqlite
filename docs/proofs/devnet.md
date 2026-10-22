@@ -1,5 +1,32 @@
 # Devnet Proof
 
+## Runtime Alignment
+
+The 2026-08-11 runtime-alignment review used LiteNode commit
+`786ff3d1afeaa48752d56edc2b8338d30ba1d225` and WebCLI commit
+`b4ae09145e4596b9e7c385ef7115a36b820121c8`. Live walletless probes against
+the historical public Circle
+`octQfYK2fE9RvR9kfj8FJfMBQw1e4EzfHB8Q5Z9J2DCnRBQ` established:
+
+```text
+read tuple: public / gateway_allowed / public_resources
+auto read: octra_circleView without wallet credentials
+storage_info: 2 pages, 8192 bytes, generation 2, owner sequence 139
+historical optional limits: max_db_file_bytes absent and accepted
+EXPLAIN QUERY PLAN: SEARCH artist USING INTEGER PRIMARY KEY (rowid>?)
+```
+
+The query-plan result confirms that ordinary SQLite SQL is already the smallest
+query-plan surface; no `.eqp` command or separate library abstraction is needed.
+
+Runtime effort is an Octra receipt fact. Confirmed non-SQLite devnet probe
+transaction `fb4cfa43c7146a7c5515b830f2c535f45d1f303b594c4f596d44d686111c776e`
+reported `success: true` and `effort: 227`. `ExecuteResult::effort()` exposes
+that value without reinterpreting it as SQLite work, bytes, or billing.
+
+Authenticated caller/self evidence and its conservative OSW1 decision are
+recorded in the [native-caller probe](./native-caller.md).
+
 `0.6.3` is a SQLite 3.53.4 engine maintenance release. Vitals rehearsed the
 `3.53.3 -> 3.53.4` upgrade path on devnet before the mainnet upgrade proof
 recorded in [mainnet.md](./mainnet.md).

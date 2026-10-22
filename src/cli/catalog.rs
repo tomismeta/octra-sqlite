@@ -31,9 +31,12 @@ pub(super) fn cmd_limits(args: LimitsArgs) -> Result<()> {
     );
     print_field(
         "sealed reads",
-        "authenticated, not confidential or owner-only",
+        "Circle owner-authenticated; SQL and stored data are not encrypted",
     );
-    print_field("public reads", "walletless Octra circle view");
+    print_field(
+        "public reads",
+        "walletless views and complete-file export; not encrypted",
+    );
     print_field("writes", "OSW1 owner write intent");
     print_field(
         "write privacy",
@@ -154,7 +157,11 @@ pub(super) fn limits_json(target: Option<Value>) -> Value {
             "restore_partial_apply": true,
         },
         "auth": {
-            "read_model": "raw Circle targets detect the Octra read surface; sealed uses signed Octra view auth; public uses unsigned Octra circle view",
+            "read_model": "raw Circle targets detect the Octra read surface; sealed requires Circle owner-authenticated views; public uses unsigned Octra circle view",
+            "auto_read_policy": {
+                "field": "privacy_class",
+                "public_value": "public",
+            },
             "read_modes": ["sealed", "public"],
             "read_mode_overrides": ["auto", "sealed", "public"],
             "sealed_reads": "octra_circleViewAuth",
@@ -165,8 +172,8 @@ pub(super) fn limits_json(target: Option<Value>) -> Value {
         },
         "confidentiality": {
             "encrypted": false,
-            "sealed_read_access": "authenticated_wallet",
-            "sealed_owner_only": false,
+            "sealed_read_access": "authenticated_circle_owner",
+            "sealed_owner_only": true,
             "write_sql_visible_in_transaction_history": true,
         },
         "trace": {

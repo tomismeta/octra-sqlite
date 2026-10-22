@@ -126,6 +126,82 @@ impl ExecuteResult {
         ensure_receipt_success(&receipt)?;
         Ok(Self { submitted, receipt })
     }
+
+    /// Return the deterministic runtime effort reported by Octra, when present.
+    pub fn effort(&self) -> Option<u64> {
+        u64_field(&self.receipt, "effort")
+    }
+}
+
+/// Circle-backed SQLite storage state and effective limits.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StorageInfo {
+    /// Storage implementation used by the Circle program.
+    pub storage: String,
+    /// Stable-storage key containing the active database metadata.
+    pub meta_key: String,
+    /// Whether database metadata has been initialized.
+    pub exists: bool,
+    /// SQLite page size in bytes.
+    pub page_size: u64,
+    /// Current SQLite file size in bytes.
+    pub file_bytes: u64,
+    /// Current SQLite page count.
+    pub page_count: u64,
+    /// Active storage generation.
+    pub generation: u64,
+    /// Atomic commit protocol used by the page VFS.
+    pub commit_protocol: String,
+    /// Stored metadata format version.
+    pub meta_version: u64,
+    /// Last accepted owner-write sequence, when used by the deployed engine.
+    pub owner_sequence: Option<u64>,
+    /// Maximum pages that one execution may dirty.
+    pub max_dirty_pages: u64,
+    /// Maximum SQLite pages allowed by this engine.
+    pub max_db_pages: u64,
+    /// Maximum SQLite file size in bytes, when reported by the engine.
+    pub max_db_file_bytes: Option<u64>,
+    /// Circle stable-storage ceiling in bytes, when reported by the engine.
+    pub stable_storage_limit_bytes: Option<u64>,
+    /// Deterministic read-query SQLite step budget, when reported by the engine.
+    pub query_vdbe_steps: Option<u64>,
+    /// Deterministic write-execution SQLite step budget, when reported by the engine.
+    pub exec_vdbe_steps: Option<u64>,
+    raw: Value,
+}
+
+impl StorageInfo {
+    /// Decode a raw `storage_info` response.
+    pub fn from_value(value: Value) -> Result<Self> {
+        Ok(Self {
+            storage: required_string_field(&value, "storage")?,
+            meta_key: required_string_field(&value, "meta_key")?,
+            exists: value
+                .get("exists")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| decode_field_error("storage_info", "exists"))?,
+            page_size: required_u64_field(&value, "page_size")?,
+            file_bytes: required_u64_field(&value, "file_bytes")?,
+            page_count: required_u64_field(&value, "page_count")?,
+            generation: required_u64_field(&value, "generation")?,
+            commit_protocol: required_string_field(&value, "commit_protocol")?,
+            meta_version: required_u64_field(&value, "meta_version")?,
+            owner_sequence: optional_u64_field(&value, "owner_sequence")?,
+            max_dirty_pages: required_u64_field(&value, "max_dirty_pages")?,
+            max_db_pages: required_u64_field(&value, "max_db_pages")?,
+            max_db_file_bytes: optional_u64_field(&value, "max_db_file_bytes")?,
+            stable_storage_limit_bytes: optional_u64_field(&value, "stable_storage_limit_bytes")?,
+            query_vdbe_steps: optional_u64_field(&value, "query_vdbe_steps")?,
+            exec_vdbe_steps: optional_u64_field(&value, "exec_vdbe_steps")?,
+            raw: value,
+        })
+    }
+
+    /// Return the original `storage_info` response.
+    pub fn raw(&self) -> &Value {
+        &self.raw
+    }
 }
 
 /// Deployed Circle program metadata.
@@ -245,6 +321,36 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
+fn u64_field(value: &Value, key: &str) -> Option<u64> {
+    value
+        .get(key)
+        .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()))
+}
+
+fn required_u64_field(value: &Value, key: &str) -> Result<u64> {
+    u64_field(value, key).ok_or_else(|| decode_field_error("storage_info", key))
+}
+
+fn optional_u64_field(value: &Value, key: &str) -> Result<Option<u64>> {
+    match value.get(key) {
+        None => Ok(None),
+        Some(_) => u64_field(value, key)
+            .map(Some)
+            .ok_or_else(|| decode_field_error("storage_info", key)),
+    }
+}
+
+fn required_string_field(value: &Value, key: &str) -> Result<String> {
+    string_field(value, key).ok_or_else(|| decode_field_error("storage_info", key))
+}
+
+fn decode_field_error(subject: &str, key: &str) -> Error {
+    Error::with_kind(
+        ErrorKind::Decode,
+        format!("{subject} missing or invalid {key}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +390,70 @@ mod tests {
     fn receipt_without_explicit_success_fails_closed() {
         let error = ensure_receipt_success(&json!({"events": []})).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::Receipt);
+    }
+
+    #[test]
+    fn execute_result_exposes_numeric_or_string_effort() {
+        let result = |effort| {
+            ExecuteResult::from_value(json!({
+                "result": {"tx_hash": "abc"},
+                "receipt": {"success": true, "effort": effort},
+            }))
+            .unwrap()
+        };
+        assert_eq!(result(json!(227)).effort(), Some(227));
+        assert_eq!(result(json!("17117")).effort(), Some(17_117));
+    }
+
+    #[test]
+    fn storage_info_accepts_historical_shape_without_new_limits() {
+        let info = StorageInfo::from_value(json!({
+            "storage": "circle_key_value_page_vfs",
+            "meta_key": "octra.sqlite.vfs.v1.meta",
+            "exists": false,
+            "page_size": 4096,
+            "file_bytes": 0,
+            "page_count": 0,
+            "generation": 0,
+            "commit_protocol": "generation_manifest_v4",
+            "meta_version": 4,
+            "max_dirty_pages": 1024,
+            "max_db_pages": 8192,
+        }))
+        .unwrap();
+        assert_eq!(info.max_db_file_bytes, None);
+        assert_eq!(info.stable_storage_limit_bytes, None);
+        assert_eq!(info.query_vdbe_steps, None);
+        assert_eq!(info.exec_vdbe_steps, None);
+        assert_eq!(info.owner_sequence, None);
+    }
+
+    #[test]
+    fn storage_info_rejects_missing_stable_fields() {
+        let error = StorageInfo::from_value(json!({})).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Decode);
+        assert!(error.to_string().contains("storage"));
+    }
+
+    #[test]
+    fn storage_info_rejects_malformed_optional_fields() {
+        let error = StorageInfo::from_value(json!({
+            "storage": "circle_key_value_page_vfs",
+            "meta_key": "octra.sqlite.vfs.v1.meta",
+            "exists": false,
+            "page_size": 4096,
+            "file_bytes": 0,
+            "page_count": 0,
+            "generation": 0,
+            "commit_protocol": "generation_manifest_v4",
+            "meta_version": 4,
+            "owner_sequence": 0,
+            "max_dirty_pages": 1024,
+            "max_db_pages": 8192,
+            "max_db_file_bytes": "invalid",
+        }))
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::Decode);
+        assert!(error.to_string().contains("max_db_file_bytes"));
     }
 }

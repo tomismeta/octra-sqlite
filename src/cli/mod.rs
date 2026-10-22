@@ -20,7 +20,7 @@ mod upgrade;
 use crate::{
     client::{
         AuthInfo, ClientOptions, Config, Database, DatabaseMetadata, Error, ErrorKind,
-        ExecuteResult, RpcTraceMode, config_path, load_config,
+        ExecuteResult, RpcTraceMode, circle_info_allows_unsigned_read, config_path, load_config,
         raw::{
             Session, WalletMaterial, auth_info,
             build_control_session as client_build_control_session,
@@ -74,16 +74,16 @@ use zeroize::{Zeroize, Zeroizing};
 
 const DEFAULT_WASM_REL: &str = "circle/wasm/octra_sqlite_circle.wasm";
 const BUILD_WASM_SCRIPT_REL: &str = "scripts/build-wasm.sh";
-const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.3.json";
+const RELEASE_MANIFEST_REL: &str = "release/octra-sqlite-0.6.4.json";
 const EMBEDDED_WASM_BYTES: &[u8] = include_bytes!("../../circle/wasm/octra_sqlite_circle.wasm");
-const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.3.json");
+const EMBEDDED_RELEASE_MANIFEST: &str = include_str!("../../release/octra-sqlite-0.6.4.json");
 const OWNER_PUBKEY_PLACEHOLDER: &[u8; 32] = b"OSQL_OWNER_PUBKEY_V1_PLACEHOLDER";
 const DB_ID_PLACEHOLDER: &[u8; 32] = b"OSQL_DATABASE_ID_V1_PLACEHOLDER0";
 const EXPECTED_WASM_SHA256: &str =
-    "8fe0dad1a4bb4fcfc7afab626a58eda45edeac3b25607f130b201997698d8bcf";
-const EXPECTED_WASM_BYTES: usize = 611_677;
+    "69b9a16e7d92084b7383cb8564d757784f249a24ca54ce49bb01a158a3a3fa2d";
+const EXPECTED_WASM_BYTES: usize = 633_864;
 const CREATE_DATABASE_COMMAND: &str = "octra-sqlite new";
-const SQLITE_VERSION: &str = "3.53.4";
+const SQLITE_VERSION: &str = "3.54.1";
 const WRITE_OU_ENV: &str = "OCTRA_SQLITE_WRITE_OU";
 const VERIFY_WRITE_OU_ENV: &str = "OCTRA_SQLITE_VERIFY_WRITE_OU";
 const DEFAULT_WRITE_OU: &str = "1000";
@@ -770,12 +770,6 @@ fn explicit_target_allows_unsigned_read(args: &TargetArgs, config: &Config) -> b
             .is_some_and(|info| circle_info_allows_unsigned_read(&info)),
         ReadMode::Sealed => false,
     }
-}
-
-fn circle_info_allows_unsigned_read(info: &Value) -> bool {
-    info.get("privacy_class").and_then(Value::as_str) == Some("public")
-        && info.get("browser_mode").and_then(Value::as_str) == Some("gateway_allowed")
-        && info.get("resource_mode").and_then(Value::as_str) == Some("public_resources")
 }
 
 fn build_session(args: &TargetArgs) -> Result<Session> {

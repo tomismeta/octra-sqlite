@@ -1,5 +1,74 @@
 # Changelog
 
+## 0.6.4
+
+- Updated existing TLS dependencies to `rustls` 0.23.46,
+  `rustls-webpki` 0.103.16, and `webpki-roots` 1.0.10; raised the optional
+  Wasmtime behavior-harness minimum to 36.0.19. These patch updates add no
+  direct dependencies and do not change the bundled Circle WASM.
+- Updated the 0.6.4 maintenance release to SQLite 3.54.1 with an engine
+  identity derived from SQLite's compiled version. The WASM behavior suite
+  covers function-valued defaults and rejection of adding
+  a `rowid` column without changing existing rows or schema.
+- Verified local storage upgrade and reopen from 3.53.4 through 3.54.1 and
+  back on the pinned upstream JavaScript host. Network upgrade and rollback
+  were verified separately on an isolated devnet Circle.
+- Cut signed views and program-info reads over to upstream length-prefixed
+  `octra_circle_auth_v2` frames, preserving public read routing and OSW1 writes.
+- Corrected current sealed-read capability facts and documentation to
+  Circle-owner authentication under the upstream RPC contract. Public reads
+  permit complete-file export; neither mode encrypts SQL or stored data.
+- Added 0.6.3 artifact metadata to the historical rollback catalog while
+  preserving prior releases and their dated network evidence.
+- Reduced OSW1 verification fuel by compiling TweetNaCl at `-O3` without
+  LTO and fully unrolling its fixed field-multiplication loops, preserving
+  arithmetic and authorization. Added a metered signed-write regression
+  that fails on the original size-only artifact.
+- Replayed signed writes in the pinned public native-host source snapshot:
+  the original artifact exhausts the standard 20-million-fuel cap; the
+  reproducible offline fixture uses 11,873,213 fuel with the optimized artifact.
+  Source-snapshot equivalence to the deployed node is not established.
+  Added an optional native replay utility covering persistence, bad signatures,
+  and replay protection without user wallets or network access.
+- Confirmed the preceding `6108d174…` artifact's isolated devnet write at
+  11,876,379 receipt effort, including persisted default/Unicode rows, backup
+  integrity, and non-owner sealed-read rejection.
+- Confirmed a fresh devnet deployment of the current `69b9a16e…` artifact,
+  owner-signed sealed reads, persisted default/Unicode rows, and backup
+  integrity, plus non-owner sealed-read rejection.
+- Verified normal devnet upgrade from 3.53.4 to 3.54.1, clean rollback, and
+  re-upgrade with the original rows preserved. A new post-upgrade write,
+  independent three-row read, and backup integrity passed; rollback dry-run
+  refused to cross that write. No mainnet rollout was performed.
+- Corrected operational guidance: 1,000 and 200,000 OU both receive the
+  same native 1-million-effort floor. Larger explicit budgets affect fees;
+  the CLI does not silently raise them. Missing receipts require transaction
+  status inspection before any retry.
+- Aligned walletless public reads with Octra's `privacy_class: public`
+  program-view policy across historical and current browser/resource modes.
+- Added typed `Database::storage_info()` inspection while preserving the raw
+  response and compatibility with previously deployed SQLite Circles.
+- Added `ExecuteResult::effort()` for confirmed runtime effort reported by
+  Octra receipts, without changing the CLI command language or Circle WASM.
+- Added typed explicit-budget `Database::execute_with_ou`,
+  `execute_no_wait_with_ou`, `prepare_write_with_ou`, and
+  `prepare_write_no_wait_with_ou`; existing methods retain `1000` OU.
+- Receipt polling now recognizes numeric receipt-not-found code 112 and makes
+  one transaction-status lookup after bounded receipt exhaustion. Rejected,
+  failed, and dropped transactions retain precise terminal errors in the CLI
+  instead of being reported as pending; submissions are never replayed.
+- Rollback rechecks the reviewed program hash, storage generation, and owner
+  sequence immediately before submission, aborting changed state for replan
+  even with `--force-after-writes`. External writers must still be paused:
+  this client guard is not an atomic chain-side comparison.
+- Private-file replacement uses native `std::fs::rename` on Windows without
+  deleting the destination first. Native Windows runtime verification remains
+  outstanding.
+- Corrected the OSW1 verifier output buffer to hold the full signature plus
+  message required by TweetNaCl, including maximum-length `exec`/`exec_trace`
+  inputs. The rebuilt artifact is 633,864 bytes, SHA-256
+  `69b9a16e7d92084b7383cb8564d757784f249a24ca54ce49bb01a158a3a3fa2d`.
+
 ## 0.6.3
 
 - Rebuilt the bundled Circle WASM with SQLite 3.53.4, taking SQLite's

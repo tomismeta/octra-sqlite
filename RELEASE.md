@@ -1,5 +1,42 @@
 # Release Notes
 
+## 0.6.4
+
+SQLite 3.54.1 maintenance release.
+Historical release notes below retain their original proof scope.
+
+- Uses upstream v2 authenticated-read frames and advertises owner-authenticated
+  sealed reads; public reads remain walletless. Neither mode encrypts data.
+- Preserves storage, OSR1/OSW1, and the `1000` OU write default while adding
+  typed `execute_with_ou`, `execute_no_wait_with_ou`, `prepare_write_with_ou`,
+  and `prepare_write_no_wait_with_ou` methods. Budgets are explicit and signed;
+  15 million OU is fixture-specific guidance, not a universal allowance.
+- Bounds receipt polling, recognizes receipt-not-found code 112, and preserves
+  rejected/failed/dropped terminal dispositions after a final status lookup.
+- Rechecks rollback state before submission and aborts changed state for
+  replan; operators must still pause writers across the remaining race window.
+- Uses native Windows file replacement without a delete-first fallback;
+  native Windows runtime verification remains outstanding.
+- Reduces native OSW1 verification cost and corrects TweetNaCl output-buffer
+  capacity for the complete signature-plus-message input.
+- Locks patched TLS dependencies (`rustls` 0.23.46, `rustls-webpki` 0.103.16,
+  `webpki-roots` 1.0.10) and requires Wasmtime 36.0.19 for the optional behavior
+  harness, without adding direct dependencies or changing the Circle artifact.
+
+The current 633,864-byte artifact has SHA-256
+`69b9a16e7d92084b7383cb8564d757784f249a24ca54ce49bb01a158a3a3fa2d`.
+Fresh devnet deployment, expected personalized program identity, owner-signed
+sealed reads, confirmed default/Unicode persisted rows, and backup integrity
+passed for this artifact. A correctly addressed, signed non-owner sealed read
+was rejected with `circle owner authorization required`. Historical
+`6108d174…` evidence remains separate.
+
+The isolated devnet rehearsal passed normal 3.53.4 → 3.54.1 upgrade, clean
+rollback to 3.53.4, and normal re-upgrade to 3.54.1, preserving the exact
+default/Unicode rows. A new post-upgrade write, independent three-row read,
+and backup integrity passed. Rollback dry-run then refused to cross the
+post-upgrade write. No mainnet rollout was performed.
+
 ## 0.6.3
 
 This is a focused SQLite engine maintenance release over `0.6.2`. It rebuilds

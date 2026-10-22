@@ -18,7 +18,7 @@ Root exports are intentionally small:
 
 - `Client`, `ClientOptions`, and `Database`
 - `QueryResult`, `ExecuteResult`, and `SubmittedTransaction`
-- `AuthInfo`, `ProgramInfo`, and `ReadMode`
+- `AuthInfo`, `ProgramInfo`, `StorageInfo`, and `ReadMode`
 - `Value`, `Error`, `ErrorKind`, and `Result`
 
 `Client` is the control plane: configuration, transport ownership, and database
@@ -34,6 +34,29 @@ operator concerns.
 `Database::execute(sql)` is the confirmed write path.
 `Database::execute_no_wait(sql)` returns `SubmittedTransaction`; pass it to
 `Database::wait(&submitted)` to complete the lifecycle.
+`Database::storage_info()` returns typed VFS state and effective Circle storage
+limits. `ExecuteResult::effort()` exposes receipt effort when Octra reports it.
+
+Explicit signed budgets use `Database::execute_with_ou(sql, ou)` and
+`Database::execute_no_wait_with_ou(sql, ou)`. Staged signing has matching
+`Database::prepare_write_with_ou(sql, ou)` and
+`Database::prepare_write_no_wait_with_ou(sql, ou)` methods; inspect
+`PreparedWrite::ou()` before signing. `ou` is a positive decimal integer
+fitting `u64`, with surrounding whitespace ignored. It is signed into the
+transaction and never increased automatically. The existing execute/prepare
+methods retain `1000` OU. That compatibility default is not sufficient for
+current native OSW1 execution; 15 million OU is measured-fixture guidance,
+not a guarantee for arbitrary SQL. Higher budgets can authorize higher fees.
+
+Receipt waits poll at most 45 times with two-second pauses between attempts
+(transport retries/latency are additional), treating numeric RPC error 112 as
+receipt absence. After exhaustion, one transaction-status lookup recognizes
+`rejected`, `failed`, and `dropped` as `ErrorKind::Receipt` with codes
+`transaction_rejected`, `transaction_failed`, and `transaction_dropped`.
+Details retain `tx_hash`, `status`, and the returned `transaction`.
+Unresolved absence remains a timeout in the library; other RPC errors remain
+errors. The CLI maps unresolved submitted writes to `receipt_pending` without
+masking terminal errors. Neither waiting nor no-wait submission replays SQL.
 
 `Error::kind()` supplies a stable broad category. `Error::code()` preserves a
 precise machine-readable code supplied by a remote source or assigned at a

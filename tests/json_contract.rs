@@ -18,6 +18,13 @@ fn limits_json_is_machine_readable_without_wallet() {
     assert_eq!(value["type"], "limits");
     assert_eq!(value["schema"], "octra-sqlite.cli.v1");
     assert_eq!(value["result"]["limit_error"], "result_limit_exceeded");
+    assert_eq!(
+        value["auth"]["auto_read_policy"],
+        serde_json::json!({
+            "field": "privacy_class",
+            "public_value": "public",
+        })
+    );
     assert!(
         value["trace"]["modes"]
             .as_array()

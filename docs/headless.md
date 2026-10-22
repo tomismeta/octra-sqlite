@@ -144,20 +144,24 @@ octra-sqlite check DATABASE --sql-file dump.sql
 octra-sqlite restore DATABASE --file dump.sql
 ```
 
-For production-like writers, set an explicit write budget in the environment or
-on the command:
+For native-runtime writers, use an explicit measured write budget. The
+preceding `6108d174…` artifact's small default/Unicode fixture used about
+11.9 million receipt effort; the example below is not a bound for arbitrary
+restore batches or a current-artifact effort measurement:
 
 ```sh
-export OCTRA_SQLITE_WRITE_OU=200000
-octra-sqlite restore DATABASE --file dump.sql --ou 200000
-octra-sqlite verify DATABASE --write-smoke --write-ou 200000
+octra-sqlite DATABASE --ou 15000000 "insert into events(id, body) values (1, 'ok');"
 ```
 
-Normal SQL writes, including `new` initializer SQL, default to `1000` OU. Circle
-creation and program upgrades default to `200000` OU and are not a recurring
-writer cost. For service upgrades, run the current octra-sqlite client, set
-`OCTRA_SQLITE_CONFIG` to a path writable by the upgrade operator, and pass
-`upgrade --backup-dir` to a writable app-data directory.
+Normal SQL writes retain the compatibility default of `1000` OU, which is
+insufficient for current native OSW1 execution. The upstream standard lane
+uses `max(1000000, OU)` total effort; key/public-read effort is deducted
+before remaining WASM fuel is capped at 20 million. Thus usable fuel can
+be lower, and `200000` OU does not increase fuel over the default.
+A larger explicit budget can authorize
+substantially higher fees. Circle creation and program upgrades still default
+to `200000` OU and are not a recurring writer cost. For service upgrades, use a
+writable `OCTRA_SQLITE_CONFIG` and `upgrade --backup-dir`.
 
 If a submitted write times out waiting for its receipt, recover from the
 transaction hash instead of resubmitting the SQL:
@@ -165,6 +169,24 @@ transaction hash instead of resubmitting the SQL:
 ```sh
 octra-sqlite receipt TX_HASH DATABASE --json
 ```
+
+Receipt waits are bounded and consult transaction status once after receipt
+exhaustion. Handle `transaction_rejected`, `transaction_failed`, and
+`transaction_dropped` as terminal errors; `receipt_pending` is unresolved, not
+permission to replay SQL. Keep the hash and inspect the returned transaction
+details. RPC failures are not converted into successful or pending receipts.
+
+For Rust services, explicit budgets are available through
+`Database::execute_with_ou`, `execute_no_wait_with_ou`,
+`prepare_write_with_ou`, and `prepare_write_no_wait_with_ou`. Existing methods
+still use `1000` OU. Select budgets from measured workloads, not a universal
+15-million-OU assumption.
+
+`--read-only` refuses client writes; it does not select read authentication.
+Public reads remain walletless, and sealed reads require the Circle owner.
+Local private-file updates use a synced temporary sibling and native rename
+replacement without deleting the destination first. Windows runtime behavior
+has not been verified natively; Unix owner-only modes are not Windows ACLs.
 
 Use `--json` or `--json-summary` for machine-readable output, and prefer full
 `oct://NETWORK/<circle>` URIs in automation. For read proof/debugging, write
